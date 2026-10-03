@@ -92,7 +92,7 @@ def write_index(out_dir, rows):
     cols = ["dataset", "subject", "night", "start", "end", "epochs", "scored", "hr_rows", "grav_rows",
             "rr_rows", "note"]
     with open(os.path.join(out_dir, "nights.csv"), "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
+        w = csv.DictWriter(f, fieldnames=cols, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow(r)
