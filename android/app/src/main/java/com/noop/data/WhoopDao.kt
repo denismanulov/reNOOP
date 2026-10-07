@@ -60,7 +60,10 @@ internal const val ANALYSIS_FINGERPRINT_SQL =
  * from ONE walk (the `rr` derived table): each needs `srcChannel` or `tsSuspect`, which the key index does not
  * hold, so as five sub-selects every beat in the window paid its table lookup up to five times (44% of a warm
  * re-score's CPU on a 54-hour WHOOP 5 window). Same values; `Whoop5RRSqliteTest` compares it with the five
- * sub-selects it replaced. */
+ * sub-selects it replaced.
+ *
+ * `ownerTagged` is the one figure that is not windowed: "has this device EVER banked a 5/MG-tagged beat".
+ * Written `+deviceId` for the reason given on [HAS_WHOOP5_RR_SOURCE_SQL], which asks the same question. */
 internal const val DAY_STREAM_FINGERPRINT_SQL =
     "SELECT 's4|' || " +
         "'p' || (SELECT COUNT(*) FROM ppgHrSample WHERE deviceId = :deviceId AND ts >= :from AND ts <= :to) || " +
@@ -81,7 +84,7 @@ internal const val DAY_STREAM_FINGERPRINT_SQL =
         "'e' || (SELECT COUNT(*) FROM event WHERE deviceId = :deviceId AND ts >= :from AND ts <= :to) || " +
         "':' || (SELECT COALESCE(MAX(ts), 0) FROM event WHERE deviceId = :deviceId AND ts >= :from AND ts <= :to) || " +
         "'|w5' || rr.w5 || '|w7' || rr.w7 || '|w4h' || rr.w4h || " +
-        "'|ownerTagged' || EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = :deviceId AND srcChannel IN (5, 6, 7)) || " +
+        "'|ownerTagged' || EXISTS(SELECT 1 FROM rrInterval WHERE +deviceId = :deviceId AND srcChannel IN (5, 6, 7)) || " +
         "'|registry' || COALESCE((SELECT QUOTE(brand) || ':' || QUOTE(model) FROM pairedDevice WHERE id = :deviceId), 'absent') " +
         "FROM (SELECT COUNT(CASE WHEN srcChannel IS NULL OR srcChannel <> 2 THEN 1 END) AS rc, " +
         "COALESCE(MAX(CASE WHEN srcChannel IS NULL OR srcChannel <> 2 THEN ts END), 0) AS rm, " +
@@ -183,8 +186,23 @@ internal const val FIRST_SCORABLE_WHOOP5_RR_SQL =
     "SELECT MIN(ts) FROM rrInterval WHERE deviceId = :deviceId AND srcChannel IN " +
     SCORABLE_WHOOP5_CHANNELS + " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
 
+/**
+ * Whether a device has EVER banked a 5/MG-tagged beat. Twin of the probe in Swift
+ * `WhoopStore.isWhoop5RRSource`.
+ *
+ * `+deviceId`, not `deviceId`: a term behind a unary plus cannot use an index, so SQLite searches the
+ * tagged rows through `rrInterval_source_suspect` and checks the owner of each. Written plainly, the
+ * planner takes the `(deviceId, ts, ...)` key and looks up every beat the device ever stored to read a
+ * tag a WHOOP 4.0 never has. Same result: the plus also drops the column's TEXT affinity from the
+ * comparison, which changes nothing while the bind is a String, as it is on every caller. The cost
+ * moves with the store: the search now visits the tagged beats of EVERY device until it meets one of
+ * this device's. That is the cheaper plan when the store holds few tagged beats (a WHOOP 4.0) or this
+ * device has one, and the dearer one for an untagged id beside a strap with many, such as the canonical
+ * alias of a re-added 5/MG. `Whoop5RRSqliteTest` holds both the plan and the equality with the plain
+ * form.
+ */
 internal const val HAS_WHOOP5_RR_SOURCE_SQL =
-    "SELECT EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = :deviceId AND srcChannel IN (5, 6, 7))"
+    "SELECT EXISTS(SELECT 1 FROM rrInterval WHERE +deviceId = :deviceId AND srcChannel IN (5, 6, 7))"
 
 internal const val LEGACY_WHOOP5_RR_WITHHELD_SQL =
     "SELECT EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = :deviceId " +
