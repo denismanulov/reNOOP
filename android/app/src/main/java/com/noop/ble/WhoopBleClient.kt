@@ -11457,6 +11457,9 @@ class WhoopBleClient(
             // #1008/#1118: the pre-storage R-R census for this offload, next to the persisted tally so one
             // line pair says what the decoder OFFERED and what the store KEPT. Twin of the Swift emit.
             backfiller.sessionRrEmissionLine()?.let { rrLine -> log(rrLine) }
+            // How this session's time split between the phone and the wait for the strap's next chunk.
+            // Instrumentation only; see [Backfiller.sessionChunkTiming]. Twin of the Swift emit.
+            backfiller.sessionChunkTiming.logLine?.let { timing -> log(timing) }
             // #2019: and the v26 optical census, in the same place, so one block says what the offload
             // banked AND whether those optical windows can be reconstructed at all.
             com.noop.protocol.ppgWaveformCensusLine(

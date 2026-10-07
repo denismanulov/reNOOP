@@ -137,6 +137,8 @@ class Backfiller(
      * `Backfiller.storeReplaced`.
      */
     private val storeReplaced: () -> Boolean = { LiveStoreReplacement.happened },
+    /** Monotonic clock for [sessionChunkTiming], in nanoseconds. A seam so the split is testable. */
+    private val nanoTime: () -> Long = System::nanoTime,
 ) {
 
     /**
@@ -297,6 +299,74 @@ class Backfiller(
     private var rejectHexSuppressedNoted: Boolean = false
 
     /**
+     * Per-session offload cadence, instrumentation only. The offload is acked chunk by chunk, so a
+     * chunk's time splits into two measured intervals: `phone`, from its HISTORY_END being handled here
+     * to our ack being handed to the link (decode, commit, reject archive, cursor), and the rest, from
+     * that ack to the next HISTORY_START being handled here (the radio both ways and the strap's own
+     * work). Summed per session so a strap log says which side an offload's time went to. Twin of the
+     * Swift `Backfiller.sessionChunkTiming`.
+     *
+     * Only a START that follows one of OUR acks in the same session measures the second interval, so an
+     * offload that closes chunk after chunk under one START reports it as not measured. Reset in [begin];
+     * guarded by [chunkLock] with the two stamps below, because [begin] runs on another thread.
+     */
+    @Volatile
+    var sessionChunkTiming = ChunkTiming()
+        private set
+    /** When the END of the chunk being finished was handled, and when the last chunk was acked. */
+    private var chunkEndAtNanos: Long? = null
+    private var lastAckAtNanos: Long? = null
+
+    /** See [sessionChunkTiming]. Whole milliseconds; an interval is counted once, when it closes. */
+    data class ChunkTiming(
+        val phoneCount: Int = 0, val phoneTotalMs: Long = 0, val phoneMaxMs: Long = 0,
+        val strapCount: Int = 0, val strapTotalMs: Long = 0, val strapMaxMs: Long = 0,
+    ) {
+        fun addPhone(ms: Long) = copy(
+            phoneCount = phoneCount + 1, phoneTotalMs = phoneTotalMs + ms, phoneMaxMs = maxOf(phoneMaxMs, ms),
+        )
+
+        fun addStrap(ms: Long) = copy(
+            strapCount = strapCount + 1, strapTotalMs = strapTotalMs + ms, strapMaxMs = maxOf(strapMaxMs, ms),
+        )
+
+        /**
+         * Null when no chunk was acked this session. Each side carries its own count: the second
+         * interval is measured for fewer chunks than the first, and for none under a single START.
+         * The Swift line prints that side without its count and calls it `strap`; here it is named for
+         * everything the interval contains.
+         */
+        val logLine: String?
+            get() {
+                if (phoneCount <= 0) return null
+                val rest = if (strapCount > 0) {
+                    "n=$strapCount avg=${strapTotalMs / strapCount}ms max=${strapMaxMs}ms"
+                } else {
+                    "not measured"
+                }
+                return "Backfill: timing chunks=$phoneCount phone(end→ack) avg=${phoneTotalMs / phoneCount}ms " +
+                    "max=${phoneMaxMs}ms · strap+radio(ack→next start) $rest"
+            }
+    }
+
+    /** A chunk's END was handled: the phone's interval opens. */
+    private fun noteChunkEnd() = synchronized(chunkLock) { chunkEndAtNanos = nanoTime() }
+
+    /** The chunk was acked: the phone's interval closes and the wait for the next START opens. */
+    private fun noteChunkAcked() = synchronized(chunkLock) {
+        val now = nanoTime()
+        chunkEndAtNanos?.let { sessionChunkTiming = sessionChunkTiming.addPhone((now - it) / 1_000_000L) }
+        chunkEndAtNanos = null
+        lastAckAtNanos = now
+    }
+
+    /** A START was handled: if it follows one of our acks, the wait for it closes. */
+    private fun noteChunkStart() = synchronized(chunkLock) {
+        lastAckAtNanos?.let { sessionChunkTiming = sessionChunkTiming.addStrap((nanoTime() - it) / 1_000_000L) }
+        lastAckAtNanos = null
+    }
+
+    /**
      * Distinct historical record-layout versions logged this session. Before this, only the unmapped/
      * reject path surfaced a version, so a HEALTHY log never revealed which layout the strap emits
      * (v24/v25 on 4.0, v18/v26 on 5/MG) — exactly the firmware→layout signal triage needs. Reset in
@@ -399,6 +469,9 @@ class Backfiller(
         synchronized(chunkLock) {
             chunk.clear()
             chunkOpen = true
+            sessionChunkTiming = ChunkTiming()
+            chunkEndAtNanos = null
+            lastAckAtNanos = null
         }
     }
 
@@ -415,8 +488,12 @@ class Backfiller(
                         chunk.clear()
                         chunkOpen = true
                     }
+                    noteChunkStart()
                 }
-                is HistoricalMeta.End -> finishChunk(meta.unix, meta.trim, frame)
+                is HistoricalMeta.End -> {
+                    noteChunkEnd()
+                    finishChunk(meta.unix, meta.trim, frame)
+                }
                 is HistoricalMeta.Complete -> {
                     isBackfilling = false
                     synchronized(chunkLock) {
@@ -822,6 +899,7 @@ class Backfiller(
 
         ackTrim(trim, endData)
         lastAckedTrim = trim   // #364: record the advanced cursor for the auto-continue spin-detector
+        noteChunkAcked()       // timing only, after the ack: it can neither hold nor reorder it
         committed?.takeIf { !it.isEmpty }?.let(onChunkCommitted)
     }
 

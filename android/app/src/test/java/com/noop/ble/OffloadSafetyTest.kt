@@ -155,6 +155,113 @@ class OffloadSafetyTest {
         )
     }
 
+    // MARK: - offload cadence (instrumentation only)
+
+    /** A session on a clock the test owns: the cursor write is where the phone's time goes. */
+    private class TimedSession(var storeReplaced: Boolean = false) {
+        var nowMs = 0L
+        var cursorWriteMs = 0L
+        val acked = ArrayList<Long>()
+        val cursorAtAck = ArrayList<Long?>()
+        private val cursors = object : TrimCursorStore {
+            val values = HashMap<String, Long>()
+            override suspend fun set(name: String, value: Long) { nowMs += cursorWriteMs; values[name] = value }
+            override suspend fun get(name: String): Long? = values[name]
+        }
+        val backfiller = Backfiller(
+            repository = WhoopRepository(untouchedDao()),
+            deviceId = "test",
+            cursorStore = cursors,
+            ackTrim = { trim, _ ->
+                cursorAtAck += cursors.values[Backfiller.STRAP_TRIM_CURSOR]
+                acked += trim
+            },
+            storeReplaced = { storeReplaced },
+            nanoTime = { nowMs * 1_000_000L },
+        )
+    }
+
+    /** Twin of the Swift `testChunkTimingSplitsPhoneAndStrapSides`, with the durations pinned too. */
+    @Test
+    fun chunkTimingSplitsPhoneAndStrapSides() = runBlocking {
+        val s = TimedSession()
+        s.backfiller.begin(DeviceFamily.WHOOP4)
+        assertNull("nothing acked yet, nothing to say", s.backfiller.sessionChunkTiming.logLine)
+
+        s.backfiller.ingest(historyStartFrame())
+        s.cursorWriteMs = 7
+        s.backfiller.ingest(historyEndFrame(trim = 1L))
+        s.nowMs += 120
+        s.backfiller.ingest(historyStartFrame())
+        s.cursorWriteMs = 11
+        s.backfiller.ingest(historyEndFrame(trim = 2L))
+
+        val timing = s.backfiller.sessionChunkTiming
+        assertEquals(
+            "only a START that follows one of OUR acks measures the strap",
+            Backfiller.ChunkTiming(
+                phoneCount = 2, phoneTotalMs = 18, phoneMaxMs = 11,
+                strapCount = 1, strapTotalMs = 120, strapMaxMs = 120,
+            ),
+            timing,
+        )
+        assertEquals(
+            "Backfill: timing chunks=2 phone(end→ack) avg=9ms max=11ms · strap+radio(ack→next start) n=1 avg=120ms max=120ms",
+            timing.logLine,
+        )
+        // The stopwatch reads the clock and nothing else: every chunk is still acked, in order, and
+        // only once its trim cursor is on disk.
+        assertEquals(listOf(1L, 2L), s.acked)
+        assertEquals(listOf<Long?>(1L, 2L), s.cursorAtAck)
+
+        s.backfiller.begin(DeviceFamily.WHOOP4)
+        assertEquals("a new session starts clean", Backfiller.ChunkTiming(), s.backfiller.sessionChunkTiming)
+        // The ack that closed the last session is not this session's: its START measures nothing.
+        s.nowMs += 5_000
+        s.backfiller.ingest(historyStartFrame())
+        assertEquals(Backfiller.ChunkTiming(), s.backfiller.sessionChunkTiming)
+    }
+
+    /** Chunk after chunk under one START: the phone's side is timed, the wait for the strap is not. */
+    @Test
+    fun chunkTimingUnderOneStartSaysTheStrapSideWasNotMeasured() = runBlocking {
+        val s = TimedSession()
+        s.backfiller.begin(DeviceFamily.WHOOP4)
+        s.backfiller.ingest(historyStartFrame())
+        s.cursorWriteMs = 4
+        for (trim in 1L..3L) {
+            s.backfiller.ingest(historyEndFrame(trim = trim))
+            s.nowMs += 90   // the next chunk arrives with no START of its own
+        }
+        assertEquals(
+            "Backfill: timing chunks=3 phone(end→ack) avg=4ms max=4ms · strap+radio(ack→next start) not measured",
+            s.backfiller.sessionChunkTiming.logLine,
+        )
+        // A START after the third ack is measured from THAT ack, not from the first.
+        s.backfiller.ingest(historyStartFrame())
+        assertEquals(
+            Backfiller.ChunkTiming(
+                phoneCount = 3, phoneTotalMs = 12, phoneMaxMs = 4,
+                strapCount = 1, strapTotalMs = 90, strapMaxMs = 90,
+            ),
+            s.backfiller.sessionChunkTiming,
+        )
+    }
+
+    /** A chunk whose ack was held is not a chunk the phone finished: it is not counted. */
+    @Test
+    fun aHeldAckIsNotTimed() = runBlocking {
+        val s = TimedSession(storeReplaced = true)
+        s.backfiller.begin(DeviceFamily.WHOOP4)
+        s.backfiller.ingest(historyStartFrame())
+        s.backfiller.ingest(historyEndFrame(trim = 1L))
+        s.nowMs += 250
+        s.backfiller.ingest(historyStartFrame())
+        assertEquals(emptyList<Long>(), s.acked)
+        assertEquals(Backfiller.ChunkTiming(), s.backfiller.sessionChunkTiming)
+        assertNull(s.backfiller.sessionChunkTiming.logLine)
+    }
+
     // MARK: - another app pulling the strap's history
 
     @Test
