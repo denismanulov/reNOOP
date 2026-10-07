@@ -1193,6 +1193,39 @@ object AnalyticsEngine {
     }
 
     /**
+     * WHOOP 4.0 twin of [nightlySpo2CandidateMean]: the nightly mean of the strap's own blood-oxygen
+     * byte (v24 `aux_byte_86`) over the detected in-bed [sessions], with the count it rests on, or null
+     * when no in-band reading fell inside any span.
+     *
+     * Same `70..100` gate and the same rounding as the v18 function, for the same reasons: every other
+     * nonzero value of the byte is a status or error code, not a percentage. The strap only produces
+     * readings in short windows roughly every 19 minutes of its own detected sleep, so a night rests on
+     * a few hundred readings at most and the count matters as much here as it does there.
+     *
+     * One known caveat the count does not show: the firmware analysis this offset comes from reports
+     * that a reading of exactly 98 can also be a fallback for a missing optical baseline. It is kept in
+     * the mean, as the v18 function keeps it, until a capture shows how often that happens.
+     *
+     * DIAGNOSTIC ONLY. Nothing scores this and it never writes `spo2Pct`. Android only, no Swift twin.
+     */
+    internal fun nightlyV24Spo2CandidateMean(
+        sessions: List<DetectedSleep>,
+        samples: List<com.noop.data.V24AuxByte86Sample>,
+    ): Pair<Int, Int>? {
+        if (sessions.isEmpty() || samples.isEmpty()) return null
+        var sum = 0L
+        var kept = 0
+        for (s in samples) {
+            if (s.byte !in com.noop.data.V24AuxByte86Mapping.PERCENT_RANGE) continue
+            if (sessions.none { s.ts in it.start..it.end }) continue
+            sum += s.byte
+            kept += 1
+        }
+        if (kept == 0) return null
+        return Pair((sum.toDouble() / kept.toDouble()).roundToInt(), kept)
+    }
+
+    /**
      * The plausible range for a raw Oura `0x6F` SpO2 sample before the ceiling transform below excludes
      * the mis-scaled `dc_raw`/perfusion-channel contamination (-1016 .. 11,709,098, OURA_PROTOCOL.md
      * §6.5.0.1) by three orders of magnitude. Same bounds as the Swift

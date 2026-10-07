@@ -849,8 +849,6 @@
     <string name="l10n_health_screen_this_vital_needs_at_least_two_0e41b8b0">Этому показателю нужно минимум два измерения в истории, прежде чем reNOOP сможет построить график.</string>
     <string name="l10n_health_screen_the_blood_oxygen_estimate_is_turned_4c403ab2">Оценка насыщения крови кислородом отключена</string>
     <string name="l10n_health_screen_your_strap_reports_a_blood_oxygen_349fe34a">Ваш браслет сообщает оценку насыщения крови кислородом, но она не проверена и по умолчанию отключена. Включите оценку браслета в Настройках, чтобы увидеть её, или импортируйте выгрузку WHOOP в «Источниках данных» для калиброванного значения.</string>
-    <string name="l10n_health_screen_no_blood_oxygen_percentage_from_a_1d3d383e">WHOOP 4.0 не даёт процент насыщения крови кислородом</string>
-    <string name="l10n_health_screen_your_strap_banks_the_raw_optical_b52a0f80">Ваш браслет накапливает сырые оптические каналы, но reNOOP не превращает их в процент насыщения крови кислородом, поэтому здесь будет пусто, сколько бы вы его ни носили. Импортируйте выгрузку WHOOP в разделе «Источники данных», чтобы заполнить это из истории вашего аккаунта.</string>
     <string name="ground_truth_title">Сборщик сырых данных 5/MG</string>
     <string name="ground_truth_subtitle">Запишите ограниченную сессию движения 100 Гц, восстановите пропуски Bluetooth из истории браслета и экспортируйте полную хронологию.</string>
     <string name="ground_truth_test_centre_desc">Запись, аннотирование, восстановление и экспорт ограниченной записи движения 5/MG 100 Гц.</string>

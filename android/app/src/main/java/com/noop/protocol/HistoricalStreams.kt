@@ -13,6 +13,7 @@ import com.noop.data.SkinTempRow
 import com.noop.data.SleepStateRow
 import com.noop.data.V18AuxRow
 import com.noop.data.V18AuxSlot
+import com.noop.data.V24AuxByte86Mapping
 import com.noop.data.Spo2Row
 import com.noop.data.StepRow
 import com.noop.data.StreamBatch
@@ -322,6 +323,20 @@ fun decodeHistorical(frame: ByteArray, family: DeviceFamily = DeviceFamily.WHOOP
     // borrow this layout, and nothing shows their bytes there are a counter. A shorter record ends before
     // the field and the bounded read returns null. Mirrors Swift PostHooks "historical_data".
     if (version == 24) frame.histU32(92, limit)?.let { out["step_counter"] = it }
+
+    // aux_byte_86: the strap's own blood-oxygen result byte. 0 = nothing computed, 70-100 = a
+    // percentage, any other nonzero value = a status/error code. Sourced from a third-party firmware
+    // analysis and reimplemented as a protocol fact (ATTRIBUTION.md); on the #1617 overnight captures
+    // it is nonzero only while the optical channel words at 80/82 read enabled. Read ONLY off a
+    // 104-byte record whose own version byte is 24: the offset was established on that exact frame,
+    // and in a shorter record it may fall on other bytes. An unvalidated candidate, like the v18
+    // `spo2_candidate_82`: never `spo2Pct`, never a score input. No Swift twin yet.
+    if (version == 24 && frame.size == 104) {
+        frame.histU8(86, limit)?.let {
+            out["aux_byte_86"] = it
+            if (it in 70..100) out["spo2_candidate_86"] = it
+        }
+    }
 
     // Validate the v24-layout guess for an unmapped version: gravity is the DSP-separated orientation
     // vector, so |gravity| ≈ 1 g on a real record regardless of motion, and HR is physiological. If the
@@ -1022,6 +1037,14 @@ fun extractHistoricalStreams(
 
                 p.intOrNull("spo2_red")?.let { red ->
                     spo2.add(Spo2Row(ts, red = red, ir = p.intOrNull("spo2_ir") ?: 0))
+                }
+                // The strap's own blood-oxygen byte (`aux_byte_86`), banked only when nonzero: a zero
+                // is "nothing computed this second" and is the state of almost every record. Gated on
+                // the layout explicitly rather than on the key being present, as the v18 aux block is.
+                if (family == DeviceFamily.WHOOP4 && p.intOrNull("hist_version") == 24) {
+                    p.intOrNull("aux_byte_86")?.let { b ->
+                        if (b != 0) events.add(V24AuxByte86Mapping.event(ts, b))
+                    }
                 }
                 // The two AUXILIARY thermal channels (`temp_aux_1_raw@69` / `temp_aux_2_raw@71`, i16,
                 // °C = value/10) ride the primary skin-temp row for the same second. Both were decoded

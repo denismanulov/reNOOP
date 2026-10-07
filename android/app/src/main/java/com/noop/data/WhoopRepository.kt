@@ -1492,6 +1492,16 @@ class WhoopRepository(
         deviceId, StandardHrMapping.CONTACT_EVENT_KIND, from, to, limit,
     ).map(StandardHrMapping::contactSample)
 
+    /** The nonzero WHOOP 4.0 v24 `aux_byte_86` readings, codes included; a zero byte is never stored. */
+    suspend fun v24AuxByte86Samples(
+        deviceId: String,
+        from: Long,
+        to: Long,
+        limit: Int = DEFAULT_LIMIT,
+    ): List<V24AuxByte86Sample> = dao.eventsByKind(
+        deviceId, V24AuxByte86Mapping.EVENT_KIND, from, to, limit,
+    ).map(V24AuxByte86Mapping::sample)
+
     suspend fun batterySamples(deviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT) =
         dao.batterySamples(deviceId, from, to, limit)
 

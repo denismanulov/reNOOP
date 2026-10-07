@@ -325,8 +325,9 @@ object IntelligenceEngine {
      *
      * A WHOOP owner averages the in-band `spo2_candidate_82` V18Aux byte; an Oura owner averages the ring's
      * own `0x6F` SpO2 through the ceiling@100 transform (see [AnalyticsEngine.nightlySpo2CeilingMean] for
-     * why that is queue 11a's starting choice). Null on a WHOOP 4.0 with no v18 aux stream, an Oura night
-     * with no in-window plausible sample, or when the caller's toggle is off — the caller gates that.
+     * why that is queue 11a's starting choice). A WHOOP 4.0 has no v18 aux stream and averages its v24
+     * `aux_byte_86` readings instead. Null on a night with no in-window in-band reading, or when the
+     * caller's toggle is off — the caller gates that.
      *
      * Extracted from `analyzeRecentOnCpu` purely for bytecode headroom (#1524); behaviour is unchanged.
      * Never written to `spo2Pct` and never scored — the caller persists it to the `spo2_candidate`
@@ -344,8 +345,13 @@ object IntelligenceEngine {
             return AnalyticsEngine.nightlySpo2CeilingMean(sessions, spo2)?.first
         }
         val auxSamples = repo.v18AuxSamples(owner, from, to, STREAM_LIMIT)
-        if (auxSamples.isEmpty()) return null
-        return AnalyticsEngine.nightlySpo2CandidateMean(sessions, auxSamples)?.first
+        if (auxSamples.isNotEmpty()) {
+            return AnalyticsEngine.nightlySpo2CandidateMean(sessions, auxSamples)?.first
+        }
+        // No v18 aux stream: a WHOOP 4.0. Its strap-computed byte rides the event table instead.
+        val v24Samples = repo.v24AuxByte86Samples(owner, from, to, STREAM_LIMIT)
+        if (v24Samples.isEmpty()) return null
+        return AnalyticsEngine.nightlyV24Spo2CandidateMean(sessions, v24Samples)?.first
     }
 
     /** #1575: one night's recorded trace lines, per channel. Immutable snapshot of [DayTraceRecorders]. */

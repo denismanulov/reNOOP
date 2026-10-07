@@ -903,8 +903,6 @@
     <string name="l10n_health_screen_this_vital_needs_at_least_two_0e41b8b0">This vital needs at least two historical readings before reNOOP can chart it.</string>
     <string name="l10n_health_screen_the_blood_oxygen_estimate_is_turned_4c403ab2">The blood oxygen estimate is turned off</string>
     <string name="l10n_health_screen_your_strap_reports_a_blood_oxygen_349fe34a">Your strap reports a blood oxygen estimate, but it is unverified and off by default. Turn on the strap estimate in Settings to see it, or import a WHOOP export in Data Sources for the calibrated value.</string>
-    <string name="l10n_health_screen_no_blood_oxygen_percentage_from_a_1d3d383e">No blood oxygen percentage from a WHOOP 4.0</string>
-    <string name="l10n_health_screen_your_strap_banks_the_raw_optical_b52a0f80">Your strap banks the raw optical channels, but reNOOP does not turn them into a blood oxygen percentage, so this stays empty however long you wear it. Import a WHOOP export in Data Sources to fill it from your account history.</string>
     <string name="ground_truth_title">5/MG Raw Data Collector</string>
     <string name="ground_truth_subtitle">Record a bounded 100 Hz motion session, recover Bluetooth gaps from strap history, and export the complete timeline.</string>
     <string name="ground_truth_test_centre_desc">Record, annotate, recover, and export a bounded 5/MG 100 Hz motion capture.</string>

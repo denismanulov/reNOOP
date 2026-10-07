@@ -885,8 +885,6 @@
     <string name="l10n_health_screen_this_vital_needs_at_least_two_0e41b8b0">Für dieses Vitalzeichen braucht reNOOP mindestens zwei historische Messwerte, um es darzustellen.</string>
     <string name="l10n_health_screen_the_blood_oxygen_estimate_is_turned_4c403ab2">Die Sauerstoffsättigungs-Schätzung ist deaktiviert</string>
     <string name="l10n_health_screen_your_strap_reports_a_blood_oxygen_349fe34a">Dein Strap liefert eine Schätzung der Sauerstoffsättigung, sie ist aber unbestätigt und standardmäßig aus. Aktiviere die Strap-Schätzung in den Einstellungen, oder importiere einen WHOOP-Export unter Datenquellen für den kalibrierten Wert.</string>
-    <string name="l10n_health_screen_no_blood_oxygen_percentage_from_a_1d3d383e">Kein Sauerstoffsättigungswert von einem WHOOP 4.0</string>
-    <string name="l10n_health_screen_your_strap_banks_the_raw_optical_b52a0f80">Dein Strap speichert die optischen Rohkanäle, aber reNOOP rechnet sie nicht in einen Sauerstoffsättigungswert um - dies bleibt also leer, egal wie lange du ihn trägst. Importiere einen WHOOP-Export unter Datenquellen, um es aus deinem Kontoverlauf zu füllen.</string>
     <string name="ground_truth_title">5/MG-Rohdaten-Collector</string>
     <string name="ground_truth_subtitle">Zeichnet eine begrenzte Bewegungssession mit 100 Hz auf, ergänzt Bluetooth-Lücken aus dem Strap-Verlauf und exportiert die vollständige Zeitachse.</string>
     <string name="ground_truth_test_centre_desc">Zeichne eine begrenzte 5/MG-Bewegungsaufnahme mit 100 Hz auf, markiere, vervollständige und exportiere sie.</string>

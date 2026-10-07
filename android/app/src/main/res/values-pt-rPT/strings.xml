@@ -864,8 +864,6 @@
     <string name="l10n_health_screen_this_vital_needs_at_least_two_0e41b8b0">Este sinal vital precisa de pelo menos duas leituras históricas antes de o reNOOP o poder representar.</string>
     <string name="l10n_health_screen_the_blood_oxygen_estimate_is_turned_4c403ab2">A estimativa de oxigénio no sangue está desligada</string>
     <string name="l10n_health_screen_your_strap_reports_a_blood_oxygen_349fe34a">A sua bracelete fornece uma estimativa de oxigénio no sangue, mas não está verificada e vem desligada. Ative-a nas Definições, ou importe uma exportação WHOOP em Fontes de dados para o valor calibrado.</string>
-    <string name="l10n_health_screen_no_blood_oxygen_percentage_from_a_1d3d383e">Sem percentagem de oxigénio no sangue a partir de um WHOOP 4.0</string>
-    <string name="l10n_health_screen_your_strap_banks_the_raw_optical_b52a0f80">A sua bracelete guarda os canais óticos em bruto, mas o reNOOP não os converte numa percentagem de oxigénio no sangue, por isso isto fica vazio por muito tempo que a use. Importe uma exportação WHOOP em Fontes de dados para preencher a partir do seu histórico.</string>
     <string name="ground_truth_title">Recolha de dados em bruto 5/MG</string>
     <string name="ground_truth_subtitle">Grave uma sessão de movimento limitada a 100 Hz, recupere falhas de Bluetooth do histórico da bracelete e exporte a cronologia completa.</string>
     <string name="ground_truth_test_centre_desc">Grave, anote, recupere e exporte uma captura de movimento 5/MG limitada a 100 Hz.</string>
