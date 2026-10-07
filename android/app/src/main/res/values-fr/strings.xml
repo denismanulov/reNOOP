@@ -2411,4 +2411,6 @@
     <string name="other_app_syncing_message">Une autre app récupère aussi l’historique de votre bracelet. Chaque heure va à l’app qui synchronise en premier, l’autre la perd. Gardez une seule app : désinstallez l’autre ou retirez-lui l’autorisation « Appareils à proximité » dans les Paramètres.</string>
     <string name="other_app_syncing_message_uninstall">Une autre app récupère aussi l’historique de votre bracelet. Chaque heure va à l’app qui synchronise en premier, l’autre la perd. Gardez une seule app : désinstallez l’autre.</string>
     <string name="other_app_syncing_installed">Installé sur cet appareil : %1$s.</string>
+    <string name="settings_steps_auto_calibration">Calibration automatique des pas (WHOOP 4.0)</string>
+    <string name="settings_steps_learned_divisor_today">Diviseur appris aujourd\'hui</string>
 </resources>

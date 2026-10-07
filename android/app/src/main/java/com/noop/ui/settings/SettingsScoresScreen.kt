@@ -20,7 +20,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.noop.R
+import com.noop.analytics.AnalyticsEngine
 import com.noop.analytics.Baselines
+import com.noop.data.StepCalibrationStore
 import com.noop.ui.AppViewModel
 import com.noop.ui.Destination
 import com.noop.ui.EffortScale
@@ -39,7 +41,8 @@ import java.util.Locale
 // MARK: - Scores (twin of iOS ScoresSettingsPage)
 //
 // Effort: the display scale (0-100 or WHOOP's 0-21, display only) and the exponential (Banister) recipe,
-// which re-scores the window. Steps: the 5/MG counter divisor and the WHOOP 4.0 steps estimate. Charge:
+// which re-scores the window. Steps: the counter divisor, the Experimental WHOOP 4.0 auto step calibration
+// (default off; a switch re-scores) with today's learned divisor, and the WHOOP 4.0 steps estimate. Charge:
 // the HRV window (changes the number, so a switch re-scores) and the baseline reset, confirmed first.
 
 private enum class ScoresDialog { EFFORT_SCALE, HRV_WINDOW, RESET }
@@ -55,6 +58,10 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
     var effortScale by remember { mutableStateOf(UnitPrefs.effortScale(context)) }
     var banister by remember { mutableStateOf(NoopPrefs.banisterEffort(context)) }
     var hrvWindow by remember { mutableStateOf(UnitPrefs.hrvWindow(context)) }
+    // Experimental, default off: learn the WHOOP 4.0 ticks-per-step divisor from short raw-accelerometer
+    // measurements instead of using the manual one. Changes each day's step total, so a switch re-scores.
+    val stepPrefs = remember { NoopPrefs.stepCalibrationPrefs(context) }
+    var stepAutoCalibration by remember { mutableStateOf(StepCalibrationStore.isEnabled(stepPrefs)) }
 
     val scaleLabels = listOf("0-100", "0-21")
     val windowLabels = listOf(stringResource(R.string.settings_hrv_night), stringResource(R.string.settings_hrv_deep_sleep))
@@ -73,6 +80,15 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
             ),
         )
         else -> stringResource(R.string.settings_not_calibrated)
+    }
+    // Today's learned divisor and how many measurements stand behind the calibration so far. Resolved
+    // through the same store the scoring pass reads, with the manual divisor shown in the row above.
+    val learnedDivisor = remember(stepAutoCalibration, rev) {
+        val today = localToday()
+        learnedDivisorSummary(
+            StepCalibrationStore.snapshot(manual = profile.stepTicksPerStep, today = today, prefs = stepPrefs),
+            today,
+        )
     }
 
     SettingsPage(title = stringResource(R.string.settings_scores), onBack = onBack) {
@@ -120,6 +136,18 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
                             }
                         },
                     )
+                }
+                item { shape ->
+                    SwitchRow(shape, stringResource(R.string.settings_steps_auto_calibration), stepAutoCalibration, {
+                        stepAutoCalibration = it
+                        vm.setStepAutoCalibration(it)
+                    })
+                }
+                if (stepAutoCalibration) {
+                    item { shape ->
+                        ValueRow(shape, stringResource(R.string.settings_steps_learned_divisor_today),
+                            learnedDivisor, onClick = null)
+                    }
                 }
                 item { shape ->
                     ValueRow(shape, stringResource(R.string.l10n_settings_screen_steps_estimate_ce7a604d), stepsSummary) {
@@ -202,4 +230,16 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
     if (showGuide) {
         FullScreenSheet(onDismiss = { showGuide = false }) { ScoringGuideScreen(onClose = { showGuide = false }) }
     }
+}
+
+/** The local day (`yyyy-MM-dd`) the scoring pass calls today. */
+private fun localToday(): String {
+    val now = System.currentTimeMillis() / 1000L
+    return AnalyticsEngine.dayString(now, java.util.TimeZone.getDefault().getOffset(now * 1_000L) / 1_000L)
+}
+
+/** "1.26 (3)": [today]'s divisor to two places, then the measurements accepted so far. */
+private fun learnedDivisorSummary(snapshot: StepCalibrationStore.Snapshot, today: String): String {
+    val divisor = String.format(Locale.getDefault(), "%.2f", snapshot.factor(today))
+    return "$divisor (${snapshot.state?.accepted ?: 0})"
 }

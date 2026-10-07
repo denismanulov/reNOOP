@@ -2426,4 +2426,6 @@
     <string name="other_app_syncing_message">Eine andere App ruft ebenfalls den Verlauf deines Armbands ab. Jede Stunde erhält die App, die zuerst synchronisiert – der anderen fehlt sie. Behalte eine App: Deinstalliere die andere oder entziehe ihr in den Einstellungen die Berechtigung „Geräte in der Nähe“.</string>
     <string name="other_app_syncing_message_uninstall">Eine andere App ruft ebenfalls den Verlauf deines Armbands ab. Jede Stunde erhält die App, die zuerst synchronisiert – der anderen fehlt sie. Behalte eine App: Deinstalliere die andere.</string>
     <string name="other_app_syncing_installed">Auf diesem Gerät installiert: %1$s.</string>
+    <string name="settings_steps_auto_calibration">Automatische Schritt-Kalibrierung (WHOOP 4.0)</string>
+    <string name="settings_steps_learned_divisor_today">Heute gelernter Teiler</string>
 </resources>

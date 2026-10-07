@@ -3,6 +3,7 @@ package com.noop.analytics
 import com.noop.data.DailyMetric
 import com.noop.data.MetricSeriesRow
 import com.noop.data.SleepSession
+import com.noop.data.StepCalibrationStore
 import com.noop.data.WhoopRepository
 
 /** Narrow adapter between the generic day-cycle domain and the legacy scoring orchestrator. */
@@ -116,6 +117,9 @@ internal object DayCycleIntelligenceIntegration {
         profile: UserProfile,
         maxHROverride: Double?,
         effortMethod: StrainScorer.Method,
+        // Each wake day's own divisor when step auto-calibration supplies one; null = [stepTicksPerStep]
+        // for every day. Twin of the Swift `stepFactors:` argument.
+        stepFactors: StepCalibrationStore.Snapshot? = null,
     ): PhysiologicalStepCycleEngine.Result {
         val witnesses = scoredNights.associate { result ->
             result.daily.day to dayWitness(resolvedOwners[result.daily.day].orEmpty(), result)
@@ -123,7 +127,7 @@ internal object DayCycleIntelligenceIntegration {
         return PhysiologicalStepCycleEngine.compute(
             scoredNights, editedRows, resolvedOwners, candidatePriorities, witnesses, repo,
             tzOffsetSeconds, habitualMidsleepSec, windowStart, nowSeconds, stepTicksPerStep, traceSink, mode,
-            profile, maxHROverride, effortMethod,
+            profile, maxHROverride, effortMethod, stepFactors,
         )
     }
 

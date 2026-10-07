@@ -2382,4 +2382,6 @@
     <string name="other_app_syncing_message">Anche un’altra app scarica la cronologia della fascia. Ogni ora va all’app che sincronizza per prima, all’altra manca. Tienine una sola: disinstalla l’altra o revocale l’autorizzazione «Dispositivi nelle vicinanze» nelle Impostazioni.</string>
     <string name="other_app_syncing_message_uninstall">Anche un’altra app scarica la cronologia della fascia. Ogni ora va all’app che sincronizza per prima, all’altra manca. Tienine una sola: disinstalla l’altra.</string>
     <string name="other_app_syncing_installed">Installato su questo dispositivo: %1$s.</string>
+    <string name="settings_steps_auto_calibration">Calibrazione automatica dei passi (WHOOP 4.0)</string>
+    <string name="settings_steps_learned_divisor_today">Divisore appreso oggi</string>
 </resources>

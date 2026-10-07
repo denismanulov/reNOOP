@@ -1139,6 +1139,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // WHOOP5 skin-temp scale into every day of it.
                     ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
                     preserveUnscoredHistory = true,
+                    stepDivisors = NoopPrefs.stepDivisors(appContext),
                 )
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             while (isActive) {
@@ -1205,6 +1206,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // re-folds (see StepsMotionCache).
                         stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(appContext) },
                         stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
+                        // WHOOP 4.0 step auto-calibration: each day's own ticks-per-step divisor. With the
+                        // opt-in off (the default) this is the manual divisor for every day, as before.
+                        stepDivisors = NoopPrefs.stepDivisors(appContext),
                         // Manual "Recalibrate baseline" anchor (Settings → Charge advanced). The analytics
                         // layer is Context-free, so read the epoch (whole seconds, written as a Long by the
                         // button) here and thread it down — foldHistory drops every HRV night before it.
@@ -1945,6 +1949,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // re-folds (see StepsMotionCache).
                 stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(appContext) },
                 stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
+                // The same per-day step divisors the 15-min loop passes (step auto-calibration).
+                stepDivisors = NoopPrefs.stepDivisors(appContext),
                 baselineEpoch = NoopPrefs.of(appContext)
                     .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
                 recoveryEpoch = NoopPrefs.of(appContext)
@@ -2151,7 +2157,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (to <= from) return null
         val samples = runCatching { repository.stepSamples(deviceId, from, to) }.getOrDefault(emptyList())
         val ticks = com.noop.analytics.StepsCounter.stepsInWindow(samples) ?: return null
-        val scaled = (ticks.toDouble() / maxOf(profileStore.stepTicksPerStep, 0.5)).roundToInt()
+        // The workout's own day's divisor, so a session and its day never disagree. With step
+        // auto-calibration off this is the manual divisor, as before.
+        val now = System.currentTimeMillis() / 1000L
+        val tz = java.util.TimeZone.getDefault().getOffset(now * 1_000L) / 1_000L
+        val divisor = NoopPrefs.stepDivisors(appContext)(
+            profileStore.stepTicksPerStep, com.noop.analytics.AnalyticsEngine.dayString(now, tz),
+        ).factor(com.noop.analytics.AnalyticsEngine.dayString(from, tz))
+        val scaled = (ticks.toDouble() / maxOf(divisor, 0.5)).roundToInt()
         return if (scaled > 0) scaled else null
     }
 
@@ -2940,6 +2953,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *  iOS SettingsView `.onChangeCompat` → `analyzeRecent()` pattern. */
     fun setSpo2CandidateDisplay(enabled: Boolean) {
         NoopPrefs.setSpo2CandidateDisplay(appContext, enabled)
+        viewModelScope.launch { rescoreAfterEdit() }
+    }
+
+    /** WHOOP 4.0 step auto-calibration (Experimental, default off). The switch changes which divisor each
+     *  day's step total uses, so it re-scores, like the iOS toggle's onChange handler. */
+    fun setStepAutoCalibration(enabled: Boolean) {
+        com.noop.data.StepCalibrationStore.setEnabled(NoopPrefs.stepCalibrationPrefs(appContext), enabled)
         viewModelScope.launch { rescoreAfterEdit() }
     }
 

@@ -7,6 +7,7 @@ import com.noop.data.MetricSeriesRow
 import com.noop.data.OuraRespScale
 import com.noop.data.ScoreInputProvenanceRow
 import com.noop.data.SleepSession
+import com.noop.data.StepCalibrationStore
 import com.noop.data.Vo2MaxEstimator
 import com.noop.data.WhoopRepository
 import com.noop.data.WorkoutRow
@@ -124,6 +125,44 @@ object IntelligenceEngine {
 
     // Guarded by analyzeGate; kept as state to avoid another parameter on the bytecode-budgeted pass.
     private var preserveUnscoredHistoryForRun = false
+
+    /**
+     * Each day's ticks-per-step divisor for the pass in flight, resolved once in [analyzeRecent] so the
+     * day cache key, the per-day profile, the raw-counter trace and the day-cycle step total all read the
+     * same value. With WHOOP 4.0 step auto-calibration off (the default) it answers the pass's manual
+     * divisor for every day. A field for the same reason as [preserveUnscoredHistoryForRun]; guarded by
+     * [analyzeGate]. Twin of the Swift pass-local `stepFactors`.
+     */
+    private var stepFactorsForRun = StepCalibrationStore.Snapshot(state = null, manual = 1.0)
+
+    /**
+     * Resolves [stepFactorsForRun] for a pass over [profile] at [nowSeconds]. Without a resolver (tests,
+     * pure-JVM callers) every day uses the profile's manual divisor. "Today" is the local day of
+     * [nowSeconds] under the same offset `analyzeRecentOnCpu` derives for the pass.
+     */
+    private fun resolveStepFactors(
+        stepDivisors: ((manual: Double, today: String) -> StepCalibrationStore.Snapshot)?,
+        profile: UserProfile,
+        nowSeconds: Long,
+    ): StepCalibrationStore.Snapshot {
+        val manual = profile.stepTicksPerStep
+        if (stepDivisors == null) return StepCalibrationStore.Snapshot(state = null, manual = manual)
+        val tzOffsetSeconds = java.util.TimeZone.getDefault().getOffset(nowSeconds * 1_000L) / 1_000L
+        return stepDivisors(manual, AnalyticsEngine.dayString(nowSeconds, tzOffsetSeconds))
+    }
+
+    /**
+     * [profile] with [day]'s own step divisor, for `analyzeDay`. The same object when the divisor is the
+     * profile's own, which is every day while step auto-calibration is off.
+     */
+    internal fun dayProfile(
+        profile: UserProfile, day: String,
+        factors: StepCalibrationStore.Snapshot = stepFactorsForRun,
+    ): UserProfile {
+        val divisor = factors.factor(day)
+        return if (divisor.toRawBits() == profile.stepTicksPerStep.toRawBits()) profile
+        else profile.copy(stepTicksPerStep = divisor)
+    }
 
     /** One reused night: its per-day cache [key], the scored [res], and everything the pass-1 loop otherwise
      *  writes into function-scoped per-day maps that pass 2 reads (owner/hrRows/primary-session RHR/SpO₂
@@ -354,12 +393,13 @@ object IntelligenceEngine {
      */
     private fun emitStepsRawTrace(
         sink: ((String) -> Unit)?, daySteps: List<com.noop.data.StepSample>,
-        day: String, tzOffsetSeconds: Long, ticksPerStep: Double,
+        day: String, tzOffsetSeconds: Long,
     ) {
         if (sink == null || daySteps.isEmpty()) return
         for (line in StepsEstimateEngineTrace.rawCounterTrace(
             daySteps = daySteps, dayKey = day, tzOffsetSeconds = tzOffsetSeconds,
-            ticksPerStep = ticksPerStep,
+            // The day's own divisor, the one `analyzeDay` just scaled this day's total by.
+            ticksPerStep = stepFactorsForRun.factor(day),
         )) {
             sink(line)
         }
@@ -503,6 +543,12 @@ object IntelligenceEngine {
         stepsMotionCacheGet: (() -> String?)? = null,
         stepsMotionCacheSet: ((String) -> Unit)? = null,
         preserveUnscoredHistory: Boolean = false,
+        // WHOOP 4.0 step auto-calibration (Experimental, default off): resolves each day's ticks-per-step
+        // divisor for this pass from the manual divisor and today's local day. Context-free like the rest
+        // of this layer: the Context-aware caller wires it to StepCalibrationStore.snapshot over its
+        // preferences. null (the default) = every day uses `profile.stepTicksPerStep`, as before. Called
+        // once per pass. Swift reads the same snapshot inside `analyzeRecent`.
+        stepDivisors: ((manual: Double, today: String) -> StepCalibrationStore.Snapshot)? = null,
     ): List<Computed> = withContext(Dispatchers.Default) {
         // #1005: time the whole pass so a re-score STORM is visible in the strap log (the trigger lines
         // record WHY each pass runs; this records how many nights and how long — the CPU cost per run).
@@ -521,6 +567,7 @@ object IntelligenceEngine {
             // wrapper, never in `analyzeRecentOnCpu`, whose ratchet margin has no room for either.
             StoreProbeTally.reset()
             preserveUnscoredHistoryForRun = preserveUnscoredHistory
+            stepFactorsForRun = resolveStepFactors(stepDivisors, profile, nowSeconds)
             if (!stepsMotionCacheLoaded && stepsMotionCacheGet != null) {
                 stepsMotionCacheLoaded = true
                 val raw = stepsMotionCacheGet()
@@ -605,6 +652,9 @@ object IntelligenceEngine {
         // once. Without it every day of that rewrite reads the skin-temp scale as WHOOP5 (see analyzeRecent).
         ownerSource: DayOwnerSource? = null,
         preserveUnscoredHistory: Boolean = true,
+        // The same per-day step divisors every other pass uses (see [analyzeRecent]); this pass rewrites
+        // the full history, so without them it would put the manual divisor back on every learned day.
+        stepDivisors: ((manual: Double, today: String) -> StepCalibrationStore.Snapshot)? = null,
     ) {
         if (flagGet()) return
         analyzeRecent(
@@ -615,6 +665,7 @@ object IntelligenceEngine {
             maxHROverride = maxHROverride,
             ownerSource = ownerSource,
             preserveUnscoredHistory = preserveUnscoredHistory,
+            stepDivisors = stepDivisors,
         )
         flagSet()
     }
@@ -959,7 +1010,7 @@ object IntelligenceEngine {
                     skinAnchorResolvedOwners.add(owner)
                 }
                 val key = rrAwareDayCacheKey(
-                    repo, owner, from, to, skinAnchorByOwner[owner],
+                    repo, owner, day, from, to, skinAnchorByOwner[owner],
                     unlabelledAliasOfWhoop5 = activeWhoop5RR && owner == com.noop.data.WhoopRepository.WHOOP_SOURCE,
                     // #1575: `&& hrvTraceSink != null` matters. With the HRV trace OFF no detail line
                     // is ever produced, so the flag describes nothing — but it would still flip at
@@ -1176,7 +1227,9 @@ object IntelligenceEngine {
                 skinTempAnchorRaw = skinAnchorRaw,   // #938 second capture: per-device worn anchor
                 skinTempWornToleranceSec = skinWornToleranceSec,   // #1467
                 spo2 = spo2,                   // #93
-                profile = profile,
+                // The day's own step divisor (WHOOP 4.0 step auto-calibration). `profile` itself, the same
+                // object, while that is off.
+                profile = dayProfile(profile, day),
                 baselines = baselines1,
                 maxHROverride = maxHROverride,
                 tzOffsetSeconds = tzOffsetSeconds,
@@ -1394,7 +1447,7 @@ object IntelligenceEngine {
             // motion-estimated, surfaced by the calibration/estimate trace below). Skipping the call here
             // stops the 4.0 export carrying a "counterSamples=0 ... need >=2" line that read as broken; a
             // 5/MG always banks counter rows so this never suppresses its real trace.
-            emitStepsRawTrace(dayTrace.stepsRec, daySteps, day, tzOffsetSeconds, profile.stepTicksPerStep)
+            emitStepsRawTrace(dayTrace.stepsRec, daySteps, day, tzOffsetSeconds)
 
             // Harvest the baseline-independent nightly aggregates (a day with no detected
             // sleep yields null → recorded as a missing night, i.e. skip-and-hold). The raw
@@ -1661,7 +1714,7 @@ object IntelligenceEngine {
             scoredNights, editedRows, resolvedScoreOwnerByDay, candidatePriorities, repo,
             tzOffsetSeconds, habitualMidsleepSec, windowStart, nowSeconds, profile.stepTicksPerStep,
             stepsTraceSink, dayCycleMode,
-            profile, maxHROverride, effortMethod,
+            profile, maxHROverride, effortMethod, stepFactorsForRun,
         )
 
         for (res in scoredNights) {
@@ -3013,13 +3066,17 @@ object IntelligenceEngine {
     /** Keep both stream witnesses and the R-R alias policy in the nightly cache key (#29).
      * The two database awaits live here to preserve the scoring method's instrumentation budget. */
     private suspend fun rrAwareDayCacheKey(
-        repo: com.noop.data.WhoopRepository, owner: String, from: Long, to: Long,
+        repo: com.noop.data.WhoopRepository, owner: String, day: String, from: Long, to: Long,
         skinAnchor: Double?, unlabelledAliasOfWhoop5: Boolean, hrvWindowDetail: Boolean,
     ): String {
         val (count, maxTs) = repo.hrFingerprintWindow(owner, from, to)
         val streams = repo.dayStreamFingerprint(owner, from, to)
+        // The day's own step divisor rides in the same slot: a learned factor moves for one day at a
+        // time, so it must invalidate that day and no other (see [AnalyzeRecentDayCache.streamsWitness]).
         return AnalyzeRecentDayCache.cacheKey(owner, count, maxTs, skinAnchor,
-            streams = streams + "|rrAlias5=$unlabelledAliasOfWhoop5", hrvWindowDetail = hrvWindowDetail)
+            streams = AnalyzeRecentDayCache.streamsWitness(
+                streams, unlabelledAliasOfWhoop5, stepFactorsForRun.factor(day)),
+            hrvWindowDetail = hrvWindowDetail)
     }
 
     /** The pass-1 R-R sliding read window. Same reason as [hrReadWindow] for living out here. */

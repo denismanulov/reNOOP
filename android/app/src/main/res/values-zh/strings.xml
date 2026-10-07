@@ -2392,4 +2392,6 @@
     <string name="other_app_syncing_message">另一个 App 也在读取你手环的历史数据。每一小时的数据只会给最先同步的 App，另一个会缺失。请只保留一个：卸载另一个，或在“设置”中关闭它的“附近的设备”权限。</string>
     <string name="other_app_syncing_message_uninstall">另一个 App 也在读取你手环的历史数据。每一小时的数据只会给最先同步的 App，另一个会缺失。请只保留一个：卸载另一个。</string>
     <string name="other_app_syncing_installed">此设备上已安装：%1$s。</string>
+    <string name="settings_steps_auto_calibration">自动步数校准（WHOOP 4.0）</string>
+    <string name="settings_steps_learned_divisor_today">今日学习的除数</string>
 </resources>

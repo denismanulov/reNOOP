@@ -2441,4 +2441,6 @@
     <string name="other_app_syncing_message">Another app also pulls your strap\'s history. Each hour goes to whichever app syncs first, so the other misses it. Keep one app: uninstall the other, or turn off its Nearby devices permission in Settings.</string>
     <string name="other_app_syncing_message_uninstall">Another app also pulls your strap\'s history. Each hour goes to whichever app syncs first, so the other misses it. Keep one app: uninstall the other.</string>
     <string name="other_app_syncing_installed">Installed on this device: %1$s.</string>
+    <string name="settings_steps_auto_calibration">Auto step calibration (WHOOP 4.0)</string>
+    <string name="settings_steps_learned_divisor_today">Learned divisor today</string>
 </resources>

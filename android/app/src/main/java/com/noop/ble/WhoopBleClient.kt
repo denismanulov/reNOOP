@@ -3252,6 +3252,10 @@ class WhoopBleClient(
                         // re-folds (see StepsMotionCache).
                         stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(context) },
                         stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(context, it) },
+                        // WHOOP 4.0 step auto-calibration: the same per-day divisors the UI's passes use, so
+                        // this pass and theirs cannot re-score a day back and forth. The manual divisor for
+                        // every day while the opt-in is off (the default).
+                        stepDivisors = NoopPrefs.stepDivisors(context),
                         // Manual "Recalibrate baseline" anchor (noop.hrvBaselineEpoch, whole seconds in a
                         // Long). The analytics layer is Context-free, so read it here and thread it down so
                         // the post-backfill scoring pass honours the recalibration too — not just the UI's

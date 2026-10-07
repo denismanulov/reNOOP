@@ -2405,4 +2405,6 @@
     <string name="other_app_syncing_message">Outra app também recolhe o histórico da pulseira. Cada hora vai para a app que sincroniza primeiro e a outra perde-a. Mantenha uma: desinstale a outra ou retire-lhe a permissão «Dispositivos próximos» nas Definições.</string>
     <string name="other_app_syncing_message_uninstall">Outra app também recolhe o histórico da pulseira. Cada hora vai para a app que sincroniza primeiro e a outra perde-a. Mantenha uma: desinstale a outra.</string>
     <string name="other_app_syncing_installed">Instalado neste dispositivo: %1$s.</string>
+    <string name="settings_steps_auto_calibration">Calibração automática de passos (WHOOP 4.0)</string>
+    <string name="settings_steps_learned_divisor_today">Divisor aprendido hoje</string>
 </resources>

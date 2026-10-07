@@ -504,6 +504,20 @@ object NoopPrefs {
         of(context).edit().putString(KEY_STEPS_MOTION_CACHE, payload).apply()
     }
 
+    /** Where WHOOP 4.0 step auto-calibration keeps its opt-in and its learned state, under the Swift key
+     *  names (`stepAutoCalibration.*`). Experimental, default off, and not in the `.noopbak` whitelist. */
+    fun stepCalibrationPrefs(context: Context): com.noop.data.KeyValuePrefs =
+        com.noop.data.SharedKeyValuePrefs(of(context))
+
+    /** The per-day step divisor resolver EVERY scoring pass is given
+     *  ([com.noop.analytics.IntelligenceEngine.analyzeRecent]'s `stepDivisors`). One function, so two
+     *  passes cannot resolve a day's divisor differently and re-score each other's days back and forth.
+     *  With the opt-in off it answers the manual divisor for every day and touches no stored state. */
+    fun stepDivisors(context: Context): (Double, String) -> com.noop.data.StepCalibrationStore.Snapshot {
+        val prefs = stepCalibrationPrefs(context)
+        return { manual, today -> com.noop.data.StepCalibrationStore.snapshot(manual, today, prefs) }
+    }
+
     /** Whether NOOP should hold the strap connection open via a foreground service. Default true. */
     fun backgroundConnection(context: Context): Boolean =
         of(context).getBoolean(KEY_BACKGROUND_CONNECTION, true)
