@@ -572,7 +572,8 @@ internal fun BigDuration(minutes: Double, color: Color = MaterialTheme.colorSche
 /**
  * A bar per day of the week, as tall as the time asleep, against a dashed line at the score's target with
  * the target written at its end. The night on the page (the last bar) is in the Sleep hue, the others paler;
- * a day with no night keeps its letter and draws no bar.
+ * a day with no night keeps its letter and draws no bar. A bar is a pill while it is taller than it is wide;
+ * a shorter night keeps its true height and rounds less, so an hour of sleep never draws as two.
  */
 @Composable
 private fun SleepWeekBars(week: SleepWeek, locale: Locale, modifier: Modifier) {
@@ -597,14 +598,14 @@ private fun SleepWeekBars(week: SleepWeek, locale: Locale, modifier: Modifier) {
         val n = week.days.size.coerceAtLeast(1)
         val slot = plotW / n
         val barW = min(slot * 0.6f, 30.dp.toPx())
-        val radius = barW / 2
         week.asleepMin.forEachIndexed { i, v ->
             val cx = slot * (i + 0.5f)
             if (v != null && v > 0) {
-                val barTop = min(y(v), plotH - radius * 2)
+                val barH = max(3.dp.toPx(), plotH - y(v))
+                val radius = min(barW, barH) / 2
                 drawRoundRect(
                     if (i == week.asleepMin.lastIndex) hue else hue.copy(alpha = 0.4f),
-                    Offset(cx - barW / 2, barTop), Size(barW, plotH - barTop), CornerRadius(radius, radius),
+                    Offset(cx - barW / 2, plotH - barH), Size(barW, barH), CornerRadius(radius, radius),
                 )
             }
             val letter = measurer.measure(letters[i], labelStyle)

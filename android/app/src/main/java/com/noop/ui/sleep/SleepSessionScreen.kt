@@ -400,7 +400,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawUsualBand(x1: F
 /**
  * Heart rate through the sleep: the lowest and highest beat as figures, then the three-minute means as a
  * line between the sleep's two times. The figures are the samples' own extremes ([HrBucket.minBpm],
- * [HrBucket.maxBpm]), not the extremes of the means the line draws.
+ * [HrBucket.maxBpm]), not the extremes of the means the line draws, and the chart's two rules are drawn
+ * round those same extremes: an axis fitted to the means would print a narrower pair of numbers under a
+ * headline that says otherwise.
  */
 @Composable
 private fun SleepHeartCard(points: List<HrBucket>, startTs: Long, endTs: Long, is24h: Boolean, locale: Locale) {
@@ -420,8 +422,8 @@ private fun SleepHeartCard(points: List<HrBucket>, startTs: Long, endTs: Long, i
             color = MaterialTheme.colorScheme.onSurface,
         )
         Canvas(Modifier.fillMaxWidth().height(120.dp).clearAndSetSemantics { contentDescription = range }) {
-            val lo = floor(points.minOf { it.avgBpm } / 5) * 5
-            val hi = max(lo + 10, ceil(points.maxOf { it.avgBpm } / 5) * 5)
+            val lo = floor(lowest / 5.0) * 5
+            val hi = max(lo + 10, ceil(highest / 5.0) * 5)
             val labels = listOf(hi, lo).map { measurer.measure(it.roundToInt().toString(), labelStyle) }
             val axisW = labels.maxOf { it.size.width } + 6.dp.toPx()
             val plotW = size.width - axisW
