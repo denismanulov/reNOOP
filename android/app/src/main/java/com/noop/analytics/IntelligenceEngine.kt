@@ -902,9 +902,10 @@ object IntelligenceEngine {
         // rather than drift, so no tolerance both preserves scores and stops the drop. What keeps it
         // affordable is that the post-backfill re-score is COALESCED on both platforms: Android gates on
         // [analyzeAfterBackfillScheduled] plus POST_BACKFILL_ANALYZE_DELAY_MS, iOS debounces lastSyncedAt by
-        // 2 s (#755). So this fires once per completed backfill, not once per chunk. That coalescing is
-        // load-bearing for the cache — removing it would reintroduce the #1402 storm in a form no signature
-        // change can fix.
+        // 2 s (#755), and both hold the pass while the offload burst is still running (at most ten
+        // minutes; `PostOffloadScoringHold` here). So this fires once per completed backfill, not once
+        // per chunk. That coalescing is load-bearing for the cache — removing it would reintroduce the
+        // #1402 storm in a form no signature change can fix.
         // Field names live in [DAY_CACHE_CONFIG_FIELDS], in this exact order, so that this stays a plain
         // value list and costs the bytecode ratchet nothing. Add or reorder here and add or reorder there:
         // [changedConfigField] refuses to name anything when the counts disagree, but it cannot see a

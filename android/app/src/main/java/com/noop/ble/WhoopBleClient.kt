@@ -1043,7 +1043,8 @@ class WhoopBleClient(
         /** 5/MG zero-frame retry: pause before re-requesting history when a session timed out having
          *  produced nothing (the first request after connect can go entirely unanswered). */
         private const val WHOOP5_HISTORY_RETRY_DELAY_MS = 700L
-        /** Debounce between a committed backfill chunk and the on-device scoring pass it schedules. */
+        /** Debounce between a committed backfill chunk and the on-device scoring pass it schedules.
+         *  [PostOffloadScoringHold] then keeps the pass back while the offload is still running. */
         private const val POST_BACKFILL_ANALYZE_DELAY_MS = 1_500L
         /** #174: window after the last offload frame/HISTORY_COMPLETE during which a type-0x2F frame is
          *  treated as trailing-historical, not live. Mirrors macOS deepPacketLiveCooldownSeconds (10s). */
@@ -3189,6 +3190,16 @@ class WhoopBleClient(
         ioScope.launch {
             try {
                 delay(POST_BACKFILL_ANALYZE_DELAY_MS) // let trailing chunks of the same session land
+                // Then wait for the offload itself to be over (at most ten minutes), so one pass scores
+                // the whole burst instead of a pass starting beside its first chunk and another queuing
+                // behind it. Only this re-score waits; see [PostOffloadScoringHold].
+                PostOffloadScoringHold.logLine(
+                    PostOffloadScoringHold.await(offloadRunning = { _state.value.backfilling }),
+                )?.let { log(it) }
+                // A chunk that asked for a pass while this one was waiting has been answered: its rows
+                // were stored before it asked, so the fingerprint and the pass below both read them. A
+                // chunk that lands from here on sets the flag again and gets the retry in `finally`.
+                analyzeAfterBackfillPending.set(false)
                 val profileStore = ProfileStore.from(context)
                 // #1493: was built longhand here and silently omitted waistCm, so this pass scored VO₂max
                 // with the Uth fallback while the 15-minute pass used the waist-based Nes estimate — the
