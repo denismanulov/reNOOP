@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.noop.R
 import com.noop.data.DataBackup
+import com.noop.data.LiveStoreReplacement
 import com.noop.ingest.WhoopCsvExporter
 import com.noop.ui.AppViewModel
 import com.noop.ui.BackupSync
@@ -84,24 +85,30 @@ internal fun SettingsBackupScreen(vm: AppViewModel, onBack: () -> Unit) {
     val csvExported = stringResource(R.string.settings_csv_exported)
     val restarting = stringResource(R.string.settings_restored_restarting)
 
-    /** The restore itself, after the reader said yes. A successful one restarts reNOOP (#57). */
+    /**
+     * The restore itself, after the reader said yes. A successful one restarts reNOOP (#57); one that
+     * failed after it had begun the swap restarts it when its message is dismissed (see the failure dialog).
+     */
     fun runRestore(uri: Uri, allowOversize: Boolean = false) {
         busy = true
         scope.launch {
             try {
-                when (val r = withContext(Dispatchers.IO) { DataBackup.importFrom(context, uri, allowOversize) }) {
-                    is DataBackup.ImportResult.NeedsRestart -> {
-                        Toast.makeText(context, restarting, Toast.LENGTH_LONG).show()
-                        // The database file is already swapped; the restart must finish even if this page
-                        // leaves composition, or the strap could keep syncing into the closed database.
-                        withContext(NonCancellable) {
+                // Not cancellable from the start. This scope is cancelled when the page leaves composition
+                // (Back, another tab, a rotation), and a cancelled `withContext` discards its result: the
+                // import ran to the end on its IO thread, the database file was swapped, and the restart
+                // below never ran. `LiveStoreReplacement` keeps the strap's history safe meanwhile; this
+                // makes the restart happen.
+                withContext(NonCancellable) {
+                    when (val r = withContext(Dispatchers.IO) { DataBackup.importFrom(context, uri, allowOversize) }) {
+                        is DataBackup.ImportResult.NeedsRestart -> {
+                            Toast.makeText(context, restarting, Toast.LENGTH_LONG).show()
                             delay(800)
                             restartApp(context)
                         }
+                        is DataBackup.ImportResult.Failed -> failure = r.message
+                        // #1807: refused only for size, which is recoverable: offer to go ahead, once.
+                        is DataBackup.ImportResult.TooLarge -> if (allowOversize) failure = r.message else oversize = uri to r.message
                     }
-                    is DataBackup.ImportResult.Failed -> failure = r.message
-                    // #1807: refused only for size, which is recoverable: offer to go ahead, once.
-                    is DataBackup.ImportResult.TooLarge -> if (allowOversize) failure = r.message else oversize = uri to r.message
                 }
             } finally {
                 busy = false
@@ -360,7 +367,20 @@ internal fun SettingsBackupScreen(vm: AppViewModel, onBack: () -> Unit) {
         )
     }
     failure?.let { message ->
-        BackupProblemDialog(message = message, onDismiss = { failure = null })
+        // A restore that failed after it had begun the swap has replaced the live database file under
+        // this process all the same (the backup went in, then the rollback put the old file back or
+        // removed the damaged one), so the offload holds every ack until the process is gone
+        // (`LiveStoreReplacement`). Say so under the failure, and restart when it is dismissed: every
+        // way out of the dialog leaves the same process behind.
+        val mustRestart = LiveStoreReplacement.happened
+        BackupProblemDialog(
+            message = if (mustRestart) message + "\n\n" + stringResource(R.string.settings_restore_needs_restart) else message,
+            confirmLabel = stringResource(if (mustRestart) R.string.settings_restart_renoop else R.string.summary_ok),
+            onDismiss = {
+                failure = null
+                if (mustRestart) restartApp(context)
+            },
+        )
     }
 }
 
@@ -369,13 +389,13 @@ internal fun SettingsBackupScreen(vm: AppViewModel, onBack: () -> Unit) {
  * cut off (#1014), so they get a dialog, with Copy so a corruption report carries SQLite's own words.
  */
 @Composable
-private fun BackupProblemDialog(message: String, onDismiss: () -> Unit) {
+private fun BackupProblemDialog(message: String, confirmLabel: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_backup_problem)) },
         text = { Text(message) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.summary_ok)) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(confirmLabel) } },
         dismissButton = {
             TextButton(onClick = {
                 val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager

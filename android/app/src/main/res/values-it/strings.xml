@@ -2367,4 +2367,6 @@
     <string name="sleep_explain_range">Ogni rilevazione viene confrontata con il tuo intervallo abituale, ricavato dalle tue ultime 28 notti. Una rilevazione fuori dall’intervallo non è una diagnosi: indica che questa notte è stata diversa dal tuo solito, come può accadere dopo l’alcol, un allenamento intenso, una cena tardiva o all’inizio di una malattia.</string>
     <string name="sleep_explain_week">Ogni barra è il tempo di sonno di una notte, e l’ultima è la notte di questa pagina. La linea tratteggiata indica le %1$s che il punteggio considera una notte piena.</string>
     <string name="sleep_explain_debt">Una stima del sonno che devi ancora recuperare dopo le ultime 14 notti, misurata rispetto a un fabbisogno di %1$s a notte. Dormire più di quel fabbisogno lo ripaga; il sonno in più non si accumula.</string>
+    <string name="settings_restore_needs_restart">Il ripristino aveva già iniziato a sostituire i dati di reNOOP, quindi reNOOP deve riavviarsi. Fino ad allora non viene salvato nulla dalla fascia.</string>
+    <string name="settings_restart_renoop">Riavvia reNOOP</string>
 </resources>

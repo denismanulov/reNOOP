@@ -2396,4 +2396,6 @@
     <string name="sleep_explain_range">Chaque mesure est comparée à votre propre plage habituelle, établie sur vos 28 dernières nuits. Une mesure hors de la plage n’est pas un diagnostic : elle signifie que cette nuit a différé de votre normale, comme cela arrive après de l’alcool, un entraînement intense, un repas tardif ou au début d’une maladie.</string>
     <string name="sleep_explain_week">Chaque barre est le temps de sommeil d’une nuit, la dernière étant la nuit de cette page. La ligne en pointillés marque les %1$s que le score considère comme une nuit complète.</string>
     <string name="sleep_explain_debt">Une estimation du sommeil qu’il vous reste à rattraper après les 14 dernières nuits, mesurée par rapport à un besoin de %1$s par nuit. Dormir plus que ce besoin la rembourse ; le sommeil en plus ne se met pas en réserve.</string>
+    <string name="settings_restore_needs_restart">La restauration avait déjà commencé à remplacer les données de reNOOP : reNOOP doit donc redémarrer. D’ici là, rien du bracelet n’est enregistré.</string>
+    <string name="settings_restart_renoop">Redémarrer reNOOP</string>
 </resources>

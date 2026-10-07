@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.noop.data.DynAccelDiag
 import com.noop.data.InsertCounts
+import com.noop.data.LiveStoreReplacement
 import com.noop.data.StreamBatch
 import com.noop.data.WhoopRepository
 import com.noop.protocol.BadClockDiagnostics
@@ -130,6 +131,12 @@ class Backfiller(
     private val ppgHrSubLagInterp: () -> Boolean = { false },
     /** Live UI/export observation of the historical record layout (`hist_version`). */
     private val firmwareLayout: (Int) -> Unit = {},
+    /**
+     * Whether a restore has replaced the database under this process ([LiveStoreReplacement]). A seam so
+     * the held-ack path is testable without latching the test JVM for good. Twin of the Swift
+     * `Backfiller.storeReplaced`.
+     */
+    private val storeReplaced: () -> Boolean = { LiveStoreReplacement.happened },
 ) {
 
     /**
@@ -211,7 +218,8 @@ class Backfiller(
     var continuedAfterRows = false
         private set
     /** #57: set true the moment ANY chunk's persist (decoded rows / reject archive / trim cursor) fails
-     *  this session. While set, [finishChunk] must NOT ack — not even a subsequent EMPTY/metadata END, which
+     *  this session, and by [holdForReplacedStore] once a restore has replaced the database. While set,
+     *  [finishChunk] must NOT ack — not even a subsequent EMPTY/metadata END, which
      *  skips the insert and would otherwise advance the strap's trim PAST the held records-carrying chunks,
      *  freeing history we never stored (the closed-DB-after-restore data-loss in #57). The offload stalls
      *  safely (strap keeps everything past the last GOOD ack); a fresh session ([begin]) clears it.
@@ -431,6 +439,12 @@ class Backfiller(
      */
     private suspend fun finishChunk(unix: Long, trim: Long, endFrame: ByteArray) {
         val endData = endData(endFrame, family) ?: return
+
+        // A restore replaced the database under this process ([LiveStoreReplacement]). Whatever the
+        // insert below would report, the rows cannot be trusted to reach the restored store, so acking
+        // would let the strap trim history nobody kept. Hold the ack exactly like a persist failure; the
+        // restarted process is offered the same chunks again.
+        if (holdForReplacedStore(trim)) return
 
         // #773: corrupt future-RTC detection. A HISTORY_END carries the strap's own clock; a genuine offload
         // is always PAST-dated (it's banked history), so an end dated days into the future can only be a
@@ -784,6 +798,12 @@ class Backfiller(
             return
         }
 
+        // Asked a second time, which the Swift twin does not do: here the restore runs on another thread
+        // while this chunk is being persisted, so the latch can be set between the check at the top and
+        // this point, and the insert above may then have gone through a connection to the file the
+        // restore removed.
+        if (holdForReplacedStore(trim)) return
+
         // Persist the trim cursor BEFORE acking (so a crash between persist and ack still resumes
         // from the right place). Stored via [TrimCursorStore] because the Room schema has no cursor
         // table — see the port FLAG. trim is a u32 carried as Long (unsigned-safe).
@@ -803,6 +823,22 @@ class Backfiller(
         ackTrim(trim, endData)
         lastAckedTrim = trim   // #364: record the advanced cursor for the auto-continue spin-detector
         committed?.takeIf { !it.isEmpty }?.let(onChunkCommitted)
+    }
+
+    /**
+     * True when a restore has replaced the database under this process, in which case the chunk being
+     * finished is dropped un-acked and the session is stalled like a failed persist ([persistStalled]),
+     * so no later END of this session acks either. Logs once per session; the line is always on, since
+     * it is written only after a restore.
+     */
+    private fun holdForReplacedStore(trim: Long): Boolean {
+        if (!storeReplaced()) return false
+        if (!persistStalled) {
+            log("Backfill: the database was replaced by a restore — NOT acking trim=$trim; restart reNOOP so the strap re-sends this history.")
+        }
+        persistStalled = true
+        synchronized(chunkLock) { chunk.clear() }
+        return true
     }
 
     /**

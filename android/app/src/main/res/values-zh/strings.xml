@@ -2377,4 +2377,6 @@
     <string name="sleep_explain_range">每项读数都会与你自己的平常范围比较，该范围来自你最近 28 晚的数据。读数超出范围并不是诊断，只说明这一晚与你平时不同，例如饮酒、高强度训练、吃得太晚或刚开始生病之后。</string>
     <string name="sleep_explain_week">每根柱代表一晚的睡眠时长，最后一根是本页显示的这一晚。虚线表示评分视为完整一晚的 %1$s。</string>
     <string name="sleep_explain_debt">根据最近 14 晚估算你仍欠下的睡眠，以每晚需要 %1$s 为基准。睡得比这个需求多就能偿还；多睡的部分不会储存起来。</string>
+    <string name="settings_restore_needs_restart">恢复已开始替换 reNOOP 的数据，因此 reNOOP 需要重新启动。在此之前不会保存来自手环的任何数据。</string>
+    <string name="settings_restart_renoop">重新启动 reNOOP</string>
 </resources>

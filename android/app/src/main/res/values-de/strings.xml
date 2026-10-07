@@ -2411,4 +2411,6 @@
     <string name="sleep_explain_range">Jeder Wert wird mit deinem eigenen üblichen Bereich aus den letzten 28 Nächten verglichen. Ein Wert außerhalb des Bereichs ist keine Diagnose: Er zeigt, dass diese Nacht von deinem Normalzustand abwich, wie es nach Alkohol, hartem Training, spätem Essen oder zu Beginn einer Erkrankung vorkommt.</string>
     <string name="sleep_explain_week">Jeder Balken ist die Schlafdauer einer Nacht, der letzte die Nacht auf dieser Seite. Die gestrichelte Linie zeigt die %1$s, die der Wert als volle Nacht rechnet.</string>
     <string name="sleep_explain_debt">Eine Schätzung des Schlafs, den du nach den letzten 14 Nächten noch nachholen musst, gemessen an einem Bedarf von %1$s pro Nacht. Mehr Schlaf als dieser Bedarf baut das Defizit ab; darüber hinaus wird nichts angespart.</string>
+    <string name="settings_restore_needs_restart">Die Wiederherstellung hatte bereits begonnen, die Daten von reNOOP zu ersetzen, daher muss reNOOP neu starten. Bis dahin wird nichts vom Armband gespeichert.</string>
+    <string name="settings_restart_renoop">reNOOP neu starten</string>
 </resources>

@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.noop.push.PushDao
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.io.File
 
 /**
  * Local Room database, the Android port of the GRDB store in
@@ -84,10 +85,22 @@ abstract class WhoopDatabase : RoomDatabase() {
         @Volatile
         private var instance: WhoopDatabase? = null
 
+        /**
+         * The file the singleton was built on in this process, or null while [get] has never run. Kept
+         * after [close]: the components that were handed the instance still hold it. Read by
+         * [LiveStoreReplacement.isLiveStore].
+         */
+        @Volatile
+        var openedFile: File? = null
+            private set
+
         /** Process-wide singleton. Safe to call from any thread. */
         fun get(context: Context): WhoopDatabase =
             instance ?: synchronized(this) {
-                instance ?: build(context.applicationContext).also { instance = it }
+                instance ?: build(context.applicationContext).also {
+                    instance = it
+                    openedFile = context.applicationContext.getDatabasePath(DB_NAME)
+                }
             }
 
         /**

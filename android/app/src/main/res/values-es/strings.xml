@@ -2397,4 +2397,6 @@
     <string name="sleep_explain_range">Cada lectura se compara con tu propio rango habitual, aprendido de tus últimas 28 noches. Una lectura fuera del rango no es un diagnóstico: significa que esta noche fue distinta de lo normal en ti, como puede ocurrir tras el alcohol, un entrenamiento duro, una cena tardía o al inicio de una enfermedad.</string>
     <string name="sleep_explain_week">Cada barra es el tiempo dormido de una noche, y la última es la noche de esta página. La línea discontinua marca las %1$s que la puntuación considera una noche completa.</string>
     <string name="sleep_explain_debt">Una estimación del sueño que aún debes tras las últimas 14 noches, medida frente a una necesidad de %1$s por noche. Dormir más que esa necesidad la salda; el sueño de más no se acumula.</string>
+    <string name="settings_restore_needs_restart">La restauración ya había empezado a reemplazar los datos de reNOOP, así que reNOOP debe reiniciarse. Hasta entonces no se guarda nada de la pulsera.</string>
+    <string name="settings_restart_renoop">Reiniciar reNOOP</string>
 </resources>

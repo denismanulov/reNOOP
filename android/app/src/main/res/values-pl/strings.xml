@@ -2397,4 +2397,6 @@
     <string name="sleep_explain_range">Każdy odczyt jest porównywany z Twoim własnym zwykłym zakresem z ostatnich 28 nocy. Odczyt poza zakresem to nie diagnoza: oznacza, że ta noc różniła się od Twojej normy, jak bywa po alkoholu, ciężkim treningu, późnym posiłku lub na początku choroby.</string>
     <string name="sleep_explain_week">Każdy słupek to czas snu jednej nocy, a ostatni to noc z tej strony. Linia przerywana oznacza %1$s, które ocena uznaje za pełną noc.</string>
     <string name="sleep_explain_debt">Szacunek snu, który wciąż masz do odrobienia po ostatnich 14 nocach, liczony względem potrzeby %1$s na noc. Sen dłuższy niż ta potrzeba spłaca dług; dodatkowy sen nie odkłada się na zapas.</string>
+    <string name="settings_restore_needs_restart">Przywracanie zaczęło już zastępować dane reNOOP, więc reNOOP musi uruchomić się ponownie. Do tego czasu nic z opaski nie jest zapisywane.</string>
+    <string name="settings_restart_renoop">Uruchom reNOOP ponownie</string>
 </resources>

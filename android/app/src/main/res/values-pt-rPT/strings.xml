@@ -2390,4 +2390,6 @@
     <string name="sleep_explain_range">Cada leitura é comparada com o seu próprio intervalo habitual, aprendido com as suas últimas 28 noites. Uma leitura fora do intervalo não é um diagnóstico: significa que esta noite foi diferente do seu normal, como pode acontecer depois de álcool, de um treino intenso, de uma refeição tardia ou no início de uma doença.</string>
     <string name="sleep_explain_week">Cada barra é o tempo de sono de uma noite, e a última é a noite desta página. A linha tracejada marca as %1$s que a pontuação considera uma noite completa.</string>
     <string name="sleep_explain_debt">Uma estimativa do sono que ainda deve após as últimas 14 noites, medida face a uma necessidade de %1$s por noite. Dormir mais do que essa necessidade salda-a; o sono a mais não fica guardado.</string>
+    <string name="settings_restore_needs_restart">O restauro já tinha começado a substituir os dados do reNOOP, por isso o reNOOP tem de reiniciar. Até lá, nada da pulseira é guardado.</string>
+    <string name="settings_restart_renoop">Reiniciar o reNOOP</string>
 </resources>

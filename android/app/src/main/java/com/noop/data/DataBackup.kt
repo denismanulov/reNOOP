@@ -497,6 +497,13 @@ object DataBackup {
             return ImportResult.Failed("Could not back up the current data: ${e.message}")
         }
 
+        // From here the file under this process's database is going away. Latch that BEFORE the first
+        // byte moves, so the history offload stops acking chunks whose rows it can no longer place in the
+        // store that will be read after the restart (see [LiveStoreReplacement]). The failure branches
+        // below replace the live file a second time (the rollback copy, or removing the damaged file),
+        // so the latch stays set for them.
+        if (LiveStoreReplacement.isLiveStore(dbFile)) LiveStoreReplacement.markReplaced()
+
         // 6. Overwrite the db file with the extracted backup, then drop the stale sidecars.
         try {
             dbFile.parentFile?.mkdirs()
@@ -896,6 +903,44 @@ object DataBackup {
         } finally {
             runCatching { db.close() }
         }
+    }
+}
+
+/**
+ * A restore swaps the database file under a running process. [DataBackup.importFrom] closes the Room
+ * singleton first, but everything built before the restore (the repository `NoopApplication` made, and
+ * through it the BLE client and its `Backfiller`) keeps the instance it was handed, so until the process
+ * restarts nothing it writes can be trusted to reach the restored file. Acking an offload chunk in that
+ * state lets the strap drop history nobody kept. On 2026-09-30 the iOS app lost a whole night that way:
+ * it ran on for thirteen hours on a replaced store while a second app on the same strap acked the
+ * history. Twin of Swift `LiveStoreReplacement`.
+ *
+ * The latch is set immediately before the swap and never cleared: a restored store is only safe to write
+ * from a fresh process. `Backfiller` reads it and holds every ack, so the strap keeps its history for the
+ * restarted app. The Backup page restarts reNOOP when a restore returns: at once after a success, and on
+ * dismissing the message after a failure that had already begun the swap. The latch covers the time until
+ * the process is gone, however long that turns out to be.
+ */
+object LiveStoreReplacement {
+    @Volatile
+    private var replaced = false
+
+    /** True once this process has replaced the file under its own open database. */
+    val happened: Boolean get() = replaced
+
+    fun markReplaced() {
+        replaced = true
+    }
+
+    /**
+     * Whether [target] is the database file this process opened ([opened], the file the Room singleton
+     * was built on). A process that never opened the singleton has no connection a swap could strand, and
+     * a test restoring into a throwaway file must not latch the test JVM for good.
+     */
+    fun isLiveStore(target: File, opened: File? = WhoopDatabase.openedFile): Boolean {
+        if (opened == null) return false
+        fun resolved(f: File): File = runCatching { f.canonicalFile }.getOrElse { f.absoluteFile.normalize() }
+        return resolved(target) == resolved(opened)
     }
 }
 

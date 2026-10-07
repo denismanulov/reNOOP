@@ -2426,4 +2426,6 @@
     <string name="sleep_explain_range">Each reading is compared with your own usual range, learned from your last 28 nights. A reading outside the range is not a diagnosis: it means this night differed from your normal, as it can after alcohol, a hard workout, a late meal or at the start of an illness.</string>
     <string name="sleep_explain_week">Each bar is one night’s time asleep, and the last bar is the night on this page. The dashed line is the %1$s the score counts as a full night.</string>
     <string name="sleep_explain_debt">An estimate of the sleep you still owe after the last 14 nights, measured against a need of %1$s a night. Sleeping more than that need pays it off; extra sleep beyond that is not saved up.</string>
+    <string name="settings_restore_needs_restart">The restore had already started replacing reNOOP\'s data, so reNOOP has to restart. Until it does, nothing from your strap is saved.</string>
+    <string name="settings_restart_renoop">Restart reNOOP</string>
 </resources>
