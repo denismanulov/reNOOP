@@ -2428,4 +2428,17 @@
     <string name="sleep_explain_debt">An estimate of the sleep you still owe after the last 14 nights, measured against a need of %1$s a night. Sleeping more than that need pays it off; extra sleep beyond that is not saved up.</string>
     <string name="settings_restore_needs_restart">The restore had already started replacing reNOOP\'s data, so reNOOP has to restart. Until it does, nothing from your strap is saved.</string>
     <string name="settings_restart_renoop">Restart reNOOP</string>
+    <string name="onboarding_one_app_title">One App per Strap</string>
+    <string name="onboarding_no_other_apps_title">No Other Strap Apps</string>
+    <string name="onboarding_other_app_installed">Installed</string>
+    <string name="onboarding_check_again">Check Again</string>
+    <string name="onboarding_bonded_other_app">Your strap is bonded, but another app is syncing it too. Keep only one.</string>
+    <string name="other_app_syncing_title">Another App Is Syncing Your Strap</string>
+    <string name="other_app_dont_show_again">Don\'t Show Again</string>
+    <string name="onboarding_no_other_apps_message">No other strap app with Bluetooth access found on this device.</string>
+    <string name="onboarding_other_apps_message">%1$s can also sync your strap, and each hour of its history goes to whichever app syncs first. Keep one app: uninstall the other, or turn off its Nearby devices permission in Settings.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s can also sync your strap, and each hour of its history goes to whichever app syncs first. Keep one app: uninstall the other.</string>
+    <string name="other_app_syncing_message">Another app also pulls your strap\'s history. Each hour goes to whichever app syncs first, so the other misses it. Keep one app: uninstall the other, or turn off its Nearby devices permission in Settings.</string>
+    <string name="other_app_syncing_message_uninstall">Another app also pulls your strap\'s history. Each hour goes to whichever app syncs first, so the other misses it. Keep one app: uninstall the other.</string>
+    <string name="other_app_syncing_installed">Installed on this device: %1$s.</string>
 </resources>

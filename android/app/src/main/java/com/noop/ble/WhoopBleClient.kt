@@ -305,6 +305,11 @@ data class LiveState(
      *  a connected strap that keeps handing over nothing has this true regardless of live-HR status.
      *  Cleared on disconnect; re-derived from the next offload. Twin of macOS LiveState.sustainedEmptyOffload. */
     val sustainedEmptyOffload: Boolean = false,
+    /** Wall time (ms) another app was last seen pulling this strap's history ([ForeignOffloadDetector]).
+     *  Two apps on one strap split its history, whichever acks a chunk first keeps it, so the shell warns
+     *  once. null until it happens in this process; it is not cleared on disconnect. Twin of Swift
+     *  `LiveState.otherAppSyncingAt`. */
+    val otherAppSyncingAtMs: Long? = null,
 ) {
     /** Set the fresh-packet [rr] AND append the valid intervals onto the bounded [rrRecent] rolling
      *  buffer (oldest fall off first). Non-positive sentinels are dropped from the rolling buffer.
@@ -1035,6 +1040,20 @@ class WhoopBleClient(
         /** #174: window after the last offload frame/HISTORY_COMPLETE during which a type-0x2F frame is
          *  treated as trailing-historical, not live. Mirrors macOS deepPacketLiveCooldownSeconds (10s). */
         private const val DEEP_PACKET_LIVE_COOLDOWN_MS = 10_000L
+        /** How long after one "another client is pulling history" verdict the next only refreshes
+         *  [LiveState.otherAppSyncingAtMs], without a second warning or log line. The Swift twin uses 600 s. */
+        internal const val FOREIGN_OFFLOAD_REPEAT_MS = 600_000L
+
+        /**
+         * The strap-log line for one [ForeignOffloadDetector] verdict. It leads with the conclusion and
+         * then states what was counted, so a reader can weigh it: the records are seen on our own link,
+         * which names no sender. Pure, so the wording is pinned by a test.
+         */
+        internal fun foreignOffloadLine(): String =
+            "Another BLE client is pulling this strap's history: ${ForeignOffloadDetector.FRAMES_TO_FLAG} history " +
+                "records arrived outside our own offload within ${ForeignOffloadDetector.WINDOW_MS / 1000} s, none " +
+                "within ${ForeignOffloadDetector.COOLDOWN_MS / 1000} s of our own offload activity. Whichever client " +
+                "acks a chunk first keeps it; the other never stores those hours. Keep one app connected to the strap."
 
         /** ATT MTU to request on connect. The default 23 caps every notification at 20 payload bytes,
          *  so the historical offload fragments across many notifications (slow, more reassembly). 247
@@ -3494,6 +3513,10 @@ class WhoopBleClient(
      *  historical frame, not the live R22 stream, so it must not be counted as a "live deep packet".
      *  0 = no offload reference yet this session. Mirrors macOS BLEManager.lastOffloadFrameAt. */
     private var lastOffloadFrameAtMs = 0L
+    /** Another app pulling this strap's history over the shared link (see [ForeignOffloadDetector]). It
+     *  only watches inbound frames: nothing it concludes writes to the strap or changes a timer. Never
+     *  reset, like the Swift twin: its cooldown is measured from our own last offload activity. */
+    private val foreignOffload = ForeignOffloadDetector()
     /** One-shot per session: SEND_HISTORICAL_DATA already fired (gate + fail-open can both call). */
     private var historicalKickSent = false
     /** 5/MG zero-frame retries used this CONNECTION (max 2 — then the 900s periodic timer owns it). */
@@ -8058,6 +8081,12 @@ class WhoopBleClient(
                     // handleFrame's replayedOffload gate, so evaluating it twice bounds-checked + indexed
                     // every offloaded frame for nothing. (The Swift 5/MG inbound loop already hoists this.)
                     val offloadFrame = backfilling && isOffloadFrame(frame, connectedFamily)
+                    // A history record while we run no offload of our own is one piece of evidence that
+                    // a second app is pulling this strap's history. One byte compare per frame, and it
+                    // only counts: the frame goes on through everything below exactly as before.
+                    if (!backfilling && ForeignOffloadDetector.isHistoryRecord(frame, connectedFamily)) {
+                        noteHistoryOutsideOwnOffload()
+                    }
                     stopUnexpectedRealtimeImu(frame, offloadFrame)
                     noteWhoop5R22Telemetry(frame, offloadFrame)  // #174
                     // #47: decode this frame ONCE and thread it to both consumers (the router below and the
@@ -8435,6 +8464,7 @@ class WhoopBleClient(
                         // it; feeding it only delays each chunk's insert->trim-ack and stalls the strap).
                         if (isOffloadFrame(frame, connectedFamily)) {
                             offloadFramesThisSession++
+                            foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
                             armBackfillTimeout()
                             routeBackfillFrame(frame)
                         }
@@ -10872,6 +10902,28 @@ class WhoopBleClient(
         if (historicalKickSent) return
         historicalKickSent = true
         send(CommandNumber.SEND_HISTORICAL_DATA, byteArrayOf(0), withResponse = true)
+        foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
+    }
+
+    /**
+     * A history record reached us while we run no offload of our own. One record proves nothing (it may
+     * be a trailing flush of our own session); [ForeignOffloadDetector] answers true only for
+     * [ForeignOffloadDetector.FRAMES_TO_FLAG] of them inside its window and outside its cooldown, which
+     * is what this treats as a second app pulling the strap's history. It then stamps
+     * [LiveState.otherAppSyncingAtMs], raises the once-per-process warning and writes one line; a repeat
+     * within [FOREIGN_OFFLOAD_REPEAT_MS] only moves the stamp. Rare-event evidence, so the line is always
+     * on. Nothing here writes to the strap. Twin of Swift `BLEManager.noteHistoryOutsideOwnOffload`.
+     */
+    private fun noteHistoryOutsideOwnOffload() {
+        val now = System.currentTimeMillis()
+        if (!foreignOffload.noteHistoryOutsideOwnOffload(now)) return
+        val last = _state.value.otherAppSyncingAtMs
+        _state.update { it.copy(otherAppSyncingAtMs = now) }
+        if (last != null && now - last < FOREIGN_OFFLOAD_REPEAT_MS) return
+        OtherStrapAppWarning.shared.reportForeignOffload(
+            muted = NoopPrefs.of(context).getBoolean(NoopPrefs.KEY_OTHER_APP_WARNING_MUTED, false),
+        )
+        log(foreignOffloadLine())
     }
 
     /**
@@ -11018,6 +11070,9 @@ class WhoopBleClient(
             whoop5HistoryAttempts++
             backfiller.timeoutFired()
             backfilling = false
+            // This branch ends a session without [exitBackfilling], which is where the other endings
+            // tell the detector, so tell it here: the pause before the retry is still our own offload.
+            foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
             _state.update { it.copy(backfilling = false, syncChunksThisSession = 0) }
             handler.removeCallbacks(backfillTimeoutRunnable)
             backfillDrain.clear()
@@ -11091,6 +11146,7 @@ class WhoopBleClient(
         // any type-0x2F records the strap flushes in the seconds after the session aren't miscounted as
         // the live R22 stream — they're the offload's tail.
         lastOffloadFrameAtMs = System.currentTimeMillis()
+        foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
         // Record an honest sync outcome so a cloud-free user can tell sync is working (or stuck):
         // HISTORY_COMPLETE stamps lastSyncAt + clears any error; an idle-watchdog timeout surfaces a
         // non-silent error. A plain disconnect mid-sync leaves both as-is (not a failure — the next

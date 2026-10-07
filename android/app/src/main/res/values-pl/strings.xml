@@ -2399,4 +2399,17 @@
     <string name="sleep_explain_debt">Szacunek snu, który wciąż masz do odrobienia po ostatnich 14 nocach, liczony względem potrzeby %1$s na noc. Sen dłuższy niż ta potrzeba spłaca dług; dodatkowy sen nie odkłada się na zapas.</string>
     <string name="settings_restore_needs_restart">Przywracanie zaczęło już zastępować dane reNOOP, więc reNOOP musi uruchomić się ponownie. Do tego czasu nic z opaski nie jest zapisywane.</string>
     <string name="settings_restart_renoop">Uruchom reNOOP ponownie</string>
+    <string name="onboarding_one_app_title">Jedna aplikacja na opaskę</string>
+    <string name="onboarding_no_other_apps_title">Brak innych aplikacji opaski</string>
+    <string name="onboarding_other_app_installed">Zainstalowana</string>
+    <string name="onboarding_check_again">Sprawdź ponownie</string>
+    <string name="onboarding_bonded_other_app">Opaska jest sparowana, ale synchronizuje ją też inna aplikacja. Zostaw tylko jedną.</string>
+    <string name="other_app_syncing_title">Inna aplikacja synchronizuje opaskę</string>
+    <string name="other_app_dont_show_again">Nie pokazuj ponownie</string>
+    <string name="onboarding_no_other_apps_message">Nie znaleziono innej aplikacji opaski z dostępem do Bluetooth na tym urządzeniu.</string>
+    <string name="onboarding_other_apps_message">%1$s również może synchronizować opaskę, a każda godzina jej historii trafia do aplikacji, która zsynchronizuje się pierwsza. Zostaw jedną: odinstaluj drugą lub odbierz jej w Ustawieniach uprawnienie „Urządzenia w pobliżu”.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s również może synchronizować opaskę, a każda godzina jej historii trafia do aplikacji, która zsynchronizuje się pierwsza. Zostaw jedną: odinstaluj drugą.</string>
+    <string name="other_app_syncing_message">Inna aplikacja również pobiera historię z opaski. Każda godzina trafia do aplikacji, która zsynchronizuje się pierwsza, a druga ją traci. Zostaw jedną: odinstaluj drugą lub odbierz jej w Ustawieniach uprawnienie „Urządzenia w pobliżu”.</string>
+    <string name="other_app_syncing_message_uninstall">Inna aplikacja również pobiera historię z opaski. Każda godzina trafia do aplikacji, która zsynchronizuje się pierwsza, a druga ją traci. Zostaw jedną: odinstaluj drugą.</string>
+    <string name="other_app_syncing_installed">Zainstalowane na tym urządzeniu: %1$s.</string>
 </resources>

@@ -2413,4 +2413,17 @@
     <string name="sleep_explain_debt">Eine Schätzung des Schlafs, den du nach den letzten 14 Nächten noch nachholen musst, gemessen an einem Bedarf von %1$s pro Nacht. Mehr Schlaf als dieser Bedarf baut das Defizit ab; darüber hinaus wird nichts angespart.</string>
     <string name="settings_restore_needs_restart">Die Wiederherstellung hatte bereits begonnen, die Daten von reNOOP zu ersetzen, daher muss reNOOP neu starten. Bis dahin wird nichts vom Armband gespeichert.</string>
     <string name="settings_restart_renoop">reNOOP neu starten</string>
+    <string name="onboarding_one_app_title">Eine App pro Armband</string>
+    <string name="onboarding_no_other_apps_title">Keine anderen Armband-Apps</string>
+    <string name="onboarding_other_app_installed">Installiert</string>
+    <string name="onboarding_check_again">Erneut prüfen</string>
+    <string name="onboarding_bonded_other_app">Dein Armband ist gekoppelt, aber eine andere App synchronisiert es ebenfalls. Behalte nur eine.</string>
+    <string name="other_app_syncing_title">Eine andere App synchronisiert dein Armband</string>
+    <string name="other_app_dont_show_again">Nicht mehr anzeigen</string>
+    <string name="onboarding_no_other_apps_message">Keine andere Armband-App mit Bluetooth-Zugriff auf diesem Gerät gefunden.</string>
+    <string name="onboarding_other_apps_message">%1$s kann dein Armband ebenfalls synchronisieren, und jede Stunde seines Verlaufs erhält die App, die zuerst synchronisiert. Behalte eine App: Deinstalliere die andere oder entziehe ihr in den Einstellungen die Berechtigung „Geräte in der Nähe“.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s kann dein Armband ebenfalls synchronisieren, und jede Stunde seines Verlaufs erhält die App, die zuerst synchronisiert. Behalte eine App: Deinstalliere die andere.</string>
+    <string name="other_app_syncing_message">Eine andere App ruft ebenfalls den Verlauf deines Armbands ab. Jede Stunde erhält die App, die zuerst synchronisiert – der anderen fehlt sie. Behalte eine App: Deinstalliere die andere oder entziehe ihr in den Einstellungen die Berechtigung „Geräte in der Nähe“.</string>
+    <string name="other_app_syncing_message_uninstall">Eine andere App ruft ebenfalls den Verlauf deines Armbands ab. Jede Stunde erhält die App, die zuerst synchronisiert – der anderen fehlt sie. Behalte eine App: Deinstalliere die andere.</string>
+    <string name="other_app_syncing_installed">Auf diesem Gerät installiert: %1$s.</string>
 </resources>

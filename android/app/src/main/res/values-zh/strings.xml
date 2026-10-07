@@ -2379,4 +2379,17 @@
     <string name="sleep_explain_debt">根据最近 14 晚估算你仍欠下的睡眠，以每晚需要 %1$s 为基准。睡得比这个需求多就能偿还；多睡的部分不会储存起来。</string>
     <string name="settings_restore_needs_restart">恢复已开始替换 reNOOP 的数据，因此 reNOOP 需要重新启动。在此之前不会保存来自手环的任何数据。</string>
     <string name="settings_restart_renoop">重新启动 reNOOP</string>
+    <string name="onboarding_one_app_title">一个手环只用一个 App</string>
+    <string name="onboarding_no_other_apps_title">没有其他手环 App</string>
+    <string name="onboarding_other_app_installed">已安装</string>
+    <string name="onboarding_check_again">再次检查</string>
+    <string name="onboarding_bonded_other_app">手环已配对，但另一个 App 也在同步它。请只保留一个。</string>
+    <string name="other_app_syncing_title">另一个 App 正在同步你的手环</string>
+    <string name="other_app_dont_show_again">不再显示</string>
+    <string name="onboarding_no_other_apps_message">在此设备上未发现其他可使用蓝牙的手环 App。</string>
+    <string name="onboarding_other_apps_message">%1$s 也能同步你的手环，而其历史数据的每一小时只会给最先同步的 App。请只保留一个：卸载另一个，或在“设置”中关闭它的“附近的设备”权限。</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s 也能同步你的手环，而其历史数据的每一小时只会给最先同步的 App。请只保留一个：卸载另一个。</string>
+    <string name="other_app_syncing_message">另一个 App 也在读取你手环的历史数据。每一小时的数据只会给最先同步的 App，另一个会缺失。请只保留一个：卸载另一个，或在“设置”中关闭它的“附近的设备”权限。</string>
+    <string name="other_app_syncing_message_uninstall">另一个 App 也在读取你手环的历史数据。每一小时的数据只会给最先同步的 App，另一个会缺失。请只保留一个：卸载另一个。</string>
+    <string name="other_app_syncing_installed">此设备上已安装：%1$s。</string>
 </resources>

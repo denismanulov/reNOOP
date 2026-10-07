@@ -2398,4 +2398,17 @@
     <string name="sleep_explain_debt">Une estimation du sommeil qu’il vous reste à rattraper après les 14 dernières nuits, mesurée par rapport à un besoin de %1$s par nuit. Dormir plus que ce besoin la rembourse ; le sommeil en plus ne se met pas en réserve.</string>
     <string name="settings_restore_needs_restart">La restauration avait déjà commencé à remplacer les données de reNOOP : reNOOP doit donc redémarrer. D’ici là, rien du bracelet n’est enregistré.</string>
     <string name="settings_restart_renoop">Redémarrer reNOOP</string>
+    <string name="onboarding_one_app_title">Une app par bracelet</string>
+    <string name="onboarding_no_other_apps_title">Aucune autre app de bracelet</string>
+    <string name="onboarding_other_app_installed">Installée</string>
+    <string name="onboarding_check_again">Vérifier à nouveau</string>
+    <string name="onboarding_bonded_other_app">Votre bracelet est associé, mais une autre app le synchronise aussi. N’en gardez qu’une.</string>
+    <string name="other_app_syncing_title">Une autre app synchronise votre bracelet</string>
+    <string name="other_app_dont_show_again">Ne plus afficher</string>
+    <string name="onboarding_no_other_apps_message">Aucune autre app de bracelet avec accès au Bluetooth trouvée sur cet appareil.</string>
+    <string name="onboarding_other_apps_message">%1$s peut aussi synchroniser votre bracelet, et chaque heure de son historique va à l’app qui synchronise en premier. Gardez une seule app : désinstallez l’autre ou retirez-lui l’autorisation « Appareils à proximité » dans les Paramètres.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s peut aussi synchroniser votre bracelet, et chaque heure de son historique va à l’app qui synchronise en premier. Gardez une seule app : désinstallez l’autre.</string>
+    <string name="other_app_syncing_message">Une autre app récupère aussi l’historique de votre bracelet. Chaque heure va à l’app qui synchronise en premier, l’autre la perd. Gardez une seule app : désinstallez l’autre ou retirez-lui l’autorisation « Appareils à proximité » dans les Paramètres.</string>
+    <string name="other_app_syncing_message_uninstall">Une autre app récupère aussi l’historique de votre bracelet. Chaque heure va à l’app qui synchronise en premier, l’autre la perd. Gardez une seule app : désinstallez l’autre.</string>
+    <string name="other_app_syncing_installed">Installé sur cet appareil : %1$s.</string>
 </resources>

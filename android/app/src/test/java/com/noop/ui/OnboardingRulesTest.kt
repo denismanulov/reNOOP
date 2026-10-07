@@ -26,6 +26,36 @@ class OnboardingRulesTest {
         assertEquals(ScanMessage.WEAR_IT, OnboardingRules.scanMessage(false, false, false, false, WhoopModel.WHOOP5_MG))
     }
 
+    /** Another app seen pulling the strap's history outranks the battery line, but only once bonded. */
+    @Test
+    fun `a bonded strap another app is syncing says so`() {
+        assertEquals(
+            ScanMessage.BONDED_OTHER_APP,
+            OnboardingRules.scanMessage(true, true, false, false, WhoopModel.WHOOP4, otherAppSyncing = true),
+        )
+        assertEquals(
+            ScanMessage.BONDED_OTHER_APP,
+            OnboardingRules.scanMessage(true, false, false, false, WhoopModel.WHOOP5_MG, otherAppSyncing = true),
+        )
+        assertEquals(
+            ScanMessage.WEAR_IT,
+            OnboardingRules.scanMessage(false, false, false, false, WhoopModel.WHOOP4, otherAppSyncing = true),
+        )
+    }
+
+    /** The other-strap-apps page is in the path only when one can reach the strap, right after Welcome. */
+    @Test
+    fun `the other apps page follows Welcome only when another strap app is there`() {
+        assertEquals(
+            listOf(SetupStep.Welcome, SetupStep.Scan, SetupStep.Profile, SetupStep.Import),
+            OnboardingRules.path(otherStrapApps = false),
+        )
+        assertEquals(
+            listOf(SetupStep.Welcome, SetupStep.OtherApps, SetupStep.Scan, SetupStep.Profile, SetupStep.Import),
+            OnboardingRules.path(otherStrapApps = true),
+        )
+    }
+
     private val berlin: ZoneId = ZoneId.of("Europe/Berlin")
     private val today: LocalDate = LocalDate.of(2026, 10, 1)
 

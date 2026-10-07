@@ -378,6 +378,10 @@ object NoopPrefs {
      *  [com.noop.ble.WhoopBleClient.setPauseCaptureOnPowerSave] via [AppViewModel]. */
     const val KEY_PAUSE_HRV_ON_POWER_SAVE = "noop.pauseHrvOnPowerSave"
 
+    /** True once the user answered "Don't Show Again" to the warning that another app is syncing the same
+     *  strap ([com.noop.ble.OtherStrapAppWarning]). The same key as the Swift `OtherStrapAppWarning.mutedKey`. */
+    const val KEY_OTHER_APP_WARNING_MUTED = "noop.otherAppWarningMuted"
+
     fun of(context: Context): SharedPreferences =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
@@ -1417,6 +1421,11 @@ fun NoopRoot() {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // A second app pulling the same strap's history (ForeignOffloadDetector). Above the gates so that it
+    // also covers first-run setup, which connects a strap too; the Scan step there says the same thing
+    // in its own line.
+    OtherAppSyncingDialog()
 
     var onboarded by remember {
         mutableStateOf(prefs.getBoolean(NoopPrefs.KEY_ONBOARDED, false))

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -187,6 +188,40 @@ fun Wheel(
                 }
             }
         }
+    }
+}
+
+/**
+ * A notice with two ways out that are not a yes and a no: [confirmLabel] acknowledges it, [secondaryLabel]
+ * is the other answer (as "Don't Show Again" beside "OK"). Dismissing it otherwise counts as neither.
+ * [detail] is a second paragraph under [message], its own string rather than text joined on in code.
+ */
+@Composable
+fun NoticeDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    secondaryLabel: String,
+    onSecondary: () -> Unit,
+    onDismiss: () -> Unit,
+    detail: String? = null,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { DialogParagraphs(message, detail) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } },
+        dismissButton = { TextButton(onClick = onSecondary) { Text(secondaryLabel) } },
+    )
+}
+
+/** A dialog's body as one or two paragraphs, [M3Dimens.itemGap] apart. */
+@Composable
+fun DialogParagraphs(first: String, second: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap)) {
+        Text(first)
+        if (second != null) Text(second)
     }
 }
 

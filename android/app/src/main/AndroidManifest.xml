@@ -146,6 +146,13 @@
         <!-- So the connection helper can detect the official WHOOP app and deep-link to its
              info screen (a strap only pairs with one app at a time). Android 11+ visibility. -->
         <package android:name="com.whoop.android" />
+        <!-- Upstream NOOP (release, debug and staging ids). Asked about, with the WHOOP app above, only
+             to warn that another app may be syncing the same strap: two apps on one strap split its
+             history (OtherStrapApps). reNOOP asks the system two things about each, whether it is
+             installed and whether it holds the Bluetooth permission, and never talks to the app. -->
+        <package android:name="com.noop.whoop" />
+        <package android:name="com.noop.whoop.debug" />
+        <package android:name="com.noop.whoop.staging" />
         <!-- #386: OEM security-centre packages, so BackgroundHealth.oemAutostartIntent's
              resolveActivity can SEE their auto-start screens under Android 11+ package-visibility
              filtering (targetSdk 34) — without these the deep-link would silently never resolve on

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -82,6 +83,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.noop.R
+import com.noop.ble.OtherStrapApps
 import com.noop.ble.WhoopModel
 import com.noop.data.ImportSummary
 import com.noop.ingest.HealthConnectImporter
@@ -104,11 +106,14 @@ import java.time.format.FormatStyle
 
 // MARK: - First run (after the terms gate)
 //
-// Four steps laid out as Pixel's setup wizard pages (mockup 12, twin of Swift `OnboardingWizard`): a step
-// bar, a big glyph, a headline with one line under it, the step's own content, and a bottom bar with a
-// text button on the left and a filled button on the right.
+// Four steps, five when another strap app can reach the strap, laid out as Pixel's setup wizard pages
+// (mockup 12, twin of Swift `OnboardingWizard`): a step bar, a big glyph, a headline with one line under
+// it, the step's own content, and a bottom bar with a text button on the left and a filled button on the
+// right.
 //
 //  1 Welcome
+//  · Other strap apps    — only when NOOP / WHOOP is installed beside reNOOP and may use Bluetooth: two
+//                          apps split the history
 //  2 Find your strap     — pick the model, Scan; becomes "Connected" once the strap bonds
 //  3 About you           — date of birth / sex / height / weight / units; only answered rows are written
 //  4 Bring your history  — optional WHOOP export / Health Connect import; Done finishes
@@ -118,42 +123,60 @@ import java.time.format.FormatStyle
 // AppViewModel, BLE client, profile store and importers as the app itself. Rendered alone (the host
 // returns before the app shell), so TalkBack never reaches anything behind it.
 
-private const val STEPS = 4
+/** A page of the wizard. [OtherApps] is in the path only when another strap app can reach the strap. */
+internal enum class SetupStep { Welcome, OtherApps, Scan, Profile, Import }
+
+/** Where a page sits in the wizard, as the step bar draws it: [number] of [count]. */
+internal data class StepPosition(val number: Int, val count: Int)
 
 @Composable
 fun OnboardingScreen(viewModel: AppViewModel, onFinished: () -> Unit) {
+    val context = LocalContext.current
+    // Whether the other-strap-apps step is in the path: another strap app is installed and may use
+    // Bluetooth. Read when the wizard opens, so the step bar has its length from the first page, and again
+    // on leaving Welcome, where the Swift twin decides it. Most people never see the step.
+    var otherApps by rememberSaveable { mutableStateOf(OtherStrapApps.ableToSync(context).isNotEmpty()) }
     // rememberSaveable so a configuration change (rotation, dark mode, font scale, locale) keeps the step.
-    var step by rememberSaveable { mutableIntStateOf(1) }
+    var index by rememberSaveable { mutableIntStateOf(0) }
     // Which About You rows the user has answered, kept here so going back and forth doesn't reset them.
     val answers = rememberSaveable(saver = ProfileAnswers.Saver) { ProfileAnswers() }
+
+    val path = OnboardingRules.path(otherApps)
+    val step = path[index.coerceIn(0, path.lastIndex)]
+    val position = StepPosition(path.indexOf(step) + 1, path.size)
 
     fun complete() {
         // Onboarding deferred the foreground promotion; do it now if a strap is live.
         viewModel.promoteBackgroundConnectionIfActive()
         onFinished()
     }
-    fun next() { if (step >= STEPS) complete() else step++ }
+    fun next() {
+        // Only Welcome may change the path: it is the first page, so no index behind it can shift.
+        if (step == SetupStep.Welcome) otherApps = OtherStrapApps.ableToSync(context).isNotEmpty()
+        if (index >= OnboardingRules.path(otherApps).lastIndex) complete() else index++
+    }
 
-    BackHandler(enabled = step > 1) { step-- }
+    BackHandler(enabled = index > 0) { index-- }
 
     when (step) {
-        1 -> WelcomeStep(::next)
-        2 -> ScanStep(viewModel, ::next)
-        3 -> ProfileStep(answers, ::next)
-        else -> ImportStep(viewModel, ::next)
+        SetupStep.Welcome -> WelcomeStep(position, ::next)
+        SetupStep.OtherApps -> OtherAppsStep(position, ::next)
+        SetupStep.Scan -> ScanStep(viewModel, position, ::next)
+        SetupStep.Profile -> ProfileStep(answers, position, ::next)
+        SetupStep.Import -> ImportStep(viewModel, position, ::next)
     }
 }
 
 // MARK: - Setup page
 
 /**
- * One setup page, as Pixel's setup wizard draws it: the step bar ([step] of [STEPS], none on the terms
- * gate), the glyph in a 64 dp tonal tile, a headline and one line under it, the content, and the bottom
- * bar with [secondary] on the left and [primary] on the right.
+ * One setup page, as Pixel's setup wizard draws it: the step bar ([step], none on the terms gate), the
+ * glyph in a 64 dp tonal tile, a headline and one line under it, the content, and the bottom bar with
+ * [secondary] on the left and [primary] on the right.
  */
 @Composable
 internal fun SetupPage(
-    step: Int?,
+    step: StepPosition?,
     title: String,
     message: String?,
     glyph: @Composable () -> Unit,
@@ -215,8 +238,8 @@ internal class SetupAction(val label: String, val enabled: Boolean = true, val o
 
 /** The step bar: one segment per step, the steps reached filled. */
 @Composable
-private fun StepBar(step: Int) {
-    val label = stringResource(R.string.onboarding_step, step, STEPS)
+private fun StepBar(step: StepPosition) {
+    val label = stringResource(R.string.onboarding_step, step.number, step.count)
     Row(
         Modifier
             .fillMaxWidth()
@@ -224,21 +247,21 @@ private fun StepBar(step: Int) {
             .clearAndSetSemantics { contentDescription = label },
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        for (i in 1..STEPS) {
+        for (i in 1..step.count) {
             Box(
                 Modifier
                     .weight(1f)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(if (i <= step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest),
+                    .background(if (i <= step.number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest),
             )
         }
     }
 }
 
-/** The 64 dp tonal tile a setup page leads with. */
+/** The 64 dp tonal tile a setup page leads with; [positive] and [warning] tint the glyph. */
 @Composable
-internal fun SetupGlyph(icon: ImageVector, positive: Boolean = false) {
+internal fun SetupGlyph(icon: ImageVector, positive: Boolean = false, warning: Boolean = false) {
     Box(
         Modifier
             .size(64.dp)
@@ -249,7 +272,11 @@ internal fun SetupGlyph(icon: ImageVector, positive: Boolean = false) {
         Icon(
             icon,
             contentDescription = null,
-            tint = if (positive) Health.colors.positive else MaterialTheme.colorScheme.onPrimaryContainer,
+            tint = when {
+                positive -> Health.colors.positive
+                warning -> Health.colors.warning
+                else -> MaterialTheme.colorScheme.onPrimaryContainer
+            },
             modifier = Modifier.size(36.dp),
         )
     }
@@ -258,9 +285,9 @@ internal fun SetupGlyph(icon: ImageVector, positive: Boolean = false) {
 // MARK: - 1 · Welcome
 
 @Composable
-private fun WelcomeStep(next: () -> Unit) {
+private fun WelcomeStep(position: StepPosition, next: () -> Unit) {
     SetupPage(
-        step = 1,
+        step = position,
         title = stringResource(R.string.onboarding_welcome_title),
         message = stringResource(R.string.onboarding_welcome_message),
         glyph = { BrandMark(size = 64.dp) },
@@ -268,10 +295,79 @@ private fun WelcomeStep(next: () -> Unit) {
     )
 }
 
+// MARK: - 1½ · Other strap apps
+
+/**
+ * Shown only when another app that syncs WHOOP straps is installed and may use Bluetooth
+ * ([OtherStrapApps]). The strap keeps one history queue and drops each chunk as soon as any app acks it,
+ * so two apps on one strap each end up with holes. Continue is never blocked: the choice is the user's,
+ * this step only makes sure it is made knowingly. Twin of Swift `OtherAppsStep`.
+ *
+ * The Swift step cannot tell whether its advice was followed, since iOS reports only that the other app
+ * is installed, and says so in a footnote. Here the list is what Android reports after the advice: an
+ * app that was uninstalled, or lost its Nearby devices permission, is gone from it on the way back.
+ */
+@Composable
+private fun OtherAppsStep(position: StepPosition, next: () -> Unit) {
+    val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    var others by remember { mutableStateOf(OtherStrapApps.ableToSync(context)) }
+
+    // Back from Settings or the launcher after uninstalling the other app or taking its permission away:
+    // read the list again.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { others = OtherStrapApps.ableToSync(context) }
+    }
+
+    val names = OtherStrapApps.phrase(others, locale)
+    // Android 12 made Bluetooth a permission the user can take away again; before it, uninstalling is the
+    // only advice that works.
+    val revocable = OtherStrapApps.nearbyDevicesRevocable()
+
+    SetupPage(
+        step = position,
+        title = stringResource(if (names == null) R.string.onboarding_no_other_apps_title else R.string.onboarding_one_app_title),
+        message = when {
+            names == null -> stringResource(R.string.onboarding_no_other_apps_message)
+            revocable -> stringResource(R.string.onboarding_other_apps_message, names)
+            else -> stringResource(R.string.onboarding_other_apps_message_uninstall, names)
+        },
+        glyph = {
+            if (names == null) SetupGlyph(Icons.Filled.CheckCircle, positive = true)
+            else SetupGlyph(Icons.Filled.Warning, warning = true)
+        },
+        primary = SetupAction(stringResource(R.string.onboarding_continue), onClick = next),
+        secondary = if (others.isEmpty()) null else SetupAction(stringResource(R.string.onboarding_check_again)) {
+            others = OtherStrapApps.ableToSync(context)
+        },
+    ) {
+        if (others.isNotEmpty()) {
+            ListGroup {
+                others.forEach { name ->
+                    item { shape ->
+                        ListRow(
+                            shape = shape,
+                            title = name,
+                            trailing = {
+                                Text(
+                                    stringResource(R.string.onboarding_other_app_installed),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - 2 · Find your strap
 
 @Composable
-private fun ScanStep(viewModel: AppViewModel, next: () -> Unit) {
+private fun ScanStep(viewModel: AppViewModel, position: StepPosition, next: () -> Unit) {
     val context = LocalContext.current
     val live by viewModel.live.collectAsStateWithLifecycle()
     val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
@@ -316,7 +412,13 @@ private fun ScanStep(viewModel: AppViewModel, next: () -> Unit) {
     }
     LaunchedEffect(live.bonded) { if (live.bonded) { scanning = false; notFound = false } }
 
-    val message = when (OnboardingRules.scanMessage(live.bonded, live.batteryPct != null, bluetoothDenied, notFound, selectedModel)) {
+    val message = when (
+        OnboardingRules.scanMessage(
+            live.bonded, live.batteryPct != null, bluetoothDenied, notFound, selectedModel,
+            otherAppSyncing = live.otherAppSyncingAtMs != null,
+        )
+    ) {
+        ScanMessage.BONDED_OTHER_APP -> stringResource(R.string.onboarding_bonded_other_app)
         ScanMessage.BONDED_BATTERY -> stringResource(R.string.onboarding_bonded_battery, live.batteryPct?.toInt() ?: 0)
         ScanMessage.BONDED -> stringResource(R.string.onboarding_bonded)
         ScanMessage.BLUETOOTH_OFF -> stringResource(R.string.onboarding_bt_off)
@@ -338,7 +440,7 @@ private fun ScanStep(viewModel: AppViewModel, next: () -> Unit) {
     val secondary = if (live.bonded) null else SetupAction(stringResource(R.string.onboarding_set_up_later), onClick = next)
 
     SetupPage(
-        step = 2,
+        step = position,
         title = stringResource(if (live.bonded) R.string.onboarding_connected else R.string.onboarding_find_strap),
         message = message,
         glyph = { SetupGlyph(if (live.bonded) Icons.Filled.CheckCircle else Icons.Filled.Watch, positive = live.bonded) },
@@ -433,7 +535,7 @@ private val SEXES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfileStep(answers: ProfileAnswers, next: () -> Unit) {
+private fun ProfileStep(answers: ProfileAnswers, position: StepPosition, next: () -> Unit) {
     val context = LocalContext.current
     val profile = remember { ProfileStore.from(context.applicationContext) }
     // ProfileStore wraps SharedPreferences rather than snapshot state; this counter repaints after a write.
@@ -451,7 +553,7 @@ private fun ProfileStep(answers: ProfileAnswers, next: () -> Unit) {
     val notSet = stringResource(R.string.onboarding_not_set)
 
     SetupPage(
-        step = 3,
+        step = position,
         title = stringResource(R.string.onboarding_about_you),
         message = stringResource(R.string.onboarding_about_you_message),
         // The profile photo when there is one, else the person glyph on the setup tile.
@@ -594,7 +696,7 @@ private fun WheelDialog(title: String, options: List<String>, selected: Int, onP
 
 /** As setup's "Copy apps & data": the sources as rows of one group. */
 @Composable
-private fun ImportStep(viewModel: AppViewModel, next: () -> Unit) {
+private fun ImportStep(viewModel: AppViewModel, position: StepPosition, next: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // busy stays transient: a configuration change cancels the import coroutine.
@@ -655,7 +757,7 @@ private fun ImportStep(viewModel: AppViewModel, next: () -> Unit) {
     }
 
     SetupPage(
-        step = 4,
+        step = position,
         title = stringResource(R.string.onboarding_history_title),
         message = stringResource(R.string.onboarding_history_message),
         glyph = { SetupGlyph(Icons.Filled.Download) },
@@ -707,16 +809,32 @@ private fun ImportRow(
 
 // MARK: - Pure rules
 
-/** What step 2 says under its title. */
-internal enum class ScanMessage { BONDED_BATTERY, BONDED, BLUETOOTH_OFF, NOT_FOUND_5, NOT_FOUND_4, WEAR_IT }
+/** What the Find Your Strap step says under its title. */
+internal enum class ScanMessage { BONDED_OTHER_APP, BONDED_BATTERY, BONDED, BLUETOOTH_OFF, NOT_FOUND_5, NOT_FOUND_4, WEAR_IT }
 
 internal object OnboardingRules {
     /**
-     * One sentence for where the search stands. #130: a 5.0/MG bonds to one host at a time, so the WHOOP
-     * app holding it hides it from a scan; its not-found line says to unpair it there. Twin of Swift
-     * `ScanStep.message`.
+     * The wizard's pages in order. The other-strap-apps page follows Welcome only when another strap app
+     * can reach the strap ([otherStrapApps]). Twin of Swift `OnboardingWizard.push(after:)`.
      */
-    fun scanMessage(bonded: Boolean, hasBattery: Boolean, bluetoothDenied: Boolean, notFound: Boolean, model: WhoopModel): ScanMessage = when {
+    fun path(otherStrapApps: Boolean): List<SetupStep> =
+        SetupStep.entries.filter { it != SetupStep.OtherApps || otherStrapApps }
+
+    /**
+     * One sentence for where the search stands. #130: a 5.0/MG bonds to one host at a time, so the WHOOP
+     * app holding it hides it from a scan; its not-found line says to unpair it there. [otherAppSyncing]:
+     * `ForeignOffloadDetector` saw another app pull this strap's history while we are connected. Twin of
+     * Swift `ScanStep.message`.
+     */
+    fun scanMessage(
+        bonded: Boolean,
+        hasBattery: Boolean,
+        bluetoothDenied: Boolean,
+        notFound: Boolean,
+        model: WhoopModel,
+        otherAppSyncing: Boolean = false,
+    ): ScanMessage = when {
+        bonded && otherAppSyncing -> ScanMessage.BONDED_OTHER_APP
         bonded -> if (hasBattery) ScanMessage.BONDED_BATTERY else ScanMessage.BONDED
         bluetoothDenied -> ScanMessage.BLUETOOTH_OFF
         notFound -> if (model == WhoopModel.WHOOP5_MG) ScanMessage.NOT_FOUND_5 else ScanMessage.NOT_FOUND_4

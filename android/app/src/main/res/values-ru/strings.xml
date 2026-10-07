@@ -2400,4 +2400,17 @@
     <string name="sleep_explain_debt">Оценка того, сколько сна вы ещё недобрали за последние 14 ночей, считая от потребности %1$s за ночь. Сон дольше этой потребности гасит недосып; лишний сон сверх того в запас не идёт.</string>
     <string name="settings_restore_needs_restart">Восстановление уже начало заменять данные reNOOP, поэтому reNOOP нужно перезапустить. До этого данные с браслета не сохраняются.</string>
     <string name="settings_restart_renoop">Перезапустить reNOOP</string>
+    <string name="onboarding_one_app_title">Одно приложение на браслет</string>
+    <string name="onboarding_no_other_apps_title">Других приложений для браслета нет</string>
+    <string name="onboarding_other_app_installed">Установлено</string>
+    <string name="onboarding_check_again">Проверить снова</string>
+    <string name="onboarding_bonded_other_app">Браслет подключён, но его синхронизирует и другое приложение. Оставьте только одно.</string>
+    <string name="other_app_syncing_title">Браслет синхронизирует другое приложение</string>
+    <string name="other_app_dont_show_again">Больше не показывать</string>
+    <string name="onboarding_no_other_apps_message">На этом устройстве нет других приложений для браслета с доступом к Bluetooth.</string>
+    <string name="onboarding_other_apps_message">%1$s тоже может синхронизировать браслет, а каждый час его истории достаётся тому приложению, которое синхронизируется первым. Оставьте одно: удалите другое или отключите ему разрешение «Устройства поблизости» в Настройках.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s тоже может синхронизировать браслет, а каждый час его истории достаётся тому приложению, которое синхронизируется первым. Оставьте одно: удалите другое.</string>
+    <string name="other_app_syncing_message">Другое приложение тоже забирает историю с браслета. Каждый час данных достаётся тому приложению, которое синхронизируется первым, у другого он пропадает. Оставьте одно: удалите другое или отключите ему разрешение «Устройства поблизости» в Настройках.</string>
+    <string name="other_app_syncing_message_uninstall">Другое приложение тоже забирает историю с браслета. Каждый час данных достаётся тому приложению, которое синхронизируется первым, у другого он пропадает. Оставьте одно: удалите другое.</string>
+    <string name="other_app_syncing_installed">На этом устройстве установлено: %1$s.</string>
 </resources>

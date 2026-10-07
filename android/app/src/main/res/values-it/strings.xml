@@ -2369,4 +2369,17 @@
     <string name="sleep_explain_debt">Una stima del sonno che devi ancora recuperare dopo le ultime 14 notti, misurata rispetto a un fabbisogno di %1$s a notte. Dormire più di quel fabbisogno lo ripaga; il sonno in più non si accumula.</string>
     <string name="settings_restore_needs_restart">Il ripristino aveva già iniziato a sostituire i dati di reNOOP, quindi reNOOP deve riavviarsi. Fino ad allora non viene salvato nulla dalla fascia.</string>
     <string name="settings_restart_renoop">Riavvia reNOOP</string>
+    <string name="onboarding_one_app_title">Un’app per fascia</string>
+    <string name="onboarding_no_other_apps_title">Nessun’altra app per la fascia</string>
+    <string name="onboarding_other_app_installed">Installata</string>
+    <string name="onboarding_check_again">Controlla di nuovo</string>
+    <string name="onboarding_bonded_other_app">La fascia è associata, ma anche un’altra app la sincronizza. Tienine una sola.</string>
+    <string name="other_app_syncing_title">Un’altra app sta sincronizzando la fascia</string>
+    <string name="other_app_dont_show_again">Non mostrare più</string>
+    <string name="onboarding_no_other_apps_message">Nessun’altra app per la fascia con accesso al Bluetooth trovata su questo dispositivo.</string>
+    <string name="onboarding_other_apps_message">Anche %1$s può sincronizzare la fascia e ogni ora della sua cronologia va all’app che sincronizza per prima. Tienine una sola: disinstalla l’altra o revocale l’autorizzazione «Dispositivi nelle vicinanze» nelle Impostazioni.</string>
+    <string name="onboarding_other_apps_message_uninstall">Anche %1$s può sincronizzare la fascia e ogni ora della sua cronologia va all’app che sincronizza per prima. Tienine una sola: disinstalla l’altra.</string>
+    <string name="other_app_syncing_message">Anche un’altra app scarica la cronologia della fascia. Ogni ora va all’app che sincronizza per prima, all’altra manca. Tienine una sola: disinstalla l’altra o revocale l’autorizzazione «Dispositivi nelle vicinanze» nelle Impostazioni.</string>
+    <string name="other_app_syncing_message_uninstall">Anche un’altra app scarica la cronologia della fascia. Ogni ora va all’app che sincronizza per prima, all’altra manca. Tienine una sola: disinstalla l’altra.</string>
+    <string name="other_app_syncing_installed">Installato su questo dispositivo: %1$s.</string>
 </resources>

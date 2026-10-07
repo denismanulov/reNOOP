@@ -2392,4 +2392,17 @@
     <string name="sleep_explain_debt">Uma estimativa do sono que ainda deve após as últimas 14 noites, medida face a uma necessidade de %1$s por noite. Dormir mais do que essa necessidade salda-a; o sono a mais não fica guardado.</string>
     <string name="settings_restore_needs_restart">O restauro já tinha começado a substituir os dados do reNOOP, por isso o reNOOP tem de reiniciar. Até lá, nada da pulseira é guardado.</string>
     <string name="settings_restart_renoop">Reiniciar o reNOOP</string>
+    <string name="onboarding_one_app_title">Uma app por pulseira</string>
+    <string name="onboarding_no_other_apps_title">Sem outras apps de pulseira</string>
+    <string name="onboarding_other_app_installed">Instalada</string>
+    <string name="onboarding_check_again">Verificar novamente</string>
+    <string name="onboarding_bonded_other_app">A pulseira está emparelhada, mas outra app também a sincroniza. Mantenha só uma.</string>
+    <string name="other_app_syncing_title">Outra app está a sincronizar a pulseira</string>
+    <string name="other_app_dont_show_again">Não mostrar novamente</string>
+    <string name="onboarding_no_other_apps_message">Não foi encontrada outra app de pulseira com acesso ao Bluetooth neste dispositivo.</string>
+    <string name="onboarding_other_apps_message">%1$s também pode sincronizar a pulseira, e cada hora do histórico vai para a app que sincroniza primeiro. Mantenha uma: desinstale a outra ou retire-lhe a permissão «Dispositivos próximos» nas Definições.</string>
+    <string name="onboarding_other_apps_message_uninstall">%1$s também pode sincronizar a pulseira, e cada hora do histórico vai para a app que sincroniza primeiro. Mantenha uma: desinstale a outra.</string>
+    <string name="other_app_syncing_message">Outra app também recolhe o histórico da pulseira. Cada hora vai para a app que sincroniza primeiro e a outra perde-a. Mantenha uma: desinstale a outra ou retire-lhe a permissão «Dispositivos próximos» nas Definições.</string>
+    <string name="other_app_syncing_message_uninstall">Outra app também recolhe o histórico da pulseira. Cada hora vai para a app que sincroniza primeiro e a outra perde-a. Mantenha uma: desinstale a outra.</string>
+    <string name="other_app_syncing_installed">Instalado neste dispositivo: %1$s.</string>
 </resources>

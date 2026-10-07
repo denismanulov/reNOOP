@@ -8,6 +8,8 @@ import com.noop.protocol.DeviceFamily
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -15,8 +17,9 @@ import java.lang.reflect.Proxy
 
 /**
  * The 2026-09-30 lost night, and what guards against a repeat on Android: a restore that leaves the
- * process on a replaced database must never ack a chunk. Twin of the Swift `OffloadSafetyTests`, with the
- * same frames and the same trim cursor.
+ * process on a replaced database must never ack a chunk, and a second app pulling the strap's history
+ * must be noticed. Twin of the Swift `OffloadSafetyTests`, with the same frames, trim cursor, instants and
+ * thresholds (seconds there, milliseconds here).
  */
 class OffloadSafetyTest {
 
@@ -150,6 +153,180 @@ class OffloadSafetyTest {
             "a process that never opened the database has no connection a swap could strand",
             LiveStoreReplacement.isLiveStore(live, opened = null),
         )
+    }
+
+    // MARK: - another app pulling the strap's history
+
+    @Test
+    fun theThresholdsAreTheSwiftOnes() {
+        assertEquals(30_000L, ForeignOffloadDetector.COOLDOWN_MS)
+        assertEquals(60_000L, ForeignOffloadDetector.WINDOW_MS)
+        assertEquals(20, ForeignOffloadDetector.FRAMES_TO_FLAG)
+        assertEquals(600_000L, WhoopBleClient.FOREIGN_OFFLOAD_REPEAT_MS)
+    }
+
+    @Test
+    fun foreignHistoryNeedsTheFullBurstOutsideTheCooldown() {
+        val d = ForeignOffloadDetector()
+        val t0 = 1_000_000_000L   // 1_000_000 s
+        d.noteOwnOffloadActivity(t0)
+        // Our own trailing frames inside the cooldown never count, however many there are.
+        for (i in 0 until 100) {
+            assertFalse(d.noteHistoryOutsideOwnOffload(t0 + i * 200L))
+        }
+        val late = t0 + ForeignOffloadDetector.COOLDOWN_MS + 1_000L
+        for (i in 0 until ForeignOffloadDetector.FRAMES_TO_FLAG - 1) {
+            assertFalse(d.noteHistoryOutsideOwnOffload(late + i * 1_000L))
+        }
+        assertTrue(
+            "a foreign chunk's worth of records inside the window is the evidence",
+            d.noteHistoryOutsideOwnOffload(late + ForeignOffloadDetector.FRAMES_TO_FLAG * 1_000L),
+        )
+    }
+
+    @Test
+    fun sparseStraysOutsideTheWindowNeverAddUp() {
+        val d = ForeignOffloadDetector()
+        val t0 = 2_000_000_000L
+        for (i in 0 until ForeignOffloadDetector.FRAMES_TO_FLAG * 3) {
+            val t = t0 + i * (ForeignOffloadDetector.WINDOW_MS / 4)
+            assertFalse("four strays a minute are not an offload", d.noteHistoryOutsideOwnOffload(t))
+        }
+    }
+
+    @Test
+    fun ownActivityResetsTheEvidence() {
+        val d = ForeignOffloadDetector()
+        val t0 = 3_000_000_000L
+        for (i in 0 until ForeignOffloadDetector.FRAMES_TO_FLAG - 1) {
+            d.noteHistoryOutsideOwnOffload(t0 + i * 100L)
+        }
+        d.noteOwnOffloadActivity(t0 + 2_000L)
+        assertFalse("records right after our own request are ours", d.noteHistoryOutsideOwnOffload(t0 + 3_000L))
+    }
+
+    /** Android only, to pin both edges: exactly the cooldown is outside it, exactly the window is out of it. */
+    @Test
+    fun theCooldownAndTheWindowAreHalfOpen() {
+        val cooled = ForeignOffloadDetector()
+        cooled.noteOwnOffloadActivity(0L)
+        for (i in 0 until ForeignOffloadDetector.FRAMES_TO_FLAG - 1) {
+            assertFalse(cooled.noteHistoryOutsideOwnOffload(ForeignOffloadDetector.COOLDOWN_MS))
+        }
+        assertTrue(
+            "a record exactly the cooldown after our activity counts",
+            cooled.noteHistoryOutsideOwnOffload(ForeignOffloadDetector.COOLDOWN_MS),
+        )
+
+        val windowed = ForeignOffloadDetector()
+        assertFalse(windowed.noteHistoryOutsideOwnOffload(0L))
+        for (i in 0 until ForeignOffloadDetector.FRAMES_TO_FLAG - 1) {
+            assertFalse(
+                "the record exactly one window old has already left the count",
+                windowed.noteHistoryOutsideOwnOffload(ForeignOffloadDetector.WINDOW_MS),
+            )
+        }
+        assertTrue(windowed.noteHistoryOutsideOwnOffload(ForeignOffloadDetector.WINDOW_MS))
+    }
+
+    /** One verdict spends its evidence: the next needs a full burst again. */
+    @Test
+    fun aVerdictStartsTheCountAgain() {
+        val d = ForeignOffloadDetector()
+        val verdicts = (0 until ForeignOffloadDetector.FRAMES_TO_FLAG * 2).count { d.noteHistoryOutsideOwnOffload(it * 10L) }
+        assertEquals(2, verdicts)
+    }
+
+    @Test
+    fun historyRecordTypeByteSitsWhereEachFamilyPutsIt() {
+        val w4 = ByteArray(12)
+        w4[4] = 47
+        assertTrue(ForeignOffloadDetector.isHistoryRecord(w4, DeviceFamily.WHOOP4))
+        assertFalse(ForeignOffloadDetector.isHistoryRecord(w4, DeviceFamily.WHOOP5))
+        val w5 = ByteArray(12)
+        w5[8] = 47
+        assertTrue(ForeignOffloadDetector.isHistoryRecord(w5, DeviceFamily.WHOOP5))
+        w4[4] = 43   // the live raw flood
+        assertFalse(ForeignOffloadDetector.isHistoryRecord(w4, DeviceFamily.WHOOP4))
+        assertFalse(ForeignOffloadDetector.isHistoryRecord(byteArrayOf(0, 1), DeviceFamily.WHOOP4))
+    }
+
+    /**
+     * The always-on line. It names the conclusion and then exactly what was counted, with the figures
+     * taken from the detector, so the two cannot drift apart.
+     */
+    @Test
+    fun theLogLineStatesWhatWasCounted() {
+        assertEquals(
+            "Another BLE client is pulling this strap's history: 20 history records arrived outside our own " +
+                "offload within 60 s, none within 30 s of our own offload activity. Whichever client acks a chunk " +
+                "first keeps it; the other never stores those hours. Keep one app connected to the strap.",
+            WhoopBleClient.foreignOffloadLine(),
+        )
+    }
+
+    // MARK: - the other strap apps, and the warning
+
+    @Test
+    fun otherAppsPhrase() {
+        val join: (List<String>) -> String = { it.joinToString(" and ") }
+        assertNull(OtherStrapApps.phrase(emptyList(), join))
+        assertEquals("NOOP", OtherStrapApps.phrase(listOf("NOOP"), join))
+        assertEquals("NOOP and WHOOP", OtherStrapApps.phrase(listOf("NOOP", "WHOOP"), join))
+    }
+
+    @Test
+    fun anAppIsNamedOnceWhicheverOfItsIdsIsInstalled() {
+        assertEquals(emptyList<String>(), OtherStrapApps.ableToSync { false })
+        assertEquals(listOf("NOOP"), OtherStrapApps.ableToSync { it == "com.noop.whoop" })
+        assertEquals(listOf("NOOP"), OtherStrapApps.ableToSync { it == "com.noop.whoop.debug" || it == "com.noop.whoop.staging" })
+        assertEquals(listOf("WHOOP"), OtherStrapApps.ableToSync { it == "com.whoop.android" })
+        assertEquals("in the order of the known list", listOf("NOOP", "WHOOP"), OtherStrapApps.ableToSync { true })
+        assertEquals("reNOOP's own ids are never on the list", emptyList<String>(), OtherStrapApps.ableToSync { it.startsWith("com.renoop.") })
+    }
+
+    /** Android only: from Android 12 an app without the Nearby devices permission cannot reach a strap. */
+    @Test
+    fun anInstalledAppCountsOnlyWhileItMayUseBluetooth() {
+        assertFalse(OtherStrapApps.canConnect(installed = false, sdkInt = 34, bluetoothGranted = { true }))
+        assertTrue(OtherStrapApps.canConnect(installed = true, sdkInt = 34, bluetoothGranted = { true }))
+        assertFalse(OtherStrapApps.canConnect(installed = true, sdkInt = 31, bluetoothGranted = { false }))
+        // Before Android 12 Bluetooth came with the install, and there is no grant to ask about.
+        assertTrue(OtherStrapApps.canConnect(installed = true, sdkInt = 30, bluetoothGranted = { error("not asked before Android 12") }))
+        assertFalse(OtherStrapApps.nearbyDevicesRevocable(sdkInt = 30))
+        assertTrue(OtherStrapApps.nearbyDevicesRevocable(sdkInt = 31))
+    }
+
+    /** Package visibility: an id the manifest does not list under `<queries>` reads as "not installed". */
+    @Test
+    fun everyKnownIdIsDeclaredInTheManifestQueries() {
+        val userDir = File(System.getProperty("user.dir") ?: ".")
+        val rel = "src/main/AndroidManifest.xml"
+        val manifest = listOf(File(userDir, rel), File(userDir, "app/$rel"), File(userDir, "android/app/$rel"))
+            .firstOrNull { it.isFile }
+        assertNotNull("AndroidManifest.xml not found from user.dir=$userDir; a skip would read as a pass", manifest)
+        val queries = manifest!!.readText().substringAfter("<queries>").substringBefore("</queries>")
+        for (id in OtherStrapApps.known.flatMap { it.packages }) {
+            assertTrue("$id is missing from <queries>", queries.contains("<package android:name=\"$id\" />"))
+        }
+    }
+
+    @Test
+    fun theWarningShowsOncePerProcessAndNeverWhenMuted() {
+        val muted = OtherStrapAppWarning()
+        muted.reportForeignOffload(muted = true)
+        assertFalse(muted.presented.value)
+        // The mute did not spend the one showing: unmuted, the next sighting still warns.
+        muted.reportForeignOffload(muted = false)
+        assertTrue(muted.presented.value)
+
+        val warning = OtherStrapAppWarning()
+        warning.reportForeignOffload(muted = false)
+        assertTrue(warning.presented.value)
+        warning.dismiss()
+        assertFalse(warning.presented.value)
+        warning.reportForeignOffload(muted = false)
+        assertFalse("shown at most once per process", warning.presented.value)
     }
 }
 

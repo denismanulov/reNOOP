@@ -32,6 +32,7 @@ import com.noop.ui.BackupSyncPrefs
 import com.noop.ui.ClockPrefs
 import com.noop.ui.m3.ChoiceDialog
 import com.noop.ui.m3.ConfirmDialog
+import com.noop.ui.m3.DialogParagraphs
 import com.noop.ui.m3.ListGroup
 import com.noop.ui.m3.ListRow
 import com.noop.ui.m3.SwitchRow
@@ -374,7 +375,8 @@ internal fun SettingsBackupScreen(vm: AppViewModel, onBack: () -> Unit) {
         // way out of the dialog leaves the same process behind.
         val mustRestart = LiveStoreReplacement.happened
         BackupProblemDialog(
-            message = if (mustRestart) message + "\n\n" + stringResource(R.string.settings_restore_needs_restart) else message,
+            message = message,
+            note = if (mustRestart) stringResource(R.string.settings_restore_needs_restart) else null,
             confirmLabel = stringResource(if (mustRestart) R.string.settings_restart_renoop else R.string.summary_ok),
             onDismiss = {
                 failure = null
@@ -387,14 +389,15 @@ internal fun SettingsBackupScreen(vm: AppViewModel, onBack: () -> Unit) {
 /**
  * A backup or restore failure. These messages end on the part the reader can act on, which a toast would
  * cut off (#1014), so they get a dialog, with Copy so a corruption report carries SQLite's own words.
+ * [note] is a paragraph of reNOOP's own under the failure; Copy takes the failure alone.
  */
 @Composable
-private fun BackupProblemDialog(message: String, confirmLabel: String, onDismiss: () -> Unit) {
+private fun BackupProblemDialog(message: String, note: String?, confirmLabel: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_backup_problem)) },
-        text = { Text(message) },
+        text = { DialogParagraphs(message, note) },
         confirmButton = { TextButton(onClick = onDismiss) { Text(confirmLabel) } },
         dismissButton = {
             TextButton(onClick = {
