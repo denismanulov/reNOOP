@@ -47,6 +47,9 @@ class NoopApplication : Application() {
         // Install before any app-owned startup work so even an early failure is preserved for the
         // recovery screen on the next launch.
         CrashCapture.install(this)
+        // Whether an activity is in front of the wearer, for the BLE client's step auto-calibration
+        // (it takes no measurement while the app is on screen). Before any activity can resume.
+        registerActivityLifecycleCallbacks(AppOnScreen)
         // #1008: pin the pre-change Overnight-only default for existing installs before anything
         // reads it. Idempotent; a no-op on fresh installs and on every launch after the first.
         com.noop.ui.NoopPrefs.migrateContinuousHrvOvernightDefault(this)
@@ -134,6 +137,7 @@ class NoopApplication : Application() {
             successfulOffloadSink = {
                 SelfHostedPushScheduler.enqueueAfterSuccessfulOffload(applicationContext)
             },
+            appOnScreen = { AppOnScreen.isOnScreen },
         ).apply {
             // #1881: the same fact seeds the connect gate, closing the launch race where the radio can
             // reach the WHOOP flow before SourceCoordinator has wired up and asserted it.

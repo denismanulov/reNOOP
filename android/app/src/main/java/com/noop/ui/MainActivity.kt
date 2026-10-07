@@ -504,8 +504,10 @@ object NoopPrefs {
         of(context).edit().putString(KEY_STEPS_MOTION_CACHE, payload).apply()
     }
 
-    /** Where WHOOP 4.0 step auto-calibration keeps its opt-in and its learned state, under the Swift key
-     *  names (`stepAutoCalibration.*`). Experimental, default off, and not in the `.noopbak` whitelist. */
+    /** Where WHOOP 4.0 step auto-calibration keeps its opt-in, its learned state, its waiting
+     *  measurements, its burst times and its raw-stream marker, under the Swift key names
+     *  (`stepAutoCalibration.*`, `rawStreamProbe.armed`). Experimental, default off, and not in the
+     *  `.noopbak` whitelist. */
     fun stepCalibrationPrefs(context: Context): com.noop.data.KeyValuePrefs =
         com.noop.data.SharedKeyValuePrefs(of(context))
 

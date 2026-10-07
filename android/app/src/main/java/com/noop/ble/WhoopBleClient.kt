@@ -35,6 +35,7 @@ import com.noop.data.StreamPersistence
 import com.noop.protocol.CommandNames
 import com.noop.protocol.Whoop5Ecg
 import com.noop.protocol.Whoop5EcgProbe
+import com.noop.protocol.Whoop4RawImu
 import com.noop.protocol.Whoop5RawImu
 import com.noop.testcentre.ImuSessionFileStore
 import com.noop.data.WhoopRepository
@@ -47,6 +48,7 @@ import com.noop.protocol.wireName
 import com.noop.protocol.CommandNumber
 import com.noop.protocol.FeatureFlagWriteGate
 import com.noop.protocol.R22DisableReport
+import com.noop.protocol.RawStreamSwitch
 import com.noop.protocol.DeviceFamily
 import com.noop.protocol.DeviceConfigReadProbe
 import com.noop.protocol.DeviceConfigReadProbeReport
@@ -537,6 +539,12 @@ class WhoopBleClient(
     private val gattOpsFactory: (BluetoothGatt) -> GattOps = ::RealGattOps,
     /** Fire-and-forget notification after a true HISTORY_COMPLETE only. The sink must only enqueue. */
     private val successfulOffloadSink: () -> Unit = {},
+    /**
+     * True while the wearer has this app on screen. Step auto-calibration takes no measurement then (see
+     * [StepAutoCalibrator.offloadSettled]). The default says "on screen", so a client built without the
+     * signal never takes one; [NoopApplication] wires the real one.
+     */
+    private val appOnScreen: () -> Boolean = { true },
 ) {
 
     companion object {
@@ -3521,6 +3529,57 @@ class WhoopBleClient(
      *  only watches inbound frames: nothing it concludes writes to the strap or changes a timer. Never
      *  reset, like the Swift twin: its cooldown is measured from our own last offload activity. */
     private val foreignOffload = ForeignOffloadDetector()
+
+    /**
+     * Experimental WHOOP 4.0 step auto-calibration (default off, see [StepCalibrationCoordinator]). The
+     * one command it sends is the raw-stream switch, as a confirmed write so its request is never one of
+     * several queued in one burst, with the payload [RawStreamSwitch] states. Everything it is told
+     * arrives on the main looper ([onMainLooper]); its timers run there too and cannot throw into it.
+     * Swift twins: `BLEManager.rawStreamProbe` and `BLEManager.stepCalibrator`.
+     */
+    private val stepCalibration = StepCalibrationCoordinator(
+        prefs = NoopPrefs.stepCalibrationPrefs(context),
+        sendSwitch = { on -> send(RawStreamSwitch.command, RawStreamSwitch.payload(on), withResponse = true) },
+        steps = { from, to ->
+            if (from > to) emptyList()
+            else runCatching {
+                repository.stepSamples(deviceId, from, to, limit = (to - from + 2).toInt())
+            }.getOrDefault(emptyList())
+        },
+        log = { line -> log(line) },
+        schedule = { delayMs, work -> handler.postDelayed({ stepCalibrationGuarded(work) }, delayMs) },
+        launch = { block ->
+            ioScope.launch(Dispatchers.Main) {
+                try {
+                    block()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    log("Step calibration: check failed (${t.javaClass.simpleName})")
+                }
+            }
+        },
+        isWhoop4 = { familyEstablished && connectedFamily == DeviceFamily.WHOOP4 },
+        isConnected = { _state.value.connected },
+        offloadInFlight = { backfilling },
+        batteryPct = { _state.value.batteryPct },
+        appOnScreen = appOnScreen,
+    )
+
+    /** A step-calibration timer must not be able to take the BLE process down with it. */
+    private fun stepCalibrationGuarded(work: () -> Unit) {
+        try {
+            work()
+        } catch (t: Throwable) {
+            log("Step calibration: timer failed (${t.javaClass.simpleName})")
+        }
+    }
+
+    /** Runs [work] on the main looper: now when already there, else posted. GATT callbacks arrive on
+     *  another thread below Android 9 (see `connectGatt`), and [stepCalibration] is not thread-safe. */
+    private fun onMainLooper(work: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) work() else handler.post(work)
+    }
     /** One-shot per session: SEND_HISTORICAL_DATA already fired (gate + fail-open can both call). */
     private var historicalKickSent = false
     /** 5/MG zero-frame retries used this CONNECTION (max 2 — then the 900s periodic timer owns it). */
@@ -8100,6 +8159,18 @@ class WhoopBleClient(
                     // #1635: while the unbonded probe is listening, this frame is the measurement. Gated
                     // inside the call so a normal link pays one boolean read per frame.
                     noteUnbondedProbeFrame(parsed)
+                    // A step-calibration burst reads the accelerometer block of the WHOOP 4.0 raw IMU
+                    // packets. With no burst running the guard is one stored Boolean, so this costs nothing
+                    // per frame. The decoder checks the frame's integrity itself.
+                    if (stepCalibration.wantsFrames && connectedFamily == DeviceFamily.WHOOP4) {
+                        Whoop4RawImu.accel(frame)?.let { imu -> onMainLooper { stepCalibration.rawImu(imu) } }
+                    }
+                    // The raw-stream switch's acknowledgement. Unlike the probe replies below this one
+                    // drives state (it stops the switch's retries and clears its "stream is on" marker), so
+                    // it is taken only from an intact COMMAND_RESPONSE, never from a bare opcode byte.
+                    if (connectedFamily == DeviceFamily.WHOOP4 && RawStreamSwitch.isAcknowledgement(frame, parsed)) {
+                        onMainLooper { stepCalibration.switchAcknowledged() }
+                    }
                     // A frame replayed as part of the historical offload (type 47/48/… during a backfill)
                     recordGroundTruthImuFrame(frame)
                     // must not drive LIVE-only state (the charging pill). (PR #568 reimpl)
@@ -9263,6 +9334,10 @@ class WhoopBleClient(
         val realtimeWantNow = screenWantsRealtime || continuousCaptureWantsNow()
         wantsRealtime = realtimeWantNow
         if (realtimeWantNow) { realtimeArmed = true; realtimeArmedThisLink = true; send(CommandNumber.TOGGLE_REALTIME_HR, byteArrayOf(1)) }
+        // Step auto-calibration: if an earlier connection or launch asked for the raw stream and its off
+        // switch was never acknowledged, write it again, alone, 1.5 s from now and until it is answered.
+        // Writes nothing otherwise. Swift does this from `maybeSignalConnectSettled`.
+        onMainLooper { stepCalibration.connectSettled() }
     }
 
     // ====================================================================================
@@ -10855,6 +10930,9 @@ class WhoopBleClient(
         // not "no banked history / charge to 100%". A fresh offload (count 0) keeps the honest guidance.
         backfiller.begin(connectedFamily, continuedAfterRows = consecutiveAutoContinues > 0)   // family drives the +4 puffin offset for 5/MG (#78)
         backfilling = true
+        // A step-calibration burst in flight ends here: its raw stream would share the air with this
+        // offload. A no-op unless one is running, which needs the opt-in.
+        onMainLooper { stepCalibration.offloadStarted() }
         lastBackfillAtMs = System.currentTimeMillis()   // the BackfillPolicy floor is measured from the last KICK
         ackedChunksThisSession = 0
         decodedChunksThisSession = 0
@@ -11363,6 +11441,10 @@ class WhoopBleClient(
             // by default); never auto-writes a sleep session.
             maybeDetectNaps()
         }
+        // Step auto-calibration reads the history this offload just banked. Offloads often end in quick
+        // succession, so it waits a few seconds and runs only if none is in flight by then. It acts on a
+        // true HISTORY_COMPLETE from a WHOOP 4.0 only (the test is inside, where it can be tested).
+        onMainLooper { stepCalibration.offloadEnded(reason) }
         // Success-side summary (#150 forensics): we logged failures (decoded-to-0) but never successes,
         // so a strap log couldn't tell a banking strap from a broken one. Emit the per-session persistence
         // tally whenever anything actually landed — the win-rate signal a log previously lacked. Mirrors
@@ -12247,6 +12329,9 @@ class WhoopBleClient(
         // from one session wedging the live stream after a reconnect (so the keep-alive's link-bounce
         // actually recovers a frozen stream).
         reassembler.reset()
+        // Step auto-calibration: nothing can be written now, and a burst in flight is over. The "stream
+        // may be on" marker is kept, so the next connection switches the stream off.
+        onMainLooper { stepCalibration.disconnected() }
     }
 
     /**
