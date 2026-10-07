@@ -459,6 +459,12 @@ class WhoopRepository(
      *  path banks v18 rows, so a plain map is enough. Swift twin: `WhoopStore.v18AuxRowsSincePrune`. */
     private val v18AuxRowsSincePrune = mutableMapOf<String, Int>()
 
+    /** What each user-edited night was last re-staged from, so an unchanged night is not re-read on
+     *  every scoring pass. Held here because it describes THIS store: a second repository, or a test's,
+     *  starts with none. Per process and never persisted; a restore ends the process. See
+     *  [com.noop.analytics.SleepStageHealer.RestagedNights]. */
+    val restagedNights = com.noop.analytics.SleepStageHealer.RestagedNights()
+
     private val _sleepSampleRevision = MutableStateFlow(0L)
     val sleepSampleRevision: StateFlow<Long> = _sleepSampleRevision.asStateFlow()
     private val _batteryRevision = MutableStateFlow(0L)
@@ -1426,14 +1432,28 @@ class WhoopRepository(
         // That is the point of a raw export, and it is the evidence the duplication was diagnosed from,
         // so a diagnostic export and the app can legitimately disagree on beat counts.
         OuraRedrainCollapse.withoutRedrainedRuns(
-            when {
-                isWhoop5RrSource(deviceId, unlabelledAliasOfWhoop5) ->
-                    dao.whoop5RrIntervals(deviceId, from, to, limit)
-                isWhoop4RrSource(deviceId) || dao.hasWhoop4HistoricalRrSource(deviceId) ->
-                    dao.whoop4RrIntervals(deviceId, from, to, limit)
-                else -> dao.rrIntervals(deviceId, from, to, limit)
+            when (rrReadPolicy(deviceId, unlabelledAliasOfWhoop5)) {
+                RrReadPolicy.WHOOP5 -> dao.whoop5RrIntervals(deviceId, from, to, limit)
+                RrReadPolicy.WHOOP4 -> dao.whoop4RrIntervals(deviceId, from, to, limit)
+                RrReadPolicy.GENERIC -> dao.rrIntervals(deviceId, from, to, limit)
             }
         )
+    }
+
+    /** The three reads [rrIntervalsForDevice] chooses between. */
+    enum class RrReadPolicy { WHOOP5, WHOOP4, GENERIC }
+
+    /**
+     * Which read [rrIntervalsForDevice] takes for a device, resolved in the order it always was: a
+     * WHOOP 5 source first, then a registry-confirmed WHOOP 4 or one that has banked type-47 history,
+     * then the generic read. One resolver, so a witness of that read (the edited-night re-stage memory,
+     * [com.noop.analytics.SleepStageHealer.restageInputs]) names the branch the read itself takes: the
+     * "ever banked a type-47 beat" probe is device-wide and no windowed fingerprint can see it move.
+     */
+    suspend fun rrReadPolicy(deviceId: String, unlabelledAliasOfWhoop5: Boolean = false): RrReadPolicy = when {
+        isWhoop5RrSource(deviceId, unlabelledAliasOfWhoop5) -> RrReadPolicy.WHOOP5
+        isWhoop4RrSource(deviceId) || dao.hasWhoop4HistoricalRrSource(deviceId) -> RrReadPolicy.WHOOP4
+        else -> RrReadPolicy.GENERIC
     }
 
     /** Whether the device registry CONFIRMS this owner is a WHOOP 4, so its type-47 history is scorable. */
