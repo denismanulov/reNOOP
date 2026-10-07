@@ -328,11 +328,17 @@ fun ValueWithUnit(
     }
 }
 
-/** A Pixel-Settings style icon: [icon] centred on a tonal circle. */
+/** A Pixel-Settings style icon: [icon] centred on a tonal circle, or on another [shape] (see M3Expressive). */
 @Composable
-fun TonalIcon(icon: ImageVector, pair: TonalPair, modifier: Modifier = Modifier, size: Dp = M3Dimens.iconCircle) {
+fun TonalIcon(
+    icon: ImageVector,
+    pair: TonalPair,
+    modifier: Modifier = Modifier,
+    size: Dp = M3Dimens.iconCircle,
+    shape: Shape = CircleShape,
+) {
     Box(
-        modifier = modifier.size(size).clip(CircleShape).background(pair.container),
+        modifier = modifier.size(size).clip(shape).background(pair.container),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = pair.content, modifier = Modifier.size(size * 0.55f))
