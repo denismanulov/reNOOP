@@ -55,6 +55,14 @@ departs from the iOS layout on purpose; the data, the scoring and the editing ar
 - Not done here: the iOS Sleep tab is untouched; editing a night or a nap still lives in the tab's overflow
   menu, not on the sleep's own page.
 
+## Swift twins owed (2026-10-07)
+
+One change started on Android and has no Swift twin yet: the WHOOP 4.0 strap-computed blood-oxygen
+byte (`aux_byte_86`, Android commit `b7a287e0`). What to build, the stored-data contract, the test
+fixtures and what is still unverified are in
+[`SWIFT_HANDOFF_2026-10-07.md`](SWIFT_HANDOFF_2026-10-07.md), together with the day's findings that
+changed no code (REM share, the v24 optical words, the v25 record map).
+
 ## Kotlin twins of 2026-10-03
 Denis's twelve commits of 2026-10-03 were Swift-only apart from one decoder line. Their Android twins, in the
 order they landed (all on `android-m3`, 2026-10-07):
