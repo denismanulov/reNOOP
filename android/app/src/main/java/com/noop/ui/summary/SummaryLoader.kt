@@ -31,6 +31,8 @@ import com.noop.ui.lastScoredRecoveryDay
 import com.noop.ui.lastSkinTempReadingRow
 import com.noop.ui.lastSpo2Row
 import com.noop.ui.lastVitalsRow
+import com.noop.ui.sleep.SleepNap
+import com.noop.ui.sleep.SleepNightsLoader
 import com.noop.ui.localDayString
 import com.noop.ui.recoveryCalibrationNights
 import com.noop.ui.resolveSkinTempReading
@@ -78,6 +80,8 @@ internal data class SummarySleepNight(
     val stages: Stages,
     /** The night's timestamped stage segments, for the compact chart; null when none were stored. */
     val segments: List<PersistedSegment>?,
+    /** The day's naps, each a row under the Sleep card that opens the nap's own page. */
+    val naps: List<SleepNap> = emptyList(),
 )
 
 internal object SummaryLoader {
@@ -323,6 +327,7 @@ internal object SummaryLoader {
                     wakeTs = night.heroWakeTs ?: night.session.endTs,
                     stages = display.stages,
                     segments = display.hypnogramSegments,
+                    naps = night.napBlocks.map { SleepNightsLoader.nap(it) },
                 )
             }.getOrNull()
         }

@@ -53,11 +53,11 @@ import com.noop.ui.metric.MetricDetailScreen
 import com.noop.ui.metric.metricRoute
 import com.noop.ui.settings.settingsGraph
 import com.noop.ui.sleep.SleepActions
-import com.noop.ui.sleep.SleepHighlightsScreen
-import com.noop.ui.sleep.SleepMoreDataScreen
+import com.noop.ui.sleep.SleepHistoryScreen
 import com.noop.ui.sleep.SleepScheduleScreen
+import com.noop.ui.sleep.SleepSessionScreen
 import com.noop.ui.sleep.SleepTabScreen
-import com.noop.ui.sleep.SleepVitalsScreen
+import com.noop.ui.sleep.sleepSessionRoute
 import com.noop.ui.summary.SummaryActions
 import com.noop.ui.summary.SummaryScreen
 import com.noop.ui.trends.TrainingLoadScreen
@@ -119,11 +119,11 @@ internal enum class Destination(val route: String) {
     TrainingLoad("training_load"),
     FullDay("full_day"),
     Automations("automations"),
-    // The Sleep tab's pages: More Sleep Data on a night (offset 0 = newest), a night's Vitals, Sleep
-    // Highlights, and the Sleep Schedule (the one alarm surface, which replaced the Alarms screen).
-    SleepMoreData("sleep_more/{offset}"),
-    SleepVitals("sleep_vitals/{day}"),
-    SleepHighlights("sleep_highlights/{offset}"),
+    // The Sleep tab's pages: one sleep's own page (the day it ended on, and the nap's start or 0 for the
+    // day's main night), Sleep History, and the Sleep Schedule (the one alarm surface, which replaced the
+    // Alarms screen).
+    SleepSession("sleep_session/{day}/{nap}"),
+    SleepHistory("sleep_history"),
     SleepSchedule("sleep_schedule"),
     // Settings > Import and Settings > Backup (also opened from Devices and a metric page).
     DataSources("data_sources"),
@@ -291,6 +291,11 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                             SleepNightRequest.wakeDay = wakeDay
                             nav.showTabRoot(MainTab.Sleep)
                         },
+                        // A nap's row opens that nap's page on the Sleep tab, over the day it belongs to.
+                        openSleepNap = { wakeDay, napStartTs ->
+                            SleepNightRequest.wakeDay = wakeDay
+                            nav.openInTab(MainTab.Sleep, sleepSessionRoute(wakeDay, napStartTs))
+                        },
                     ),
                 )
             }
@@ -299,9 +304,8 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     vm = viewModel,
                     actions = SleepActions(
                         openMetric = { key -> nav.push(metricRoute(key, null)) },
-                        openMoreData = { offset -> nav.push("sleep_more/$offset") },
-                        openVitals = { day -> nav.push("sleep_vitals/$day") },
-                        openHighlights = { offset -> nav.push("sleep_highlights/$offset") },
+                        openSession = { day, nap -> nav.push(sleepSessionRoute(day, nap)) },
+                        openHistory = { nav.push(Destination.SleepHistory.route) },
                         openSchedule = { nav.push(Destination.SleepSchedule.route) },
                     ),
                 )
@@ -414,20 +418,21 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             composable(Destination.TrainingLoad.route) { TrainingLoadScreen(viewModel, onBack = { nav.popBackStack() }) }
             composable(Destination.FullDay.route) { FullDayChartScreen(vm = viewModel, onBack = { nav.popBackStack() }) }
             composable(Destination.Automations.route) { AutomationsScreen(viewModel, onBack = { nav.popBackStack() }) }
-            composable(Destination.SleepMoreData.route, arguments = listOf(navArgument("offset") { type = NavType.IntType })) { entry ->
-                SleepMoreDataScreen(viewModel, entry.arguments?.getInt("offset") ?: 0, onBack = { nav.popBackStack() })
-            }
-            composable(Destination.SleepVitals.route, arguments = listOf(navArgument("day") { type = NavType.StringType })) { entry ->
-                SleepVitalsScreen(
+            composable(
+                Destination.SleepSession.route,
+                arguments = listOf(
+                    navArgument("day") { type = NavType.StringType },
+                    navArgument("nap") { type = NavType.LongType },
+                ),
+            ) { entry ->
+                SleepSessionScreen(
                     viewModel,
                     day = entry.arguments?.getString("day").orEmpty(),
+                    napStartTs = entry.arguments?.getLong("nap") ?: 0L,
                     onBack = { nav.popBackStack() },
-                    onOpenMetric = { key -> nav.push(metricRoute(key, null)) },
                 )
             }
-            composable(Destination.SleepHighlights.route, arguments = listOf(navArgument("offset") { type = NavType.IntType })) { entry ->
-                SleepHighlightsScreen(viewModel, entry.arguments?.getInt("offset") ?: 0, onBack = { nav.popBackStack() })
-            }
+            composable(Destination.SleepHistory.route) { SleepHistoryScreen(viewModel, onBack = { nav.popBackStack() }) }
             composable(Destination.SleepSchedule.route) { SleepScheduleScreen(viewModel, onBack = { nav.popBackStack() }) }
             composable(Destination.Notifications.route) { NotificationsSettingsScreen(viewModel, onBack = { nav.popBackStack() }) }
             // Settings and its pages, with Import (DataSources) and Backup (BackupSync).

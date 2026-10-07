@@ -11,7 +11,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -19,8 +18,9 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-// MARK: - The pure logic of the Sleep tab (twin of iOS Strand/SleepHealth/SleepScore, SleepVitals,
-// SleepHistory and SleepMoreData). No Android types: the screens map the enums below to strings.
+// MARK: - The pure logic of the Sleep tab. The score parts, the vitals ranges and the range windows follow
+// iOS Strand/SleepHealth (SleepScore, SleepVitals, SleepHistory); the levels, the verdict and the week are the
+// Android tab's own reading of the same figures. No Android types: the screens map the enums to strings.
 
 // MARK: Sleep Score
 
@@ -38,49 +38,69 @@ internal enum class SleepScorePart {
         }
 
     companion object {
-        /** The ring, clockwise from 12 o'clock. */
-        val ringOrder = listOf(INTERRUPTIONS, DURATION, RESTORATIVE, REGULARITY)
-        /** The legend under the ring. */
-        val legendOrder = listOf(DURATION, RESTORATIVE, REGULARITY, INTERRUPTIONS)
+        /**
+         * The parts one night can be read on, in the order the page lists them. Regularity is left out: the
+         * composite gives a single night a neutral constant for it ([RestScorer.NEUTRAL_CONSISTENCY]), so it
+         * says nothing about this night and a line or a sentence about it would claim what nothing measured.
+         */
+        val measured = listOf(DURATION, INTERRUPTIONS, RESTORATIVE)
     }
 }
 
-/** How the night did on one part: the share earned (0…1) and, for an on-device score, its whole points. */
-internal data class SleepScorePartScore(val part: SleepScorePart, val fraction: Double, val points: Int?)
-
-/** The word under the ring. */
+/** The word for a score, and for how one of its parts did. */
 internal enum class SleepScoreWord { POOR, FAIR, GOOD, OPTIMAL }
 
-/** Which sentence closes the score card. */
-internal enum class SleepScoreSentence { IMPORTED, SOUND, DURATION, INTERRUPTIONS, RESTORATIVE, REGULARITY }
+/** How the night did on one part: the share of the part's points it earned (0…1). */
+internal data class SleepScorePartScore(val part: SleepScorePart, val fraction: Double) {
+    /**
+     * The part in the score's own four words. A part is a ratio against its target and stops at 1, so its
+     * bands sit higher than the score's: 6 h 48 min of an 8 h target is "good", 5 h 36 min "fair".
+     */
+    val level: SleepScoreWord
+        get() = when {
+            fraction >= 0.95 -> SleepScoreWord.OPTIMAL
+            fraction >= 0.85 -> SleepScoreWord.GOOD
+            fraction >= 0.70 -> SleepScoreWord.FAIR
+            else -> SleepScoreWord.POOR
+        }
+
+    /** Points of the composite this part cost the night. */
+    val lostPoints: Double get() = part.maxPoints * (1 - fraction)
+}
+
+/** Which sentence the night card leads with. */
+internal enum class SleepVerdict { IMPORTED, SOUND, SHORT, RESTLESS, SHALLOW }
 
 /**
- * One night's sleep score split into its parts (iOS `SleepScore`). The score is the one every surface
- * shows: WHOOP's imported figure for the wake-day when the export carried one, else the Rest composite of
- * the day's row ([RestScorer.restFromDaily]). The parts are the composite's own sub-scores, rounded so the
- * legend's points add up to the number in the ring. An imported score has no known make-up: its parts are
- * the night's own figures without points, and regularity (a neutral constant for one night) is left out.
+ * One night's sleep score and what it is made of. The score is the one every surface shows: WHOOP's imported
+ * figure for the wake-day when the export carried one, else the Rest composite of the day's row
+ * ([RestScorer.restFromDaily]). The parts are the composite's own sub-scores for the three things a night can
+ * be measured on ([SleepScorePart.measured]). An imported score has no known make-up: its parts are still the
+ * night's own figures, and the verdict says only where the score came from.
  */
 internal data class SleepScore(val value: Int, val imported: Boolean, val parts: List<SleepScorePartScore>) {
 
     val word: SleepScoreWord get() = word(value)
 
-    /** The part that cost the most points, or [SleepScoreSentence.SOUND] when the night lost fewer than 10. */
-    val sentence: SleepScoreSentence
+    /** An optimal night is sound; any other is named after the part that cost it the most points. */
+    val verdict: SleepVerdict
         get() {
-            if (imported) return SleepScoreSentence.IMPORTED
-            val lost = parts.map { it.part to it.part.maxPoints * (1 - it.fraction) }
-            val worst = lost.maxByOrNull { it.second }
-            if (worst == null || lost.sumOf { it.second } < 10.0) return SleepScoreSentence.SOUND
-            return when (worst.first) {
-                SleepScorePart.DURATION -> SleepScoreSentence.DURATION
-                SleepScorePart.INTERRUPTIONS -> SleepScoreSentence.INTERRUPTIONS
-                SleepScorePart.RESTORATIVE -> SleepScoreSentence.RESTORATIVE
-                SleepScorePart.REGULARITY -> SleepScoreSentence.REGULARITY
+            if (imported) return SleepVerdict.IMPORTED
+            if (word == SleepScoreWord.OPTIMAL) return SleepVerdict.SOUND
+            val worst = parts.maxByOrNull { it.lostPoints }
+            if (worst == null || worst.lostPoints < 1.0) return SleepVerdict.SOUND
+            return when (worst.part) {
+                SleepScorePart.DURATION -> SleepVerdict.SHORT
+                SleepScorePart.INTERRUPTIONS -> SleepVerdict.RESTLESS
+                SleepScorePart.RESTORATIVE -> SleepVerdict.SHALLOW
+                SleepScorePart.REGULARITY -> SleepVerdict.SOUND
             }
         }
 
     companion object {
+        /** The time asleep the score counts as a full night (minutes). */
+        val TARGET_MIN: Double = RestScorer.defaultSleepNeedHours * 60.0
+
         /** The composite's sub-scores for a day row, each 0…1, exactly as [RestScorer.rest] weighs them. */
         fun components(daily: DailyMetric): Map<SleepScorePart, Double>? {
             val tstMin = daily.totalSleepMin ?: return null
@@ -107,37 +127,11 @@ internal data class SleepScore(val value: Int, val imported: Boolean, val parts:
         /** The night's score from its day row and the imported figure for the same wake-day. */
         fun make(daily: DailyMetric?, importedPct: Double?): SleepScore? {
             val c = daily?.let { components(it) }
-            if (importedPct != null) {
-                val parts = c?.let { m ->
-                    listOf(SleepScorePart.DURATION, SleepScorePart.INTERRUPTIONS, SleepScorePart.RESTORATIVE)
-                        .map { SleepScorePartScore(it, m.getValue(it), null) }
-                } ?: emptyList()
-                return SleepScore(importedPct.roundToInt(), imported = true, parts = parts)
-            }
+            val parts = c?.let { m -> SleepScorePart.measured.map { SleepScorePartScore(it, m.getValue(it)) } }.orEmpty()
+            if (importedPct != null) return SleepScore(importedPct.roundToInt(), imported = true, parts = parts)
             if (daily == null || c == null) return null
             val composite = RestScorer.restFromDaily(daily) ?: return null
-            val total = composite.roundToInt()
-            val order = listOf(
-                SleepScorePart.DURATION, SleepScorePart.INTERRUPTIONS, SleepScorePart.RESTORATIVE, SleepScorePart.REGULARITY,
-            )
-            val points = apportion(order.map { it.maxPoints * c.getValue(it) }, total)
-            return SleepScore(total, imported = false, parts = order.mapIndexed { i, p ->
-                SleepScorePartScore(p, c.getValue(p), points[i])
-            })
-        }
-
-        /** Whole-number shares of [raw] that sum to [total] (largest remainder). */
-        fun apportion(raw: List<Double>, total: Int): List<Int> {
-            val out = raw.map { floor(it).toInt() }.toMutableList()
-            val short = total - out.sum()
-            if (short == 0) return out
-            val order = raw.indices.sortedByDescending { raw[it] - out[it] }
-            if (short > 0) {
-                order.take(short).forEach { out[it] += 1 }
-            } else {
-                order.reversed().take(-short).forEach { if (out[it] > 0) out[it] -= 1 }
-            }
-            return out
+            return SleepScore(composite.roundToInt(), imported = false, parts = parts)
         }
 
         /** The banding the Rest word has always used. */
@@ -191,12 +185,12 @@ internal fun Stages.minutes(row: SleepStageRow): Double = when (row) {
 /** A night's overnight vitals against their typical ranges (iOS `SleepVitals`). */
 internal data class SleepVitals(val readings: List<Reading>, val nightsRemaining: Int) {
 
+    /** The body's overnight readings. Time asleep is not one of them here: the night card already leads with it. */
     enum class Metric(val catalogKey: String, val minHalfWidth: Double) {
         HEART_RATE("rhr", 2.0),
         RESPIRATORY("resp_rate", 0.5),
         TEMPERATURE("skin_temp", 0.3),
-        OXYGEN("spo2", 1.0),
-        SLEEP_DURATION("sleep_total_min", 30.0);
+        OXYGEN("spo2", 1.0);
 
         /** This metric's reading for one day's row: skin temperature as a deviation or an absolute. */
         fun value(row: DailyMetric, deviation: Boolean = false): Double? = when (this) {
@@ -204,14 +198,20 @@ internal data class SleepVitals(val readings: List<Reading>, val nightsRemaining
             RESPIRATORY -> row.respRateBpm
             TEMPERATURE -> if (deviation) row.skinTempDevC else row.skinTempC
             OXYGEN -> row.spo2Pct
-            SLEEP_DURATION -> row.totalSleepMin
         }
     }
 
+    /** Where a reading fell against its typical range. */
+    enum class Level { LOW, TYPICAL, HIGH }
+
     data class Reading(val metric: Metric, val value: Double, val low: Double, val high: Double) {
-        /** 0 at the range's low edge, 1 at its high edge, outside 0…1 beyond it. */
-        val position: Double get() = if (high - low > 0) (value - low) / (high - low) else 0.5
-        val isOutlier: Boolean get() = value < low || value > high
+        val level: Level
+            get() = when {
+                value < low -> Level.LOW
+                value > high -> Level.HIGH
+                else -> Level.TYPICAL
+            }
+        val isOutlier: Boolean get() = level != Level.TYPICAL
     }
 
     val nightsRecorded: Int get() = NIGHTS_NEEDED - nightsRemaining
@@ -252,6 +252,42 @@ internal data class SleepVitals(val readings: List<Reading>, val nightsRemaining
     }
 }
 
+// MARK: Stage ranges
+
+/** A sleep stage's usual minutes for this reader: the band a night's figure is read against. */
+internal data class SleepStageRange(val low: Double, val high: Double) {
+    fun level(minutes: Double): SleepVitals.Level = when {
+        minutes < low -> SleepVitals.Level.LOW
+        minutes > high -> SleepVitals.Level.HIGH
+        else -> SleepVitals.Level.TYPICAL
+    }
+}
+
+internal object SleepStageRanges {
+    /** A stage's range is never narrower than this either side of its mean (minutes). */
+    const val MIN_HALF_WIDTH_MIN = 10.0
+
+    /**
+     * Each sleep stage's usual range over up to [SleepVitals.WINDOW] nights before [day], by the rule the
+     * vitals use ([SleepVitals.typicalRange]). A stage with fewer than [SleepVitals.NIGHTS_NEEDED] nights on
+     * record has none, and Awake never has one: the day rows store no awake minutes to learn it from.
+     */
+    fun make(rows: List<DailyMetric>, day: String): Map<SleepStageRow, SleepStageRange> {
+        val prior = rows.filter { it.day < day }.sortedBy { it.day }.takeLast(SleepVitals.WINDOW)
+        fun range(minutes: (DailyMetric) -> Double?): SleepStageRange? {
+            val history = prior.mapNotNull(minutes).filter { it > 0.0 }
+            if (history.size < SleepVitals.NIGHTS_NEEDED) return null
+            val (lo, hi) = SleepVitals.typicalRange(history, MIN_HALF_WIDTH_MIN) ?: return null
+            return SleepStageRange(max(0.0, lo), hi)
+        }
+        return buildMap {
+            range { it.deepMin }?.let { put(SleepStageRow.DEEP, it) }
+            range { it.remMin }?.let { put(SleepStageRow.REM, it) }
+            range { it.lightMin }?.let { put(SleepStageRow.CORE, it) }
+        }
+    }
+}
+
 // MARK: Nights over time
 
 /** One decoded night: its span, stage totals and (when stored) its timestamped stages. */
@@ -283,7 +319,7 @@ internal data class SleepNightEntry(val day: LocalDate, val onsetTs: Long, val w
     }
 }
 
-internal enum class SleepRange { DAY, WEEK, MONTH, SIX_MONTHS }
+internal enum class SleepRange { WEEK, MONTH, SIX_MONTHS }
 
 /** One bar of a range chart: a night (week / month) or a week's average (6 months). */
 internal data class SleepRangeBar(
@@ -308,7 +344,7 @@ internal object SleepHistory {
     ): SleepRangeWindow {
         val byDay = entries.associateBy { it.day }
         return when (range) {
-            SleepRange.DAY, SleepRange.WEEK, SleepRange.MONTH -> {
+            SleepRange.WEEK, SleepRange.MONTH -> {
                 val count = if (range == SleepRange.MONTH) 30 else 7
                 val starts = (count - 1 downTo 0).map { today.minusDays(it.toLong()) }
                 val bars = starts.mapIndexedNotNull { slot, day ->
@@ -398,50 +434,51 @@ internal data class SleepPeriodSummary(
     }
 }
 
-/** The vertical scale an overlaid vital is drawn on: its own min…max, at least 20 % of its level wide. */
-internal fun overlayDomain(values: List<Double>): Pair<Double, Double>? {
-    val lo = values.minOrNull() ?: return null
-    val hi = values.maxOrNull() ?: return null
-    val minSpread = max(abs((lo + hi) / 2) * 0.2, 1.0)
-    if (hi - lo >= minSpread) return lo to hi
-    val mid = (lo + hi) / 2
-    return (mid - minSpread / 2) to (mid + minSpread / 2)
-}
+// MARK: The week around a night
 
-// MARK: Highlights
-
-/** A Health-style Sleep highlight: which sentence, and the figures and nights behind it. */
-internal sealed class SleepHighlight {
-    /** Last night's bedtime against the mean of up to seven nights before it; [diffMin] rounded to 5. */
-    data class Bedtime(val diffMin: Int, val usualMin: Double, val lastMin: Double, val nights: List<Double>) : SleepHighlight()
-
-    /** The last seven days' average time asleep against the seven before; [diffMin] rounded to 5. */
-    data class Duration(val averageMin: Double, val priorAverageMin: Double, val diffMin: Int, val nights: List<Double>) : SleepHighlight()
+/**
+ * The seven days ending on the night the page shows: each day's time asleep, their average against the seven
+ * days before, and how the night's bedtime sits against the nights before it. Anchored to the night on the
+ * page, not to today, so paging back to an older night shows that night's own week.
+ */
+internal data class SleepWeek(
+    /** The seven calendar days, oldest first; the last is the night on the page. */
+    val days: List<LocalDate>,
+    /** Time asleep per day (minutes); null where no night was recorded. */
+    val asleepMin: List<Double?>,
+    /** Mean time asleep over the week's recorded nights; null with fewer than [MIN_NIGHTS]. */
+    val averageMin: Double?,
+    /** [averageMin] minus the mean of the seven days before, rounded to 5 min; null when either week is thin. */
+    val changeMin: Int?,
+    val bedtime: Bedtime?,
+) {
+    /** The night's bedtime against the mean of up to seven recorded nights before it; [diffMin] rounded to 5. */
+    data class Bedtime(val usualMin: Double, val diffMin: Int)
 
     companion object {
-        fun make(entries: List<SleepNightEntry>, today: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<SleepHighlight> =
-            listOfNotNull(bedtime(entries, zone), duration(entries, today))
+        /** Fewer nights than this is not a pattern: no average and no "usual". */
+        const val MIN_NIGHTS = 3
 
-        fun bedtime(entries: List<SleepNightEntry>, zone: ZoneId = ZoneId.systemDefault()): Bedtime? {
-            val last = entries.lastOrNull() ?: return null
-            val before = entries.dropLast(1).takeLast(7)
-            if (before.size < 3) return null
-            val usual = before.sumOf { it.onsetOfNightMin(zone) } / before.size
-            val lastMin = last.onsetOfNightMin(zone)
-            val diff = ((lastMin - usual) / 5).roundToInt() * 5
-            return Bedtime(diff, usual, lastMin, before.map { it.onsetOfNightMin(zone) } + lastMin)
+        fun make(entries: List<SleepNightEntry>, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): SleepWeek {
+            val byDay = entries.associateBy { it.day }
+            val days = (6 downTo 0).map { day.minusDays(it.toLong()) }
+            val asleep = days.map { byDay[it]?.asleepMin }
+            val recent = asleep.filterNotNull()
+            val prior = (13 downTo 7).mapNotNull { byDay[day.minusDays(it.toLong())]?.asleepMin }
+            val average = if (recent.size >= MIN_NIGHTS) recent.average() else null
+            val change = if (average != null && prior.size >= MIN_NIGHTS) {
+                ((average - prior.average()) / 5).roundToInt() * 5
+            } else null
+            return SleepWeek(days, asleep, average, change, bedtime(entries, day, zone))
         }
 
-        fun duration(entries: List<SleepNightEntry>, today: LocalDate): Duration? {
-            val weekAgo = today.minusDays(7)
-            val twoWeeksAgo = today.minusDays(14)
-            val recent = entries.filter { it.day.isAfter(weekAgo) && !it.day.isAfter(today) }
-            val prior = entries.filter { it.day.isAfter(twoWeeksAgo) && !it.day.isAfter(weekAgo) }
-            if (recent.size < 3 || prior.size < 3) return null
-            val avg = recent.sumOf { it.asleepMin } / recent.size
-            val priorAvg = prior.sumOf { it.asleepMin } / prior.size
-            val diff = ((avg - priorAvg) / 5).roundToInt() * 5
-            return Duration(avg, priorAvg, diff, recent.map { it.asleepMin })
+        fun bedtime(entries: List<SleepNightEntry>, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Bedtime? {
+            val night = entries.firstOrNull { it.day == day } ?: return null
+            val before = entries.filter { it.day.isBefore(day) }.sortedBy { it.day }.takeLast(7)
+            if (before.size < MIN_NIGHTS) return null
+            val usual = before.sumOf { it.onsetOfNightMin(zone) } / before.size
+            val diff = ((night.onsetOfNightMin(zone) - usual) / 5).roundToInt() * 5
+            return Bedtime(usual, diff)
         }
     }
 }

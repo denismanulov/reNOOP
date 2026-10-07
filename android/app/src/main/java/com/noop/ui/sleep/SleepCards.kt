@@ -1,28 +1,38 @@
 package com.noop.ui.sleep
 
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bed
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,44 +41,58 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noop.R
-import com.noop.ui.m3.CardTitleRow
-import com.noop.ui.m3.HealthCard
+import com.noop.analytics.SleepDebtLedger
+import com.noop.ui.TemperatureUnit
+import com.noop.ui.UnitFormatter
+import com.noop.ui.m3.ChevronRight
+import com.noop.ui.m3.CloverShape
+import com.noop.ui.m3.CookieShape
+import com.noop.ui.m3.ExpressiveBar
 import com.noop.ui.m3.Health
+import com.noop.ui.m3.HealthCard
+import com.noop.ui.m3.LevelBadge
+import com.noop.ui.m3.ListGroup
+import com.noop.ui.m3.ListRow
+import com.noop.ui.m3.LocalTonalIcons
+import com.noop.ui.m3.M3Dimens
+import com.noop.ui.m3.SheetBackdropEffect
+import com.noop.ui.m3.TonalIcon
+import com.noop.ui.m3.labelBand
+import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
-// MARK: - The cards of the Sleep tab (twin of iOS SleepScoreCards / SleepPageCards)
-
-@Composable
-internal fun scorePartColor(part: SleepScorePart): Color = when (part) {
-    SleepScorePart.DURATION -> Health.colors.scoreDuration
-    SleepScorePart.INTERRUPTIONS -> Health.colors.scoreInterruptions
-    SleepScorePart.RESTORATIVE -> Health.colors.scoreDeepRem
-    SleepScorePart.REGULARITY -> Health.colors.scoreRegularity
-}
-
-@Composable
-internal fun scorePartName(part: SleepScorePart): String = stringResource(
-    when (part) {
-        SleepScorePart.DURATION -> R.string.sleep_score_duration
-        SleepScorePart.INTERRUPTIONS -> R.string.sleep_score_interruptions
-        SleepScorePart.RESTORATIVE -> R.string.sleep_score_deep_rem
-        SleepScorePart.REGULARITY -> R.string.sleep_score_regularity
-    },
-)
+// MARK: - The cards of the Sleep tab
+//
+// The page answers in the order a reader asks. How did I sleep: the night card (score, its word, one
+// sentence). What did I sleep: the day's sleeps as rows, the night and each nap, each opening its own page
+// (SleepSessionScreen: the stages over the clock, heart rate, each stage against the reader's usual). Why the
+// score: the three things it is made of, each with its figure, its level in a word and a bar. Was my body as
+// usual: each overnight reading against its own range, in words. How does the night sit in my week. Every
+// figure stands beside what it means; nothing is a bare number or an unlabelled mark.
 
 @Composable
 internal fun scoreWord(word: SleepScoreWord): String = stringResource(
@@ -80,147 +104,463 @@ internal fun scoreWord(word: SleepScoreWord): String = stringResource(
     },
 )
 
+/** The hue a level is written in: green for good and optimal, amber for fair, the error colour for poor. */
 @Composable
-internal fun scoreSentence(score: SleepScore): String = when (score.sentence) {
-    SleepScoreSentence.IMPORTED -> stringResource(R.string.sleep_score_sentence_imported, score.value)
-    SleepScoreSentence.SOUND -> stringResource(R.string.sleep_score_sentence_sound, score.value)
-    SleepScoreSentence.DURATION -> stringResource(R.string.sleep_score_sentence_duration, score.value)
-    SleepScoreSentence.INTERRUPTIONS -> stringResource(R.string.sleep_score_sentence_interruptions, score.value)
-    SleepScoreSentence.RESTORATIVE -> stringResource(R.string.sleep_score_sentence_restorative, score.value)
-    SleepScoreSentence.REGULARITY -> stringResource(R.string.sleep_score_sentence_regularity, score.value)
+internal fun levelColor(word: SleepScoreWord): Color = when (word) {
+    SleepScoreWord.OPTIMAL, SleepScoreWord.GOOD -> Health.colors.positive
+    SleepScoreWord.FAIR -> Health.colors.warning
+    SleepScoreWord.POOR -> MaterialTheme.colorScheme.error
 }
 
-// MARK: Score card
+/** A share as the reader's locale writes a whole percent. */
+internal fun percent(fraction: Double, locale: Locale): String =
+    java.text.NumberFormat.getPercentInstance(locale).format(fraction)
 
-/** Health's Sleep Score card: the ring and its word, each part's points, then one sentence. */
+/** "10:32 PM – 8:21 AM". */
 @Composable
-internal fun SleepScoreCard(score: SleepScore, onClick: () -> Unit) {
-    HealthCard(onClick = onClick, verticalSpacing = 12.dp) {
-        CardTitleRow(icon = null, title = stringResource(R.string.sleep_score_title), tint = Health.colors.sleep)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SleepScoreRing(score, Modifier.size(112.dp))
-            Text(
-                scoreWord(score.word),
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-            )
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            SleepScorePart.legendOrder.forEach { part ->
-                val earned = score.parts.firstOrNull { it.part == part } ?: return@forEach
-                LegendRow(earned)
+internal fun clockRange(startTs: Long, endTs: Long, is24h: Boolean, locale: Locale): String =
+    stringResource(R.string.sleep_time_range, clockLabel(startTs, is24h, locale), clockLabel(endTs, is24h, locale))
+
+// MARK: Night card
+
+/**
+ * The answer to "how did I sleep": the score in its ring, its word, and one sentence naming what shaped it.
+ * The night's own figures (its times, its time asleep) are on the row under the card, which opens the night.
+ */
+@Composable
+internal fun SleepNightCard(night: SleepNightDetail, score: SleepScore, onClick: () -> Unit) {
+    val hue = Health.colors.rest
+    val surface = MaterialTheme.colorScheme.surface
+    HealthCard(
+        onClick = onClick,
+        shape = RoundedCornerShape(M3Dimens.heroRadius),
+        // The Rest hue as a wash over the page: the hero is the one tinted card of the tab.
+        color = hue.copy(alpha = 0.16f).compositeOver(surface),
+        contentPadding = PaddingValues(20.dp),
+        verticalSpacing = 16.dp,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            // The score on the Expressive cookie, in the Rest hue; the page colour is its ink in both themes.
+            Box(Modifier.size(116.dp).clip(CookieShape).background(hue), contentAlignment = Alignment.Center) {
+                Text(
+                    score.value.toString(),
+                    style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                    color = surface,
+                    maxLines = 1,
+                )
             }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    stringResource(R.string.sleep_score_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    scoreWord(score.word),
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold, hyphens = Hyphens.Auto),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            ChevronRight()
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Text(scoreSentence(score), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
-
-/** "● Duration: 42 of 50": the name semibold, the points plain. An imported score's parts carry no points. */
-@Composable
-private fun LegendRow(part: SleepScorePartScore) {
-    val name = scorePartName(part.part)
-    val points = part.points?.let { stringResource(R.string.sleep_score_points, it, part.part.maxPoints) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(12.dp).clip(CircleShape).background(scorePartColor(part.part)))
-        Text(
-            buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(if (points != null) "$name:" else name) }
-                if (points != null) append(" $points")
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Text(verdictSentence(score, night), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
 /**
- * The score ring: one arc per part, clockwise from 12 o'clock (Interruptions, Duration, Deep & REM,
- * Regularity), each as long as the points it is worth, with small gaps; a pale track of the part's hue,
- * the earned share filled. The number sits in the middle.
+ * The night card's sentence. A short night names its shortfall from the whole minutes the night's row shows,
+ * so the sentence and the row cannot disagree by a rounding.
  */
 @Composable
-internal fun SleepScoreRing(score: SleepScore, modifier: Modifier = Modifier) {
-    val parts = SleepScorePart.ringOrder.mapNotNull { p -> score.parts.firstOrNull { it.part == p } }
-    val colors = parts.associate { it.part to scorePartColor(it.part) }
-    Box(modifier, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.matchParentSize()) {
-            val stroke = 11.dp.toPx()
-            val inset = stroke / 2
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            val radius = arcSize.width / 2
-            val total = parts.sumOf { it.part.maxPoints }.coerceAtLeast(1)
-            // Gap of 3 dp between arcs plus the round caps' overhang at both ends.
-            val gapDeg = Math.toDegrees(((3.dp.toPx() + stroke) / radius).toDouble()).toFloat()
-            var angle = -90f
-            for (p in parts) {
-                val sweep = 360f * p.part.maxPoints / total
-                val usable = max(0.5f, sweep - gapDeg)
-                val start = angle + gapDeg / 2
-                val color = colors.getValue(p.part)
-                drawArc(color.copy(alpha = 0.25f), start, usable, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                val earned = (usable * p.fraction.toFloat()).coerceIn(0f, usable)
-                if (earned > 0.1f) {
-                    drawArc(color, start, earned, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                }
-                angle += sweep
+private fun verdictSentence(score: SleepScore, night: SleepNightDetail): String = when (score.verdict) {
+    SleepVerdict.IMPORTED -> stringResource(R.string.sleep_verdict_imported)
+    SleepVerdict.SOUND -> stringResource(R.string.sleep_verdict_sound)
+    SleepVerdict.SHORT -> {
+        val short = SleepScore.TARGET_MIN.roundToInt() - night.asleepMin.roundToInt()
+        if (short >= 1) {
+            stringResource(R.string.sleep_verdict_short, sleepDuration(short.toDouble()), sleepDuration(SleepScore.TARGET_MIN))
+        } else stringResource(R.string.sleep_verdict_short_plain)
+    }
+    SleepVerdict.RESTLESS -> stringResource(R.string.sleep_verdict_restless)
+    SleepVerdict.SHALLOW -> stringResource(R.string.sleep_verdict_shallow)
+}
+
+// MARK: The day's sleeps
+
+/**
+ * The day's sleeps as rows, the way a list of activities reads: the night first, then each nap, each with
+ * its two times and its time asleep, each opening its own page. A nap that stored no stages has no time
+ * asleep to show (the minutes between its times are time in bed), so its row carries the times alone.
+ */
+@Composable
+internal fun SleepSessionRows(
+    night: SleepNightDetail?,
+    naps: List<SleepNap>,
+    is24h: Boolean,
+    locale: Locale,
+    onOpenNight: () -> Unit,
+    onOpenNap: (SleepNap) -> Unit,
+) {
+    ListGroup {
+        if (night != null) {
+            item { shape ->
+                SessionRow(
+                    shape, Icons.Filled.Bedtime, CookieShape, stringResource(R.string.nav_sleep),
+                    clockRange(night.onsetTs, night.wakeTs, is24h, locale), night.asleepMin, onOpenNight,
+                )
             }
         }
-        Text(
-            "${score.value}",
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        naps.forEach { nap ->
+            item { shape ->
+                SessionRow(
+                    shape, Icons.Filled.Hotel, CloverShape, stringResource(R.string.sleep_nap),
+                    clockRange(nap.startTs, nap.endTs, is24h, locale), nap.asleepMin,
+                ) { onOpenNap(nap) }
+            }
+        }
     }
 }
 
-// MARK: Tiles
-
-/** One of the two tiles under the score card: a title with its chevron, then the tile's picture. */
 @Composable
-private fun SleepPageTile(
+private fun SessionRow(
+    shape: Shape,
+    icon: ImageVector,
+    iconShape: Shape,
     title: String,
-    tint: Color,
+    times: String,
+    asleepMin: Double?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
 ) {
-    HealthCard(modifier = modifier.fillMaxHeight(), onClick = onClick, verticalSpacing = 10.dp) {
-        CardTitleRow(icon = null, title = title, tint = tint)
-        Spacer(Modifier.weight(1f, fill = false))
-        content()
+    ListRow(
+        shape = shape,
+        title = title,
+        subtitle = times,
+        leading = { TonalIcon(icon, LocalTonalIcons.current.purple, size = 48.dp, shape = iconShape) },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (asleepMin != null) {
+                    Text(
+                        sleepDuration(asleepMin),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                }
+                ChevronRight()
+            }
+        },
+        onClick = onClick,
+    )
+}
+
+// MARK: What the score is made of
+
+/** The three things a night is measured on: each one's figure, what it is measured against, a level, a bar. */
+@Composable
+internal fun SleepFactorsCard(night: SleepNightDetail, score: SleepScore, locale: Locale) {
+    HealthCard(verticalSpacing = 18.dp) {
+        score.parts.forEach { part ->
+            when (part.part) {
+                SleepScorePart.DURATION -> FactorRow(
+                    part,
+                    title = stringResource(R.string.sleep_factor_duration),
+                    detail = stringResource(R.string.sleep_factor_target, sleepDuration(SleepScore.TARGET_MIN)),
+                    value = sleepDuration(night.asleepMin),
+                )
+                // The share is the score's own figure, so the number and the bar under it are one fact.
+                SleepScorePart.INTERRUPTIONS -> FactorRow(
+                    part,
+                    title = stringResource(R.string.sleep_factor_continuity),
+                    detail = stringResource(R.string.sleep_factor_in_bed_share),
+                    value = percent(part.fraction, locale),
+                )
+                SleepScorePart.RESTORATIVE -> {
+                    val restorative = night.stages.deep + night.stages.rem
+                    FactorRow(
+                        part,
+                        title = stringResource(R.string.sleep_factor_restorative),
+                        detail = stringResource(
+                            R.string.sleep_factor_of_sleep,
+                            percent(if (night.asleepMin > 0) restorative / night.asleepMin else 0.0, locale),
+                        ),
+                        value = sleepDuration(restorative),
+                    )
+                }
+                SleepScorePart.REGULARITY -> Unit
+            }
+        }
     }
 }
 
-/** Health's Sleep tile: the night's stages across the tile and the time asleep under them in the Sleep hue. */
 @Composable
-internal fun SleepDurationTile(night: SleepNightDetail, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    SleepPageTile(stringResource(R.string.nav_sleep), Health.colors.sleep, onClick, modifier) {
-        SleepStagesChart(
-            spans = night.spans, onsetTs = night.onsetTs, stages = night.stages, compact = true,
-            modifier = Modifier.fillMaxWidth().height(92.dp),
-        )
-        TileDuration(night.asleepMin)
+private fun FactorRow(part: SleepScorePartScore, title: String, detail: String, value: String) {
+    val color = levelColor(part.level)
+    Column(Modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+                LevelBadge(
+                    scoreWord(part.level), color,
+                    ink = if (part.level == SleepScoreWord.POOR) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.surface,
+                )
+            }
+        }
+        ExpressiveBar(part.fraction.toFloat(), color)
     }
 }
 
-/** "7 hr 42 min" in the Sleep hue, the figures bold and the units a size down. */
+// MARK: The body overnight
+
+internal fun vitalIcon(metric: SleepVitals.Metric): ImageVector = when (metric) {
+    SleepVitals.Metric.HEART_RATE -> Icons.Filled.Favorite
+    SleepVitals.Metric.RESPIRATORY -> Icons.Filled.Air
+    SleepVitals.Metric.TEMPERATURE -> Icons.Filled.Thermostat
+    SleepVitals.Metric.OXYGEN -> Icons.Filled.WaterDrop
+}
+
 @Composable
-internal fun TileDuration(minutes: Double, color: Color = Health.colors.sleep) {
+internal fun vitalTitle(metric: SleepVitals.Metric): String = stringResource(
+    when (metric) {
+        SleepVitals.Metric.HEART_RATE -> R.string.sleep_vitals_rhr
+        SleepVitals.Metric.RESPIRATORY -> R.string.sleep_vitals_resp
+        SleepVitals.Metric.TEMPERATURE -> R.string.sleep_vitals_skin_temp
+        SleepVitals.Metric.OXYGEN -> R.string.sleep_vitals_spo2
+    },
+)
+
+@Composable
+private fun vitalLevel(level: SleepVitals.Level): String = stringResource(
+    when (level) {
+        SleepVitals.Level.LOW -> R.string.sleep_body_lower
+        SleepVitals.Level.TYPICAL -> R.string.sleep_vitals_typical
+        SleepVitals.Level.HIGH -> R.string.sleep_body_higher
+    },
+)
+
+/**
+ * The overnight readings in words. While the ranges are being learned: how many nights are on record and how
+ * many are left. Once they exist: one line saying whether anything is unusual, then each reading with its
+ * usual range under its name and "typical", "higher than usual" or "lower than usual" under its value. A row
+ * opens that metric's page.
+ */
+@Composable
+internal fun SleepBodyCard(
+    vitals: SleepVitals,
+    tempUnit: TemperatureUnit,
+    locale: Locale,
+    onOpenMetric: (String) -> Unit,
+) {
+    val typical = Health.colors.vitalsTypical
+    val outlier = Health.colors.vitalsOutlier
+    if (vitals.nightsRemaining > 0) {
+        HealthCard(verticalSpacing = 12.dp) {
+            Text(stringResource(R.string.sleep_body_learning), style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth().clearAndSetSemantics {}, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(SleepVitals.NIGHTS_NEEDED) { i ->
+                    val shape = RoundedCornerShape(50)
+                    Box(
+                        Modifier.weight(1f).height(8.dp).clip(shape)
+                            .background(if (i < vitals.nightsRecorded) typical else Color.Transparent)
+                            .border(1.5.dp, if (i < vitals.nightsRecorded) typical else MaterialTheme.colorScheme.outlineVariant, shape),
+                    )
+                }
+            }
+            Text(
+                pluralStringResource(R.plurals.sleep_body_nights_left, vitals.nightsRemaining, vitals.nightsRemaining),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    if (vitals.readings.isEmpty()) {
+        HealthCard {
+            Text(
+                stringResource(R.string.sleep_body_none),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    ListGroup {
+        item { shape ->
+            val all = vitals.outliers == 0
+            ListRow(
+                shape = shape,
+                title = if (all) stringResource(R.string.sleep_body_all_typical)
+                    else pluralStringResource(R.plurals.sleep_vitals_outliers, vitals.outliers, vitals.outliers),
+                leading = {
+                    Icon(
+                        if (all) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (all) typical else outlier,
+                    )
+                },
+            )
+        }
+        vitals.readings.forEach { r ->
+            item { shape ->
+                val tint = if (r.isOutlier) outlier else typical
+                ListRow(
+                    shape = shape,
+                    title = vitalTitle(r.metric),
+                    subtitle = run {
+                        // A signed range ("−0.4 – +0.4 °C") needs space round the dash to stay readable.
+                        val low = bareVital(r.low, r.metric, tempUnit, locale)
+                        val high = formatVital(r.high, r.metric, tempUnit, locale)
+                        val spaced = r.low < 0 || low.contains(' ')
+                        stringResource(
+                            R.string.sleep_vitals_typical_range,
+                            if (spaced) "$low " else low,
+                            if (spaced) " $high" else high,
+                        )
+                    },
+                    leading = { Icon(vitalIcon(r.metric), contentDescription = null, tint = tint) },
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    formatVital(r.value, r.metric, tempUnit, locale),
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                )
+                                Text(vitalLevel(r.level), style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1)
+                            }
+                            ChevronRight()
+                        }
+                    },
+                    onClick = { onOpenMetric(r.metric.catalogKey) },
+                )
+            }
+        }
+    }
+}
+
+/** A range's low end: the number alone, the high end carries the unit ("50–62 BPM"). */
+@Composable
+private fun bareVital(v: Double, metric: SleepVitals.Metric, unit: TemperatureUnit, locale: Locale): String = when (metric) {
+    SleepVitals.Metric.HEART_RATE, SleepVitals.Metric.OXYGEN -> v.roundToInt().toString()
+    SleepVitals.Metric.RESPIRATORY -> String.format(locale, "%.1f", v)
+    SleepVitals.Metric.TEMPERATURE -> formatVital(v, metric, unit, locale).substringBefore(" ")
+}
+
+@Composable
+internal fun formatVital(v: Double, metric: SleepVitals.Metric, unit: TemperatureUnit, locale: Locale): String = when (metric) {
+    SleepVitals.Metric.HEART_RATE -> stringResource(R.string.sleep_bpm_value, v.roundToInt())
+    SleepVitals.Metric.RESPIRATORY -> stringResource(R.string.sleep_br_min_value, String.format(locale, "%.1f", v))
+    // A deviation is a small signed number; an absolute reading is a body temperature.
+    SleepVitals.Metric.TEMPERATURE -> if (abs(v) < 10) signedDelta(v, unit) else UnitFormatter.temperatureFromCelsius(v, unit)
+    SleepVitals.Metric.OXYGEN -> percent(v.roundToInt() / 100.0, locale)
+}
+
+/** A skin-temperature deviation with its sign ("+0.2 °C", "−0.3 °C", "0.0 °C"), never "-0.0". */
+internal fun signedDelta(v: Double, unit: TemperatureUnit): String {
+    val text = UnitFormatter.temperatureDeltaFromCelsius(abs(v), unit)
+    val shown = text.substringBefore(" ").replace(',', '.').toDoubleOrNull() ?: 0.0
+    return when {
+        shown == 0.0 -> text
+        v > 0 -> "+$text"
+        else -> "−$text"
+    }
+}
+
+// MARK: The week
+
+/**
+ * The seven nights ending on the one on the page: the average, a bar per night against the score's target,
+ * then in sentences how the week compares with the one before and how the night's bedtime compares with the
+ * reader's usual. [debt] is the sleep-debt ledger, shown only on the newest night because it is anchored to
+ * the latest night on record, not to the one on the page.
+ */
+@Composable
+internal fun SleepWeekCard(week: SleepWeek, debt: SleepDebtLedger?, is24h: Boolean, locale: Locale) {
+    HealthCard(verticalSpacing = 12.dp) {
+        val average = week.averageMin
+        if (average != null) {
+            Column {
+                Text(
+                    stringResource(R.string.sleep_week_average),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                BigDuration(average)
+            }
+        } else {
+            Text(
+                stringResource(R.string.sleep_week_few),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        SleepWeekBars(week, locale, Modifier.fillMaxWidth().height(140.dp))
+        week.changeMin?.let { change ->
+            val by = sleepDuration(abs(change).toDouble())
+            Text(
+                when {
+                    abs(change) < 10 -> stringResource(R.string.sleep_week_same)
+                    change > 0 -> stringResource(R.string.sleep_week_more, by)
+                    else -> stringResource(R.string.sleep_week_less, by)
+                },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        week.bedtime?.let { bed ->
+            val usual = nightClock(bed.usualMin, is24h, locale)
+            val by = sleepDuration(abs(bed.diffMin).toDouble())
+            Text(
+                when {
+                    abs(bed.diffMin) < 15 -> stringResource(R.string.sleep_week_bed_usual, usual)
+                    bed.diffMin > 0 -> stringResource(R.string.sleep_week_bed_later, by, usual)
+                    else -> stringResource(R.string.sleep_week_bed_earlier, by, usual)
+                },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        if (debt != null && debt.nights.isNotEmpty()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.sleep_more_debt), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(
+                    if (debt.isDebt) sleepDuration(debt.magnitudeMin) else stringResource(R.string.sleep_more_no_debt),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (debt.isDebt) Health.colors.warning else Health.colors.positive,
+                )
+            }
+        }
+    }
+}
+
+/** "7 hr 42 min", the figures large and the units a size down. */
+@Composable
+internal fun BigDuration(minutes: Double, color: Color = MaterialTheme.colorScheme.onSurface) {
     val (h, m) = durationParts(minutes)
-    val big = SpanStyle(fontWeight = FontWeight.Bold, fontSize = MaterialTheme.typography.titleLarge.fontSize)
-    val small = SpanStyle(fontWeight = FontWeight.SemiBold, fontSize = MaterialTheme.typography.titleSmall.fontSize)
+    val big = SpanStyle(fontWeight = FontWeight.Bold, fontSize = MaterialTheme.typography.displaySmall.fontSize)
+    val small = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = MaterialTheme.typography.titleMedium.fontSize)
     val hr = stringResource(R.string.metric_unit_hr)
     val min = stringResource(R.string.metric_unit_min)
     Text(
         buildAnnotatedString {
             if (h > 0) {
-                withStyle(big) { append("$h") }
+                withStyle(big) { append(h.toString()) }
                 withStyle(small) { append(" $hr ") }
             }
             if (m > 0 || h == 0) {
-                withStyle(big) { append("$m") }
+                withStyle(big) { append(m.toString()) }
                 withStyle(small) { append(" $min") }
             }
         },
@@ -230,224 +570,129 @@ internal fun TileDuration(minutes: Double, color: Color = Health.colors.sleep) {
 }
 
 /**
- * Health's Vitals tile. While the ranges are being learned: a capsule per night still needed (the nights on
- * record filled) and how many are left. Once they exist: the typical band between grey high and low zones,
- * a ring per vital where the night fell, and "Typical" or the count of outliers.
+ * A bar per day of the week, as tall as the time asleep, against a dashed line at the score's target with
+ * the target written at its end. The night on the page (the last bar) is in the Sleep hue, the others paler;
+ * a day with no night keeps its letter and draws no bar.
  */
 @Composable
-internal fun SleepVitalsTile(vitals: SleepVitals, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val tint = Health.colors.vitalsTypical
-    SleepPageTile(stringResource(R.string.sleep_vitals_title), tint, onClick, modifier) {
-        if (vitals.nightsRemaining > 0) {
-            Row(
-                Modifier.fillMaxWidth().height(64.dp).clearAndSetSemantics {},
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                repeat(SleepVitals.NIGHTS_NEEDED) { i ->
-                    val shape = RoundedCornerShape(50)
-                    Box(
-                        Modifier.width(13.dp).fillMaxHeight().clip(shape)
-                            .background(if (i < vitals.nightsRecorded) tint.copy(alpha = 0.45f) else Color.Transparent)
-                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, shape),
-                    )
-                }
+private fun SleepWeekBars(week: SleepWeek, locale: Locale, modifier: Modifier) {
+    val hue = Health.colors.sleep
+    val rule = MaterialTheme.colorScheme.outline
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val target = SleepScore.TARGET_MIN
+    val targetText = sleepDuration(target)
+    val letters = week.days.map { it.dayOfWeek.getDisplayName(TextStyle.NARROW, locale) }
+    val names = week.days.map { it.dayOfWeek.getDisplayName(TextStyle.FULL, locale) }
+    val noData = stringResource(R.string.sleep_no_data)
+    val spoken = week.asleepMin.mapIndexed { i, v -> names[i] + ": " + (v?.let { sleepDuration(it) } ?: noData) }.joinToString(", ")
+    Canvas(modifier.clearAndSetSemantics { contentDescription = spoken }) {
+        val labelH = labelBand(measurer, labelStyle, floor = 16.dp, gap = 2.dp)
+        val targetLabel = measurer.measure(targetText, labelStyle)
+        val axisW = targetLabel.size.width + 6.dp.toPx()
+        val plotW = size.width - axisW
+        val plotH = size.height - labelH
+        val top = max(target, week.asleepMin.filterNotNull().maxOrNull() ?: target) * 1.08
+        fun y(v: Double) = (plotH * (1 - v / top)).toFloat()
+        val n = week.days.size.coerceAtLeast(1)
+        val slot = plotW / n
+        val barW = min(slot * 0.6f, 30.dp.toPx())
+        val radius = barW / 2
+        week.asleepMin.forEachIndexed { i, v ->
+            val cx = slot * (i + 0.5f)
+            if (v != null && v > 0) {
+                val barTop = min(y(v), plotH - radius * 2)
+                drawRoundRect(
+                    if (i == week.asleepMin.lastIndex) hue else hue.copy(alpha = 0.4f),
+                    Offset(cx - barW / 2, barTop), Size(barW, plotH - barTop), CornerRadius(radius, radius),
+                )
             }
-            val n = vitals.nightsRemaining
-            val words = pluralStringResource(R.plurals.sleep_sessions_until_results, n, n).replace("$n", "").trim()
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("$n", style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Light))
-                Text(words, style = MaterialTheme.typography.labelLarge, maxLines = 3)
-            }
-        } else {
-            SleepVitalsBand(vitals.readings, Modifier.fillMaxWidth().height(88.dp))
-            VitalsVerdict(vitals.outliers, MaterialTheme.typography.titleLarge)
+            val letter = measurer.measure(letters[i], labelStyle)
+            drawText(letter, topLeft = Offset(cx - letter.size.width / 2f, plotH + 2.dp.toPx()))
         }
-    }
-}
-
-/** "Typical" in the Vitals hue, or "2 outliers" in the outlier hue. */
-@Composable
-internal fun VitalsVerdict(outliers: Int, style: androidx.compose.ui.text.TextStyle) {
-    if (outliers == 0) {
-        Text(stringResource(R.string.sleep_vitals_typical), style = style.copy(fontWeight = FontWeight.SemiBold), color = Health.colors.vitalsTypical)
-    } else {
-        Text(
-            pluralStringResource(R.plurals.sleep_vitals_outliers, outliers, outliers),
-            style = style.copy(fontWeight = FontWeight.SemiBold),
-            color = Health.colors.vitalsOutlier,
+        val ty = y(target)
+        drawLine(
+            rule, Offset(0f, ty), Offset(plotW, ty), 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())),
         )
+        drawText(targetLabel, topLeft = Offset(plotW + 6.dp.toPx(), (ty - targetLabel.size.height / 2f).coerceAtLeast(0f)))
     }
 }
 
-/** The tile's picture: grey high zone, the typical band, grey low zone, and a ring per vital in its slot. */
-@Composable
-internal fun SleepVitalsBand(readings: List<SleepVitals.Reading>, modifier: Modifier = Modifier) {
-    val zoneColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    val band = Health.colors.vitalsTypical.copy(alpha = 0.3f)
-    val typical = Health.colors.vitalsTypical
-    val outlier = Health.colors.vitalsOutlier
-    val fill = MaterialTheme.colorScheme.surfaceContainerLow
-    Canvas(modifier.clearAndSetSemantics {}) {
-        val zone = 6.dp.toPx()
-        val gap = 6.dp.toPx()
-        val ring = 11.dp.toPx()
-        val top = ring / 2
-        val bottom = size.height - ring / 2
-        val bandTop = top + zone / 2 + gap
-        val bandH = bottom - top - zone - 2 * gap
-        for (y in listOf(top, bottom)) {
-            drawRoundRect(zoneColor, Offset(0f, y - zone / 2), Size(size.width, zone), CornerRadius(zone / 2, zone / 2))
-        }
-        drawRoundRect(band, Offset(0f, bandTop), Size(size.width, bandH), CornerRadius(6.dp.toPx(), 6.dp.toPx()))
-        val slots = SleepVitals.Metric.entries.size
-        for (r in readings) {
-            val x = size.width * (r.metric.ordinal + 0.5f) / slots
-            val p = r.position
-            val y = when {
-                p > 1 -> top
-                p < 0 -> bottom
-                else -> (bandTop + bandH - ring / 2 - 2f - p.toFloat() * (bandH - ring - 4f))
-            }
-            drawCircle(fill, ring / 2, Offset(x, y))
-            drawCircle(if (r.isOutlier) outlier else typical, ring / 2 - 1.25.dp.toPx(), Offset(x, y), style = Stroke(2.5.dp.toPx()))
-        }
-    }
-}
+// MARK: Explanations
 
-// MARK: Highlights
+/** The sections a reader can ask "what is this?" about. */
+internal enum class SleepExplain { SCORE, STAGES, BODY, WEEK }
 
-/** A Sleep highlight: the category, the sentence, two figures side by side, the nights behind them. */
+/**
+ * What a section's figures mean, in a sheet: a short paragraph per figure. [debtNeedMin] is the need the
+ * sleep-debt figure was measured against, when the page shows that figure.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SleepHighlightCard(h: SleepHighlight, locale: Locale, is24h: Boolean) {
-    val sentence = when (h) {
-        is SleepHighlight.Bedtime -> when {
-            kotlin.math.abs(h.diffMin) < 15 -> stringResource(R.string.sleep_hl_bedtime_usual)
-            h.diffMin > 0 -> stringResource(R.string.sleep_hl_bedtime_later, h.diffMin)
-            else -> stringResource(R.string.sleep_hl_bedtime_earlier, -h.diffMin)
-        }
-        is SleepHighlight.Duration -> {
-            val avg = sleepDuration(h.averageMin)
-            when {
-                kotlin.math.abs(h.diffMin) < 10 -> stringResource(R.string.sleep_hl_duration_same, avg)
-                h.diffMin > 0 -> stringResource(R.string.sleep_hl_duration_more, avg, sleepDuration(h.diffMin.toDouble()))
-                else -> stringResource(R.string.sleep_hl_duration_less, avg, sleepDuration(-h.diffMin.toDouble()))
-            }
-        }
-    }
-    val sleepHue = Health.colors.sleep
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    HealthCard(verticalSpacing = 10.dp) {
-        CardTitleRow(icon = Icons.Filled.Bed, title = stringResource(R.string.nav_sleep), tint = sleepHue, chevron = false)
-        Text(sentence, style = MaterialTheme.typography.bodyLarge)
-        Row(Modifier.fillMaxWidth()) {
-            when (h) {
-                is SleepHighlight.Bedtime -> {
-                    Figure(stringResource(R.string.sleep_hl_avg_bedtime), nightClock(h.usualMin, is24h, locale), muted, Modifier.weight(1f))
-                    Figure(stringResource(R.string.sleep_hl_last_bedtime), nightClock(h.lastMin, is24h, locale), sleepHue, Modifier.weight(1f), end = true)
-                }
-                is SleepHighlight.Duration -> {
-                    Figure(stringResource(R.string.sleep_hl_avg_asleep), sleepDuration(h.averageMin), sleepHue, Modifier.weight(1f))
-                    Figure(stringResource(R.string.sleep_hl_week_before), sleepDuration(h.priorAverageMin), muted, Modifier.weight(1f), end = true)
-                }
-            }
-        }
-        val (values, average) = when (h) {
-            is SleepHighlight.Bedtime -> h.nights to h.usualMin
-            is SleepHighlight.Duration -> h.nights to h.averageMin
-        }
-        HighlightBars(values, average, sleepHue, Modifier.fillMaxWidth().height(44.dp))
-    }
-}
-
-@Composable
-private fun Figure(title: String, value: String, tint: Color, modifier: Modifier, end: Boolean = false) {
-    Column(modifier, horizontalAlignment = if (end) Alignment.End else Alignment.Start) {
-        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = tint)
-    }
-}
-
-/** The nights as bars on their own scale, the newest in the Sleep hue, the average as a line across. */
-@Composable
-private fun HighlightBars(values: List<Double>, average: Double, latest: Color, modifier: Modifier) {
-    val grey = MaterialTheme.colorScheme.outlineVariant
-    val line = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier.clearAndSetSemantics {}) {
-        if (values.isEmpty()) return@Canvas
-        val lo = minOf(values.min(), average)
-        val hi = maxOf(values.max(), average)
-        val floor = lo - max(30.0, (hi - lo) * 0.6)
-        fun frac(v: Double) = ((v - floor) / max(1.0, hi - floor)).toFloat()
-        val gap = 6.dp.toPx()
-        val w = (size.width - gap * (values.size - 1)) / values.size
-        values.forEachIndexed { i, v ->
-            val h = max(3.dp.toPx(), size.height * frac(v))
-            drawRoundRect(
-                if (i == values.lastIndex) latest else grey,
-                Offset(i * (w + gap), size.height - h), Size(w, h), CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+internal fun SleepExplainSheet(topic: SleepExplain, debtNeedMin: Double?, onDismiss: () -> Unit) {
+    val target = sleepDuration(SleepScore.TARGET_MIN)
+    val title: String
+    val entries: List<Pair<String?, String>>
+    when (topic) {
+        SleepExplain.SCORE -> {
+            title = stringResource(R.string.sleep_score_title)
+            entries = listOf(
+                null to stringResource(R.string.sleep_explain_score),
+                stringResource(R.string.sleep_factor_duration) to stringResource(R.string.sleep_explain_duration, target),
+                stringResource(R.string.sleep_factor_continuity) to stringResource(R.string.sleep_explain_continuity),
+                stringResource(R.string.sleep_factor_restorative) to stringResource(R.string.sleep_explain_restorative),
             )
         }
-        val y = size.height - size.height * frac(average)
-        drawLine(line, Offset(0f, y), Offset(size.width, y), 3.dp.toPx(), cap = StrokeCap.Round)
-    }
-}
-
-/** Health's "Sleep: Stages" highlight: the night's length in a sentence, then each stage beside its row. */
-@Composable
-internal fun SleepStagesHighlightCard(night: SleepNightDetail, locale: Locale, is24h: Boolean) {
-    HealthCard(verticalSpacing = 10.dp) {
-        CardTitleRow(icon = Icons.Filled.Bed, title = stringResource(R.string.sleep_hl_stages), tint = Health.colors.sleep, chevron = false)
-        Text(stringResource(R.string.sleep_hl_stages_sentence, sleepDuration(night.asleepMin)), style = MaterialTheme.typography.bodyLarge)
-        if (night.spans.isEmpty()) {
-            // At least 160 dp, and as tall as its four labelled bars need at the reader's font size.
-            SleepStagesChart(night.spans, night.onsetTs, night.stages, Modifier.fillMaxWidth().heightIn(min = 160.dp))
-        } else {
-            val summary = stagesSummary(night.stages)
-            // A row is as tall as its two lines of text at the reader's font size, never under 52 dp; the
-            // chart beside it is four of them.
-            val rowHeight = with(LocalDensity.current) {
-                val text = MaterialTheme.typography.labelLarge.lineHeight.toDp() + MaterialTheme.typography.labelMedium.lineHeight.toDp()
-                maxOf(52.dp, text + 8.dp)
-            }
-            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = summary }, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.height(rowHeight * 4)) {
-                    SleepStageRow.entries.forEach { row ->
-                        Column(Modifier.height(rowHeight), verticalArrangement = Arrangement.Center) {
-                            Text(stageName(row), style = MaterialTheme.typography.labelLarge)
-                            Text(sleepDuration(night.stages.minutes(row)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                Column(Modifier.weight(1f)) {
-                    Box(Modifier.fillMaxWidth().height(rowHeight * 4)) {
-                        RowRules(Modifier.matchParentSize())
-                        SleepStagesChart(night.spans, night.onsetTs, night.stages, Modifier.matchParentSize(), compact = true)
-                    }
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                        Text(clockLabel(night.onsetTs, is24h, locale), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        Text(clockLabel(night.wakeTs, is24h, locale), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+        SleepExplain.STAGES -> {
+            title = stringResource(R.string.sleep_section_stages)
+            entries = listOf(
+                stageName(SleepStageRow.DEEP) to stringResource(R.string.sleep_explain_deep),
+                stageName(SleepStageRow.REM) to stringResource(R.string.sleep_explain_rem),
+                stageName(SleepStageRow.CORE) to stringResource(R.string.sleep_explain_light),
+                stageName(SleepStageRow.AWAKE) to stringResource(R.string.sleep_explain_awake),
+                null to stringResource(R.string.sleep_explain_stages_note),
+            )
         }
-    }
-}
-
-/** Dotted rules between the four rows. */
-@Composable
-private fun RowRules(modifier: Modifier) {
-    val c = MaterialTheme.colorScheme.outlineVariant
-    Canvas(modifier) {
-        for (i in 1..3) {
-            val y = size.height * i / 4
-            drawLine(
-                c, Offset(0f, y), Offset(size.width, y), 1.dp.toPx(),
-                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 3.dp.toPx())),
+        SleepExplain.BODY -> {
+            title = stringResource(R.string.sleep_section_body)
+            entries = listOf(
+                null to stringResource(R.string.sleep_explain_range),
+                vitalTitle(SleepVitals.Metric.HEART_RATE) to stringResource(R.string.metric_about_rhr),
+                vitalTitle(SleepVitals.Metric.RESPIRATORY) to stringResource(R.string.metric_about_resp),
+                vitalTitle(SleepVitals.Metric.TEMPERATURE) to stringResource(R.string.metric_about_skin_temp),
+                vitalTitle(SleepVitals.Metric.OXYGEN) to stringResource(R.string.metric_about_spo2),
+            )
+        }
+        SleepExplain.WEEK -> {
+            title = stringResource(R.string.sleep_section_week)
+            entries = listOfNotNull(
+                null to stringResource(R.string.sleep_explain_week, target),
+                debtNeedMin?.let { stringResource(R.string.sleep_more_debt) to stringResource(R.string.sleep_explain_debt, sleepDuration(it)) },
             )
         }
     }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        SheetBackdropEffect()
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+            entries.forEach { (heading, body) ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (heading != null) {
+                        Text(heading, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    }
+                    Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
 }
+
+// MARK: Shared pieces
 
 /** A night-clock minute (minutes after 18:00 the evening before) as a clock time. */
 internal fun nightClock(minutesOfNight: Double, is24h: Boolean, locale: Locale): String {
@@ -458,6 +703,6 @@ internal fun nightClock(minutesOfNight: Double, is24h: Boolean, locale: Locale):
 
 /** A stage-coloured dot for the lists. */
 @Composable
-internal fun Dot(color: Color, size: androidx.compose.ui.unit.Dp = 10.dp) {
+internal fun Dot(color: Color, size: Dp = 10.dp) {
     Box(Modifier.size(size).clip(CircleShape).background(color))
 }

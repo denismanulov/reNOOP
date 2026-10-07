@@ -17,12 +17,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -47,10 +43,9 @@ import kotlin.math.min
 //
 // Health's day chart, drawn the Material way: four rows (Awake, REM, Core, Deep) named at their top-left
 // and closed by a hairline rule, a solid frame at both ends with dashed hour lines between, the clock under
-// the plot. Rounded blocks sit in their row; a thin connector joins consecutive stages. A picked stage keeps
-// its colour while the others fade. [compact] draws the blocks only, the night filling the width (the card
-// thumbnails). A night that stored only its stage TOTALS gets one bar per stage, sized by its minutes, and no
-// clock: there is no timeline to draw, and inventing one would be fiction.
+// the plot. Rounded blocks sit in their row; a thin connector joins consecutive stages. [compact] draws the
+// blocks only, the night filling the width. A night that stored only its stage TOTALS gets one bar per stage,
+// sized by its minutes, and no clock: there is no timeline to draw, and inventing one would be fiction.
 
 /** The hue of a stage row. */
 @Composable
@@ -102,8 +97,7 @@ internal fun clockLabel(ts: Long, is24h: Boolean, locale: Locale, hourOnly: Bool
 
 /**
  * The stages chart. [spans] are seconds from [onsetTs]; empty means the night stored totals only and
- * [stages] draws as one bar per stage. [overlay] is a vital as (seconds from onset, value), drawn on its
- * own scale across the plot.
+ * [stages] draws as one bar per stage.
  */
 @Composable
 internal fun SleepStagesChart(
@@ -112,14 +106,11 @@ internal fun SleepStagesChart(
     stages: Stages,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
-    highlight: SleepStageRow? = null,
-    overlay: List<Pair<Double, Double>> = emptyList(),
-    overlayColor: Color = Health.colors.heart,
 ) {
     val summary = stagesSummary(stages)
     val described = modifier.clearAndSetSemantics { contentDescription = summary }
     if (spans.isEmpty()) {
-        TotalsBars(stages, compact, highlight, described)
+        TotalsBars(stages, compact, described)
         return
     }
     val colors = SleepStageRow.entries.associateWith { stageColor(it) }
@@ -136,7 +127,7 @@ internal fun SleepStagesChart(
 
     Canvas(described) {
         if (compact) {
-            drawBlocks(spans, colors, 0.0, spanSec, size.width, size.height, 0.25f, 0.75f, highlight, overlay.isNotEmpty())
+            drawBlocks(spans, colors, 0.0, spanSec, size.width, size.height, 0.25f, 0.75f)
             return@Canvas
         }
         // Health's axis: the left edge is the night's start rounded down to its hour, then four equal
@@ -167,8 +158,7 @@ internal fun SleepStagesChart(
             val y = i * rowH - hair / 2
             drawLine(grid, Offset(0f, y), Offset(size.width, y), hair)
         }
-        drawBlocks(spans, colors, start, length, size.width, plotH, 0.38f, 0.85f, highlight, overlay.isNotEmpty())
-        drawOverlay(overlay, start, length, size.width, plotH, overlayColor)
+        drawBlocks(spans, colors, start, length, size.width, plotH, 0.38f, 0.85f)
         SleepStageRow.entries.forEachIndexed { i, row ->
             drawText(measurer, names.getValue(row), Offset(4.dp.toPx(), i * rowH + 2.dp.toPx()), nameStyle)
         }
@@ -188,16 +178,9 @@ private fun DrawScope.drawBlocks(
     height: Float,
     bandTop: Float,
     bandBottom: Float,
-    highlight: SleepStageRow?,
-    dimmed: Boolean,
 ) {
     val rowH = height / 4f
     fun x(t: Double) = ((t - start) / length * width).toFloat()
-    fun alpha(row: SleepStageRow) = when {
-        highlight != null -> if (row == highlight) 1f else 0.18f
-        dimmed -> 0.35f
-        else -> 1f
-    }
     val radius = 4.dp.toPx()
     val blockH = (bandBottom - bandTop) * rowH
     // Connectors first, under the blocks: a pale line from one block's centre to the next one's.
@@ -206,7 +189,7 @@ private fun DrawScope.drawBlocks(
         val cx = x(b.startSec)
         val y1 = (a.row.ordinal + (bandTop + bandBottom) / 2) * rowH
         val y2 = (b.row.ordinal + (bandTop + bandBottom) / 2) * rowH
-        val c = colors.getValue(b.row).copy(alpha = 0.3f * min(alpha(a.row), alpha(b.row)).coerceAtLeast(0.5f))
+        val c = colors.getValue(b.row).copy(alpha = 0.3f)
         drawLine(c, Offset(cx, min(y1, y2)), Offset(cx, max(y1, y2)), 1.5.dp.toPx())
     }
     for (s in spans) {
@@ -214,43 +197,18 @@ private fun DrawScope.drawBlocks(
         val w = max(1f, x(s.endSec) - x1)
         val top = (s.row.ordinal + bandTop) * rowH
         val r = min(radius, min(w / 2, blockH / 2))
-        drawRoundRect(
-            colors.getValue(s.row).copy(alpha = alpha(s.row)),
-            Offset(x1, top), Size(w, blockH), CornerRadius(r, r),
-        )
+        drawRoundRect(colors.getValue(s.row), Offset(x1, top), Size(w, blockH), CornerRadius(r, r))
     }
-}
-
-/** An overlaid vital as a line on its own scale, across 10 %–90 % of the plot, lowest at the bottom. */
-private fun DrawScope.drawOverlay(
-    points: List<Pair<Double, Double>>,
-    start: Double,
-    length: Double,
-    width: Float,
-    height: Float,
-    color: Color,
-) {
-    if (points.size < 2) return
-    val (lo, hi) = overlayDomain(points.map { it.second }) ?: return
-    val spread = max(hi - lo, 1e-6)
-    val path = Path()
-    points.forEachIndexed { i, (t, v) ->
-        val px = ((t - start) / length * width).toFloat()
-        val py = (height * (0.9 - 0.8 * (v - lo) / spread)).toFloat()
-        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
-    }
-    drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
 /** A totals-only night: one bar per stage, its length the stage's minutes against the longest stage. */
 @Composable
-private fun TotalsBars(stages: Stages, compact: Boolean, highlight: SleepStageRow?, modifier: Modifier) {
+private fun TotalsBars(stages: Stages, compact: Boolean, modifier: Modifier) {
     val longest = SleepStageRow.entries.maxOf { stages.minutes(it) }.coerceAtLeast(1.0)
     Column(modifier, verticalArrangement = Arrangement.SpaceEvenly) {
         SleepStageRow.entries.forEach { row ->
             val minutes = stages.minutes(row)
-            val faded = highlight != null && highlight != row
-            val color = stageColor(row).copy(alpha = if (faded) 0.18f else 1f)
+            val color = stageColor(row)
             Column(Modifier.fillMaxWidth()) {
                 if (!compact) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -26,10 +26,27 @@ import kotlin.math.max
 
 // MARK: - The nights every Sleep page reads
 //
-// One load for the Sleep tab and the pages it pushes (More Sleep Data, Vitals, Sleep Highlights): the
-// merged imported ∪ on-device sessions grouped by local wake day (newest first), each day's main night
-// picked by the learned midsleep (`selectNight`, the rule the analytics rollup uses), and every night decoded
-// once into a [SleepNightDetail]. The pushed pages reuse the tab's load while the day history is unchanged.
+// One load for the Sleep tab and the Sleep History page it pushes: the merged imported ∪ on-device sessions
+// grouped by local wake day (newest first), each day's main night picked by the learned midsleep
+// (`selectNight`, the rule the analytics rollup uses), and every night decoded once into a
+// [SleepNightDetail]. The pushed page reuses the tab's load while the day history is unchanged.
+
+/**
+ * A nap: a block of the day outside its main night, decoded for its own page. [stages] is null when the block
+ * stored none; its time asleep is then unknown, and the page shows the block's two times without one (the
+ * minutes between them are time in bed, the rule `napSleepMinutesByDay` follows).
+ */
+internal data class SleepNap(
+    val session: SleepSession,
+    val startTs: Long,
+    val endTs: Long,
+    val stages: Stages?,
+    /** Spans from [startTs]; empty when the nap carries only stage totals, or none. */
+    val spans: List<SleepStageSpan>,
+) {
+    val asleepMin: Double? get() = stages?.asleep
+    val windowMin: Double get() = (endTs - startTs) / 60.0
+}
 
 /** Everything the Sleep pages draw, decoded once per data change. */
 internal class SleepNights(
@@ -151,6 +168,17 @@ internal object SleepNightsLoader {
             stages = stages,
             spans = stageSpans(segments, onset),
         )
+    }
+
+    /** One nap block decoded: its own window and, when it stored them, its stages. */
+    fun nap(session: SleepSession): SleepNap {
+        val start = session.effectiveStartTs
+        val clamped = SleepStageTotals.clampStagesToOnset(session.stagesJSON, start)
+        val stages = parseSessionStages(clamped)
+            ?.let { Stages(awake = it.awake, light = it.light, deep = it.deep, rem = it.rem) }
+            ?.takeIf { it.asleep > 0.0 }
+        val spans = if (stages == null) emptyList() else stageSpans(parsePersistedSegments(clamped), start)
+        return SleepNap(session, start, session.endTs, stages, spans)
     }
 
     /** A night's stages from its day row alone: awake is the in-bed time its efficiency implies. */

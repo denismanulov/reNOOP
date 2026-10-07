@@ -67,11 +67,9 @@ class HealthColorsContrastTest {
         // Text on the fitness tile.
         need("onFitnessContainer", c.onFitnessContainer, listOf(c.fitnessContainer), 4.5)
         need("fitness on its container", c.fitness, listOf(c.fitnessContainer), 4.5)
-        // Marks: stages, score parts, bands.
+        // Marks: stages, bands.
         mapOf(
             "stageAwake" to c.stageAwake, "stageRem" to c.stageRem, "stageCore" to c.stageCore, "stageDeep" to c.stageDeep,
-            "scoreDuration" to c.scoreDuration, "scoreInterruptions" to c.scoreInterruptions,
-            "scoreDeepRem" to c.scoreDeepRem, "scoreRegularity" to c.scoreRegularity,
             "bandLow" to c.bandLow, "bandMid" to c.bandMid, "bandHigh" to c.bandHigh,
         ).forEach { (name, hue) -> need(name, hue, body, 3.0) }
         assertTrue("$mode hues under their contrast floor: $failures", failures.isEmpty())

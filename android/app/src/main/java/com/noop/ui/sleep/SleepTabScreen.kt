@@ -6,13 +6,11 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
@@ -40,10 +39,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
@@ -83,6 +82,8 @@ import com.noop.ui.SleepFreshnessStatus
 import com.noop.ui.SleepNightRequest
 import com.noop.ui.SleepResultChangeTracker
 import com.noop.ui.SleepResultSnapshot
+import com.noop.ui.UnitPrefs
+import com.noop.ui.localDayString
 import com.noop.ui.m3.HealthCard
 import com.noop.ui.m3.LargeTitle
 import com.noop.ui.m3.ListGroup
@@ -102,22 +103,30 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 
-// MARK: - Sleep tab (twin of iOS SleepHealthView, set in Material 3)
+// MARK: - Sleep tab
 //
-// The tab root laid out like Health's Sleep Score page: the score card (ring, word, the parts' points, a
-// sentence; opens the Rest metric page), the Sleep tile (opens More Sleep Data) beside the Vitals tile
-// (opens Vitals), Highlights, and Options (the sleep schedule). The overflow menu edits the night, adds or
-// edits a nap and logs sleep marks. Android shows a visible ‹ night › picker over the cards (swiping them
-// still changes the night), with the night's date on a chip that opens a date picker.
+// One night per page, read top to bottom as answers. How did I sleep: the score on its cookie, its word and
+// one sentence (opens the Rest metric page). What did I sleep: the day's sleeps as rows, the night and each
+// nap, each opening its own page (SleepSessionScreen). Why the score: its three measured parts, each with a
+// figure, a level and a bar. Was my body as usual: the overnight readings in words. How does the night sit
+// in its week. Each section's "What's this?" opens a sheet that says what its figures mean. Then the doors
+// to Sleep History and the Sleep Schedule. The overflow menu edits the night, adds or edits a nap and logs
+// sleep marks. A visible ‹ night › picker sits over the cards (swiping them still changes the night), with
+// the night's date on a chip that opens a date picker.
+//
+// The tab keeps iOS's data and features and departs from its layout (Health's Sleep Score page): that page's
+// points out of 50 / 20 / 20 / 10, its unlabelled Vitals marks and its three levels of pages gave figures
+// without saying what they meant.
 
 /** Where the Sleep tab's taps go; the shell resolves each to a route on the Sleep tab. */
 internal class SleepActions(
     val openMetric: (String) -> Unit,
-    /** More Sleep Data on the night at this offset (0 = newest). */
-    val openMoreData: (Int) -> Unit,
-    /** The Vitals page for the night that ended on this "yyyy-MM-dd" day. */
-    val openVitals: (String) -> Unit,
-    val openHighlights: (Int) -> Unit,
+    /**
+     * One sleep's page: the "yyyy-MM-dd" day it ended on, and the nap's start (unix seconds) or
+     * [SLEEP_SESSION_NIGHT] for the day's main night.
+     */
+    val openSession: (String, Long) -> Unit,
+    val openHistory: () -> Unit,
     val openSchedule: () -> Unit,
 )
 
@@ -196,7 +205,11 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
         }
     }
     val vitals = remember(wakeDay, nights) { wakeDay?.let { SleepVitals.make(nights.days, it) } }
-    val highlights = remember(nights) { SleepHighlight.make(nights.entries, LocalDate.now()) }
+    val week = remember(night, nights) { night?.let { SleepWeek.make(nights.entries, it.day) } }
+    val tempUnit = remember { UnitPrefs.temperature(context) }
+    // The ledger is anchored to the latest night on record, so only the newest night's page shows it.
+    val debt = nights.model?.sleepDebtLedger?.takeIf { nightOffset == 0 && it.nights.isNotEmpty() }
+    var explain by remember { mutableStateOf<SleepExplain?>(null) }
 
     var undo by remember { mutableStateOf<SleepUndo?>(null) }
     var editor by remember { mutableStateOf<OpenEditor?>(null) }
@@ -282,6 +295,11 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
 
     val heroNight = remember(nights, nightOffset) { nights.heroNight(nightOffset) }
     val naps = heroNight?.napBlocks.orEmpty()
+    val napRows = remember(heroNight) { heroNight?.napBlocks.orEmpty().map { SleepNightsLoader.nap(it) } }
+    // The key the rows' pages find the day by: the wake day its blocks are grouped under.
+    val sessionDay = remember(nights, nightOffset) {
+        nights.navDays.getOrNull(nightOffset)?.firstOrNull()?.let { localDayString(it.endTs) }
+    }
 
     // The night on screen moved under the reader (a sync or a re-stage changed its times or total asleep by
     // five minutes or more): say so for a few seconds, politely to TalkBack. Twin of iOS SleepResultChange.
@@ -436,52 +454,48 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
                         },
                     ) { _, amount -> dx += amount }
                 }
-                Column(
-                    swipe.padding(horizontal = M3Dimens.screenPadding),
-                    verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
-                ) {
-                    if (night != null) {
-                        score?.let { SleepScoreCard(it) { actions.openMetric("sleep_performance") } }
-                        Row(
-                            Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                            horizontalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
-                        ) {
-                            SleepDurationTile(night, onClick = { actions.openMoreData(nightOffset) }, modifier = Modifier.weight(1f))
-                            SleepVitalsTile(
-                                vitals ?: SleepVitals(emptyList(), SleepVitals.NIGHTS_NEEDED),
-                                onClick = { actions.openVitals(night.dayKey) },
-                                modifier = Modifier.weight(1f),
-                            )
+                Column(swipe.padding(horizontal = M3Dimens.screenPadding)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap)) {
+                        if (night != null && score != null) {
+                            SleepNightCard(night, score) { actions.openMetric("sleep_performance") }
                         }
-                    } else if (data != null) {
-                        HealthCard {
-                            Text(
-                                stringResource(R.string.sleep_no_data),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).padding(top = 48.dp),
+                        if ((night != null || napRows.isNotEmpty()) && sessionDay != null) {
+                            SleepSessionRows(
+                                night = night,
+                                naps = napRows,
+                                is24h = is24h,
+                                locale = locale,
+                                onOpenNight = { actions.openSession(sessionDay, SLEEP_SESSION_NIGHT) },
+                                onOpenNap = { actions.openSession(sessionDay, it.startTs) },
                             )
+                        } else if (data != null) {
+                            HealthCard {
+                                Text(
+                                    stringResource(R.string.sleep_no_data),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp).padding(top = 48.dp),
+                                )
+                            }
                         }
                     }
-                }
-            }
-            item(key = "hl-header") {
-                SectionHeader(
-                    stringResource(R.string.sleep_highlights),
-                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                    action = stringResource(R.string.sleep_show_all),
-                    onAction = { actions.openHighlights(nightOffset) },
-                )
-            }
-            highlights.forEach { h ->
-                item(key = "hl-${h::class.simpleName}") {
-                    Box(Modifier.padding(horizontal = M3Dimens.screenPadding)) { SleepHighlightCard(h, locale, is24h) }
-                }
-            }
-            night?.let { n ->
-                item(key = "hl-stages") {
-                    Box(Modifier.padding(horizontal = M3Dimens.screenPadding)) { SleepStagesHighlightCard(n, locale, is24h) }
+                    if (night != null) {
+                        val what = stringResource(R.string.sleep_explain_action)
+                        if (score != null && score.parts.isNotEmpty()) {
+                            SectionHeader(stringResource(R.string.sleep_section_factors), action = what, onAction = { explain = SleepExplain.SCORE })
+                            SleepFactorsCard(night, score, locale)
+                        }
+                        SectionHeader(stringResource(R.string.sleep_section_body), action = what, onAction = { explain = SleepExplain.BODY })
+                        SleepBodyCard(
+                            vitals ?: SleepVitals(emptyList(), SleepVitals.NIGHTS_NEEDED),
+                            tempUnit, locale, actions.openMetric,
+                        )
+                        if (week != null) {
+                            SectionHeader(stringResource(R.string.sleep_section_week), action = what, onAction = { explain = SleepExplain.WEEK })
+                            SleepWeekCard(week, debt, is24h, locale)
+                        }
+                    }
                 }
             }
             item(key = "options-header") {
@@ -489,6 +503,15 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
             }
             item(key = "options") {
                 ListGroup(Modifier.padding(horizontal = M3Dimens.screenPadding)) {
+                    item { shape ->
+                        ListRow(
+                            shape = shape,
+                            title = stringResource(R.string.sleep_history_title),
+                            leading = { Icon(Icons.Filled.BarChart, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            trailing = { ChevronRight() },
+                            onClick = actions.openHistory,
+                        )
+                    }
                     item { shape ->
                         ListRow(
                             shape = shape,
@@ -520,6 +543,10 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
             },
             onDismiss = { pickDate = false },
         )
+    }
+
+    explain?.let { topic ->
+        SleepExplainSheet(topic, debtNeedMin = debt?.needMin, onDismiss = { explain = null })
     }
 
     editor?.let { open ->
@@ -577,12 +604,8 @@ private fun NightPickerRow(
     onNewer: () -> Unit,
     onPick: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-            onClick = onOlder,
-            enabled = canGoOlder,
-            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-        ) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = M3Dimens.screenPadding), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalIconButton(onClick = onOlder, enabled = canGoOlder) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.sleep_previous_night))
         }
         Spacer(Modifier.weight(1f))
@@ -592,11 +615,7 @@ private fun NightPickerRow(
             Text(title, style = MaterialTheme.typography.labelLarge)
         }
         Spacer(Modifier.weight(1f))
-        IconButton(
-            onClick = onNewer,
-            enabled = canGoNewer,
-            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-        ) {
+        FilledTonalIconButton(onClick = onNewer, enabled = canGoNewer) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.sleep_next_night))
         }
     }
@@ -628,30 +647,5 @@ private fun FreshnessNotice(status: SleepFreshnessStatus, chunks: Int) {
             title = stringResource(R.string.sleep_fresh_none_title),
             message = stringResource(R.string.sleep_fresh_none_body),
         )
-    }
-}
-
-/** The Sleep Highlights page: every highlight card, then the night's stages. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-internal fun SleepHighlightsScreen(vm: AppViewModel, offset: Int, onBack: () -> Unit) {
-    val context = LocalContext.current
-    val locale = context.resources.configuration.locales[0]
-    val is24h = remember { ClockPrefs.uses24Hour(context) }
-    val days by vm.recentDays.collectAsStateWithLifecycle()
-    var data by remember { mutableStateOf<SleepNights?>(null) }
-    LaunchedEffect(days, SleepNightsLoader.revision) { data = SleepNightsLoader.load(vm, days) }
-    val nights = data ?: SleepNights.EMPTY
-    val highlights = remember(nights) { SleepHighlight.make(nights.entries, LocalDate.now()) }
-    val night = nights.details.getOrNull(offset)
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        com.noop.ui.m3.PushedTopBar(stringResource(R.string.sleep_highlights_title), onBack)
-        LazyColumn(
-            contentPadding = PaddingValues(start = M3Dimens.screenPadding, end = M3Dimens.screenPadding, top = 8.dp, bottom = M3Dimens.bottomBarClearance),
-            verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
-        ) {
-            highlights.forEach { h -> item { SleepHighlightCard(h, locale, is24h) } }
-            night?.let { n -> item { SleepStagesHighlightCard(n, locale, is24h) } }
-        }
     }
 }

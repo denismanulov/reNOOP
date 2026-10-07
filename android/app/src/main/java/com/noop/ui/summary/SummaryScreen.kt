@@ -59,10 +59,12 @@ import com.noop.ui.KeyMetric
 import com.noop.ui.KeyMetricPrefs
 import com.noop.ui.OnScrollToTop
 import com.noop.ui.UnitPrefs
+import com.noop.ui.ClockPrefs
 import com.noop.ui.m3.LargeTitle
 import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.SectionHeader
 import com.noop.ui.m3.SyncFooter
+import com.noop.ui.sleep.SleepSessionRows
 import com.noop.ui.metric.metricUnits
 import com.noop.ui.todayPullToSyncEnabled
 import com.noop.ui.trends.HealthTrendCard
@@ -98,6 +100,8 @@ internal class SummaryActions(
     val openTrends: () -> Unit,
     /** The Sleep tab on the night that ended on this "yyyy-MM-dd" day. */
     val openSleepNight: (String) -> Unit,
+    /** A nap's own page: the day it belongs to and the nap's start (unix seconds). */
+    val openSleepNap: (String, Long) -> Unit,
 )
 
 /** Everything the two layouts draw, resolved once per composition. */
@@ -310,6 +314,7 @@ private fun LazyListScope.detailedLayout(
     }
     ui.sleepNight?.let { night ->
         item(key = "sleep") { Box(gutter) { SleepCard(night, ui.locale) { actions.openSleepNight(night.wakeDayKey) } } }
+        if (night.naps.isNotEmpty()) item(key = "naps") { Box(gutter) { NapRows(night, ui.locale, actions) } }
     }
     val inputs = ui.snapshot.metrics
     if (ui.pinned.isEmpty()) {
@@ -495,6 +500,9 @@ private fun LazyListScope.compactLayout(
         )
     }
     item(key = "c-grid") { Box(gutter) { PinnedGrid(ui, actions, onChangeTile, onEdit) } }
+    ui.sleepNight?.takeIf { it.naps.isNotEmpty() }?.let { night ->
+        item(key = "c-naps") { Box(gutter) { NapRows(night, ui.locale, actions) } }
+    }
     item(key = "c-all-metrics") { Box(gutter) { AllMetricsButton(actions.openAllMetrics) } }
     ui.trends?.let { trends ->
         item(key = "c-trends-header") {
@@ -546,4 +554,19 @@ private fun SummaryDatePicker(
     ) {
         DatePicker(state = state, showModeToggle = false)
     }
+}
+
+/** The day's naps as rows, each opening its own page (the night itself is the Sleep card above them). */
+@Composable
+private fun NapRows(night: SummarySleepNight, locale: Locale, actions: SummaryActions) {
+    val context = LocalContext.current
+    val is24h = remember { ClockPrefs.uses24Hour(context) }
+    SleepSessionRows(
+        night = null,
+        naps = night.naps,
+        is24h = is24h,
+        locale = locale,
+        onOpenNight = {},
+        onOpenNap = { actions.openSleepNap(night.wakeDayKey, it.startTs) },
+    )
 }
