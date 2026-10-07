@@ -93,7 +93,8 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
         item {
             ListGroup(header = stringResource(R.string.settings_steps)) {
                 item { shape ->
-                    val value = String.format(Locale.getDefault(), "%.1f", profile.stepTicksPerStep)
+                    // Two places: the grid is 0.01 below 1.5 (a WHOOP 4.0 counter runs near 1.26 ticks per step).
+                    val value = String.format(Locale.getDefault(), "%.2f", profile.stepTicksPerStep)
                     ListRow(
                         shape = shape,
                         title = stringResource(R.string.l10n_settings_screen_step_calibration_351c09bf),

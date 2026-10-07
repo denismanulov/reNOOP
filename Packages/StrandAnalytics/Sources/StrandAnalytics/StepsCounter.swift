@@ -11,9 +11,7 @@ import WhoopProtocol
 /// remains readable. The caller applies its per-user `stepTicksPerStep` calibration afterwards. The result is
 /// still an estimate, not cloud/clinical parity.
 ///
-/// The Kotlin twin `StepsCounter.stepsInWindow` matches except for the rate gate: it has not adopted the
-/// last-moved time base or the eight-per-second limit, so it drops a buffered release and a doubled
-/// record that this side keeps.
+/// Kept in lockstep with the Kotlin twin `StepsCounter.stepsInWindow`, the rate gate included.
 public enum StepsCounter {
     private static let locomotionActivityClasses: Set<Int> = [1, 2]
 
@@ -53,8 +51,7 @@ public enum StepsCounter {
     /// `lastMovedTs` is the timestamp of the latest sample whose counter differed from its predecessor,
     /// or of the window's first sample when none has yet.
     ///
-    /// Kotlin twin: `StepsCounter.isPlausibleDelta`, which has not adopted `lastMovedTs`, still measures
-    /// over the consecutive-sample gap alone, and still allows four ticks per second.
+    /// Kotlin twin: `StepsCounter.isPlausibleDelta`.
     static func isPlausibleDelta(previousTs: Int, currentTs: Int, lastMovedTs: Int, delta: Int) -> Bool {
         guard delta >= 1, delta < maxStepDelta else { return false }
         let elapsed = currentTs - previousTs

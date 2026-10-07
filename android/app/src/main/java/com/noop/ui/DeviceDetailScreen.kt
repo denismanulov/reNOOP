@@ -401,7 +401,10 @@ private val READS: List<ReadsRow> = listOf(
     ReadsRow(R.string.devices_reads_stress, ReadsSupport.FULL, ReadsSupport.FULL),
     ReadsRow(R.string.devices_reads_workouts, ReadsSupport.FULL, ReadsSupport.FULL),
     ReadsRow(R.string.devices_reads_skin_temp, ReadsSupport.PARTIAL, ReadsSupport.FULL),
-    ReadsRow(R.string.devices_reads_steps, ReadsSupport.PARTIAL, ReadsSupport.FULL),
+    // Full on a 4.0 as well: its 104-byte v24 record carries the firmware's own cumulative step counter
+    // (`step_counter@92`), counted the same way as the 5/MG counter. The motion-volume estimate only fills
+    // days that have no counter rows.
+    ReadsRow(R.string.devices_reads_steps, ReadsSupport.FULL, ReadsSupport.FULL),
     ReadsRow(R.string.devices_reads_spo2, ReadsSupport.NONE, ReadsSupport.NONE),
     ReadsRow(R.string.devices_reads_ecg, ReadsSupport.NONE, ReadsSupport.PARTIAL),
     ReadsRow(R.string.devices_reads_bp, ReadsSupport.NONE, ReadsSupport.NONE),

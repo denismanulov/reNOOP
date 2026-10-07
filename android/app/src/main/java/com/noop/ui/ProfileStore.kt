@@ -314,11 +314,14 @@ class ProfileStore(private val prefs: SharedPreferences) {
          * Variable step for the calibration stepper so high values stay reachable: fine near the
          * 1.0 default (where most people land), coarse up at the 20s+ a 5/MG needs. A flat 0.1 step
          * from 0.5 to 30 would be ~295 taps — unusable. Mirrors macOS `ProfileStore.stepScaleIncrement`.
-         *  - `< 2.0` → 0.1   (precision around the default)
+         *  - `< 1.5` → 0.01  (a WHOOP 4.0 firmware counter measured about 1.26 ticks per step, which a
+         *    0.1 grid cannot express)
+         *  - `1.5–2.0` → 0.1
          *  - `2.0–5.0` → 0.5
          *  - `>= 5.0` → 1.0   (ballpark the ~24× overcount in ~19 taps)
          */
         fun stepScaleIncrement(value: Double): Double = when {
+            value < 1.5 -> 0.01
             value < 2.0 -> 0.1
             value < 5.0 -> 0.5
             else -> 1.0

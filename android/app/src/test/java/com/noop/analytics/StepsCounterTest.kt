@@ -54,12 +54,42 @@ class StepsCounterTest {
     }
 
     @Test fun rejectsPhysicallyImpossibleOneSecondSpikeButAllowsSameTicksAcrossTime() {
-        // Four ticks/second (240/min) remains available for a hard sprint. Seven ticks in one second is
-        // the observed household outlier and cannot be real gait; the same seven ticks across two seconds
-        // can be a small history hole and must remain recoverable.
-        assertNull(StepsCounter.stepsInWindow(listOf(step(0, 100), step(1, 107))))
-        assertEquals(7, StepsCounter.stepsInWindow(listOf(step(0, 100), step(2, 107))))
-        assertEquals(4, StepsCounter.stepsInWindow(listOf(step(0, 100), step(1, 104))))
+        // Eight ticks in a second is the ceiling (a 1 Hz record can carry two seconds' worth). Nine in one
+        // second cannot be real gait; the same nine across two seconds can be a small history hole and must
+        // remain recoverable.
+        assertNull(StepsCounter.stepsInWindow(listOf(step(0, 100), step(1, 109))))
+        assertEquals(9, StepsCounter.stepsInWindow(listOf(step(0, 100), step(2, 109))))
+        assertEquals(8, StepsCounter.stepsInWindow(listOf(step(0, 100), step(1, 108))))
+    }
+
+    @Test fun bufferedReleaseAfterFlatRunCounts() {
+        // A pedometer holds the first steps of a walk back, then publishes them in one record. Ten flat
+        // seconds, a 12-step release, then one more step: all 13 are real.
+        val flat = (0L..9L).map { step(it, 100) }
+        assertEquals(13, StepsCounter.stepsInWindow(flat + listOf(step(10, 112), step(11, 113))))
+    }
+
+    @Test fun releaseIsBoundedByTheConfirmationWindow() {
+        // The credit stops at 8 s x 4 ticks = 32, however long the counter was flat.
+        val flat = (0L..60L).map { step(it, 100) }
+        assertEquals(32, StepsCounter.stepsInWindow(flat + listOf(step(61, 132))))
+        assertNull(StepsCounter.stepsInWindow(flat + listOf(step(61, 133))))
+    }
+
+    @Test fun spikeRightAfterMovementIsStillRejected() {
+        // The counter moved one second ago, so there is no flat run to credit: +9 in a second is dropped.
+        assertEquals(2, StepsCounter.stepsInWindow(listOf(step(0, 100), step(1, 102), step(2, 111))))
+    }
+
+    @Test fun jitteredSecondDuringSteadyWalkingCounts() {
+        // Real WHOOP 4.0 walk, 2026-10-03: steady 2-3 ticks per second with one record carrying 6, where
+        // record timing put two seconds' worth of ticks into one. Every tick is a real one: 26 in all.
+        var counter = 100
+        val samples = listOf(step(0, counter)) + listOf(2, 3, 2, 3, 3, 2, 6, 2, 3).mapIndexed { index, delta ->
+            counter += delta
+            step(index + 1L, counter)
+        }
+        assertEquals(26, StepsCounter.stepsInWindow(samples))
     }
 
     @Test fun classedStreamCountsOnlyWalkAndRunDeltas() {
