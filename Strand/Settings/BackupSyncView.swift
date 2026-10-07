@@ -154,6 +154,9 @@ struct BackupSyncView: View {
                 if allowOversize { return true }
                 return await withCheckedContinuation { importAnswer = $0; pendingImport = name }
             }
+            #if os(iOS)
+            StoreRestartPrompt.shared.restoreDidFinish()
+            #endif
             handleBackup(result)
         }
     }
@@ -201,8 +204,12 @@ struct BackupSyncView: View {
             oversizeRestoreMessage = String(localized: "\(name) is over \(cap). Restore it only if you exported it yourself. You'll choose the file again.")
             showOversizeRestoreConfirm = true
         case .imported:
+            // iOS: the root alert (`StoreRestartPrompt`, raised when the restore returned) asks for the
+            // relaunch the swapped store needs; a capsule here would be one more thing to miss.
+            #if os(macOS)
             // ST-6: an outcome, not a question — the capsule, as Backed up already does.
             Confirmation.shared.show(String(localized: "Restored. Reopen reNOOP."))
+            #endif
         case .failure(let message):
             alertTitle = String(localized: "Backup problem")
             alertMessage = message
@@ -297,9 +304,14 @@ struct BackupSyncView: View {
                 FolderBackup.restore(snapshotNamed: snap.name)
             }.value
             await MainActor.run {
+                #if os(iOS)
+                StoreRestartPrompt.shared.restoreDidFinish()
+                #endif
                 switch result {
                 case .imported:
+                    #if os(macOS)
                     Confirmation.shared.show(String(localized: "Restored. Reopen reNOOP."))
+                    #endif
                     return
                 case .failure(let m):
                     alertTitle = String(localized: "Restore problem"); alertMessage = m

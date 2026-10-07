@@ -446,7 +446,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 1, "rr": 2, "spo2": 1, "skin_temp": 1, "resp": 1, "gravity": 1,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "v18_aux": 0, "events": 0, "battery": 0
+          "steps": 1, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "v18_aux": 0, "events": 0, "battery": 0
         }
       }
     },
@@ -538,7 +538,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 1, "rr": 2, "spo2": 1, "skin_temp": 1, "resp": 1, "gravity": 1,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "v18_aux": 0, "events": 0, "battery": 0
+          "steps": 1, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "v18_aux": 0, "events": 0, "battery": 0
         }
       }
     },

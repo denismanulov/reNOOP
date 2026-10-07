@@ -418,6 +418,16 @@ func registerPostHooks() {
         }
         fb.parsed["rr_intervals"] = .intArray(rrVals)
 
+        // The firmware pedometer total: a cumulative u32 at 92..95 of the 104-byte v24 record, past the
+        // DSP block. Read only when the record's OWN version byte is 24. Version 12 and the
+        // unmapped-version fallback borrow this field map, and nothing shows their bytes there are a
+        // counter. A shorter v24 record ends before the field, so the bounded read returns nil.
+        if version == 24, let count = u32(frame, 92, limit) {
+            fb.add(92, 4, "step_counter", "activity", value: .int(Int(count)),
+                   note: "cumulative firmware step count")
+            fb.parsed["step_counter"] = .int(Int(count))
+        }
+
         // Validate the v24-layout guess for an unmapped version: gravity is the DSP-separated
         // orientation vector, so |gravity| ≈ 1 g on a real record regardless of motion. If the magnitude
         // isn't ~1 g (or HR is implausible), the layout doesn't fit this firmware — drop the decoded

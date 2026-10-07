@@ -453,7 +453,13 @@ struct WorkoutDetailView: View {
         var stepReadout: StepReadout?
         if WorkoutCatalog.isOnFoot(row.sport) {
             if let ticks = await repo.strapStepTicks(from: row.startTs, to: row.endTs) {
-                let scaled = Int((Double(ticks) / max(profile.stepTicksPerStep, 0.5)).rounded())
+                // The workout's own day's divisor, so a session and its day never disagree.
+                let tz = TimeZone.current.secondsFromGMT()
+                let divisor = StepCalibrationStore.snapshot(
+                    manual: profile.stepTicksPerStep,
+                    today: AnalyticsEngine.dayString(Int(Date().timeIntervalSince1970), offsetSec: tz))
+                    .factor(day: AnalyticsEngine.dayString(row.startTs, offsetSec: tz))
+                let scaled = Int((Double(ticks) / max(divisor, 0.5)).rounded())
                 if scaled > 0 { stepReadout = StepReadout(count: scaled, fromStrap: true) }
             }
             if stepReadout == nil,

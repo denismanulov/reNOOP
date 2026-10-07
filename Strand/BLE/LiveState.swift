@@ -431,6 +431,11 @@ public final class LiveState: ObservableObject {
     /// whether live HR is streaming. Reset on disconnect; re-derived from the next offload.
     @Published public var sustainedEmptyOffload: Bool = false
 
+    /// When another app was last seen pulling this strap's history (`ForeignOffloadDetector`). Two apps on
+    /// one strap split its history — whichever acks a chunk first keeps it — so the shell warns once.
+    /// nil until it happens in this process.
+    @Published public var otherAppSyncingAt: Date? = nil
+
     // MARK: - Standard fitness-sensor live metrics (RSC / CSC / CPS — additive, never HR)
     //
     // Live instantaneous speed / cadence / power from a connected standard fitness sensor (a footpod, a

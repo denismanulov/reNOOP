@@ -115,6 +115,15 @@ command set and has no recorded observation;
 commands 106/107 are the supported IMU stream SET/GET pair. An accepted write
 does not prove packet production or persistence.
 
+**Observed in device captures (one WHOOP 4.0, 2026-10-03, a restored iOS connection):** command
+63 written immediately before another command (`TOGGLE_REALTIME_HR`) drew no `COMMAND_RESPONSE`
+eight times out of eight, the strap's console log reported `Sensors: Realtime raw disabled`, and no
+type-43 frame arrived. In the same session only the last of nine handshake commands written in
+one burst was answered. Written alone as a confirmed write, command 63 `[0x01]` was answered on
+the first attempt, the console log reported `Realtime raw R10+R11 enabled`, and the strap sent one
+1,928-byte IMU frame and one 1,932-byte optical frame per second until `[0x00]` was answered. The
+IMU frame's `timestamp` at 11 is on the same clock as the type-47 `unix` field.
+
 ### WHOOP 4 historical v24
 
 This mapping combines a retained layout with device captures. Offsets are absolute
@@ -136,6 +145,7 @@ in the complete WHOOP 4 frame; version is byte 5.
 | 76/78 | 2/u16 | LED-drive words | units and channel assignment unresolved |
 | 80 | 2/u16 | respiration-adjacent raw | not breaths/minute |
 | 82 | 2/u16 | signal-quality word | scale/polarity unresolved |
+| 92 | 4/u32 | cumulative firmware step count | capture-backed on one strap; present only in the 104-byte record; about 1.26 ticks per step on one wearer; rollover and reset unvalidated |
 
 One version-identified 41.17.6.0 offload contained 1,704
 CRC-valid v24 records; HR and R-R arithmetic agreed to roughly one bpm and gravity
@@ -143,6 +153,28 @@ magnitude was physiologically plausible. This validates decoding for that captur
 not cloud equivalence, medical accuracy or universal v24 output behavior.
 Versions 12 and 24 share a retained layout map; that association is not a fresh
 v12 device validation.
+
+**Observed in device captures (one strap, 2026-10-03, 1,203 consecutive records):** the value at
+92 never decreased, stayed flat through 14.5 minutes seated despite arm motion, and rose only
+during walking. Walks the wearer counted as 100 and 50 steps raised it by 127 and 63. Each bout
+opened with a single 11 or 12 tick increment, then 1–2 per second and at most 4. Twenty-five
+seconds of hand-waving raised it by 62, so the firmware does not reject vigorous rhythmic arm
+motion. A record from a second strap carries 708 at the same offset. The field is read only when
+the record's own version byte is 24.
+
+**Ticks per step (same strap and wearer, 2026-10-03):** a ten-minute outdoor walk of 1,243
+consecutive records raised the counter by 1,108 while a phone pedometer carried in a pocket
+counted 879 steps. With the two counted walks above that is 1.27, 1.26 and 1.26 ticks per step,
+at paces from about 82 to 119 steps per minute. The counter is therefore not a 1:1 step count on
+this strap. During steady walking at 2–3 ticks per second, four records carried 5 or 6.
+
+The ratio is not a constant either. Later the same day the wearer counted two stretches of 100
+steps at one slow pace (about 1.3 steps per second on the raw accelerometer): with the arm
+swinging the counter added 123, with the strap hand in a trouser pocket it added 149. A third
+walk, measured against the raw accelerometer's step line only, gave 1.14. Observed range on this
+strap and wearer: 1.14 to 1.49. The 1 Hz record did not separate the arm-swinging and
+hand-in-pocket stretches: mean gravity direction, second-to-second change of that direction and
+the value at offset 36 were all close to equal. Running is unmeasured.
 
 ### WHOOP 4 historical v25 and unknown versions
 
@@ -169,9 +201,9 @@ The strap reports a step count and can recover from a count that remains zero or
 unchanged; it also reports sleep/wake motion classifications and rolling motion
 statistics. False-step suppression affects the reported count. Exact filters,
 threshold units, orientation compensation, persistence and ground-truth accuracy
-remain unknown. This counter
-must not be equated with app or cloud steps without a version-labelled wire field
-and a validation set.
+remain unknown. The count appears on the wire at offset 92 of the 104-byte v24
+historical record (see [WHOOP 4 historical v24](#whoop-4-historical-v24)). It
+must not be equated with app or cloud steps without a validation set.
 
 <a id="whoop-5mg-version-baseline"></a>
 

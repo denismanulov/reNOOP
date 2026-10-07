@@ -317,6 +317,12 @@ fun decodeHistorical(frame: ByteArray, family: DeviceFamily = DeviceFamily.WHOOP
     layout.gravityYOff?.let { off -> frame.histF32(off, limit)?.let { out["gravity_y"] = it } }
     layout.gravityZOff?.let { off -> frame.histF32(off, limit)?.let { out["gravity_z"] = it } }
 
+    // step_counter@92: the firmware pedometer total, a cumulative u32 past the DSP block of the 104-byte
+    // v24 record. Only when the record's OWN version byte is 24: v12 and the unmapped-version fallback
+    // borrow this layout, and nothing shows their bytes there are a counter. A shorter record ends before
+    // the field and the bounded read returns null. Mirrors Swift PostHooks "historical_data".
+    if (version == 24) frame.histU32(92, limit)?.let { out["step_counter"] = it }
+
     // Validate the v24-layout guess for an unmapped version: gravity is the DSP-separated orientation
     // vector, so |gravity| ≈ 1 g on a real record regardless of motion, and HR is physiological. If the
     // guess doesn't fit this firmware the decoded values are random — drop the record rather than store
@@ -1040,6 +1046,10 @@ fun extractHistoricalStreams(
                 p.intOrNull("step_motion_counter")?.let { c ->
                     steps.add(StepRow(ts, c, activityClass = p.intOrNull("activity_class")))
                 }
+                // step_counter@92 is the WHOOP 4.0 firmware pedometer total (cumulative u32). The decoder
+                // emits the key only for a v24 record long enough to carry it. A WHOOP 4.0 record has no
+                // activity class.
+                p.intOrNull("step_counter")?.let { c -> steps.add(StepRow(ts, c)) }
                 // Band sleep_state (#175): the strap's OWN @81 high-nibble state (0 wake/1 still/2 asleep/3
                 // up), decoded but DROPPED here until now, so the whole band-state chain (persist → the H7
                 // re-onset confirm guard → Deep Timeline track) had no source. Carried VERBATIM including 0

@@ -45,6 +45,8 @@ enum ShortcutHealthImport {
     static let forbiddenSources: Set<String> = ["my-whoop", "my-whoop-noop"]
 
     static let scheme = "noop"
+    /// The iOS app registers `renoop` (see `WidgetLink.scheme`); a Shortcut built for it uses that.
+    static let forkScheme = "renoop"
     static let host = "import-health"
     static let payloadParam = "payload"
     static let versionParam = "v"
@@ -105,7 +107,7 @@ enum ShortcutHealthImport {
     /// Validate + decode the `noop://import-health` URL into the raw text payload. Returns nil with a
     /// `.rejected` reason on any malformed/foreign URL so a stray deep link can't reach the store.
     static func decodePayload(from url: URL) -> Result<String, Outcome> {
-        guard url.scheme?.lowercased() == scheme else {
+        guard let s = url.scheme?.lowercased(), s == scheme || s == forkScheme else {
             return .failure(.rejected("Not a noop:// link."))
         }
         guard url.host?.lowercased() == host else {

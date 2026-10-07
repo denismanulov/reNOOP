@@ -43,6 +43,7 @@ public enum SleepAwareStepCounter {
         private let sessions: [SleepSession]
         private let hasClasses: Bool
         private var previous: StepSample?
+        private var lastMovedTs: Int?
         private var outside = 0, awake = 0, sleep = 0, rejectedSleep = 0
         private var rejectedClass = 0, rejectedImplausible = 0
         private var gravityAvailable = 0, auxAvailable = 0
@@ -58,16 +59,20 @@ public enum SleepAwareStepCounter {
         @discardableResult public func acceptPage(_ samples: [StepSample]) -> Accumulator {
             precondition(!finished)
             for current in samples.sorted(by: { $0.ts < $1.ts }) {
-                guard let prior = previous else { previous = current; continue }
+                guard let prior = previous else { previous = current; lastMovedTs = current.ts; continue }
                 guard current.ts > prior.ts else { continue }
                 previous = current
                 let delta = (current.counter - prior.counter) & 0xffff
+                // Read the last-moved time BEFORE this sample updates it: the gate judges this increment
+                // against the flat run that preceded it.
+                let movedTs = lastMovedTs ?? prior.ts
+                if delta != 0 { lastMovedTs = current.ts }
                 guard StepsCounter.shouldCountDelta(activityClass: current.activityClass,
                                                      hasActivityClasses: hasClasses) else {
                     rejectedClass += delta; continue
                 }
                 guard StepsCounter.isPlausibleDelta(previousTs: prior.ts, currentTs: current.ts,
-                                                    delta: delta) else {
+                                                    lastMovedTs: movedTs, delta: delta) else {
                     rejectedImplausible += delta; continue
                 }
                 switch SleepAwareStepCounter.context(current.ts, sessions: sessions) {

@@ -118,8 +118,10 @@ extension WhoopStore {
         let nonWhoop = brand.map { !$0.isEmpty && $0.lowercased() != "whoop" } ?? false
         var tagged = false
         if knownFamily == nil && !nonWhoop {
+            // `+deviceId`: search the tagged rows through `rrInterval_source_suspect`, not every beat the
+            // device ever stored through the primary key (see `dayStreamFingerprint`'s `w5owner`).
             tagged = try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = ? AND srcChannel IN (5, 6, 7))
+                SELECT EXISTS(SELECT 1 FROM rrInterval WHERE +deviceId = ? AND srcChannel IN (5, 6, 7))
                 """, arguments: [deviceId]) ?? false
             // Re-pairing can leave legacy rows under the canonical alias while callers still hold
             // that old ID. Resolve its active strap here so sleep edits and ordinary reads agree.

@@ -233,6 +233,12 @@ final class AppModel: ObservableObject {
     @Published var bpm: Int?
     private var hrWindow: [(t: Date, v: Double)] = []
     private var hrCancellables = Set<AnyCancellable>()
+    /// A completed offload slice whose refresh was held because the auto-continue had already re-kicked the
+    /// next slice of the same burst (see `requestPostOffloadRefresh`), and since when.
+    private var postOffloadRefreshPending = false
+    private var postOffloadRefreshHeldSince: Date?
+    /// A multi-hour catch-up still shows progress: a burst holds the refresh at most this long.
+    private static let postOffloadRefreshMaxHold: TimeInterval = 10 * 60
     /// Drives the READ spine off the registry's active device (#814 HIGH-1). A Devices-screen
     /// switch/remove/re-add calls `registry.setActive` DIRECTLY (not through `registerDevice`), so without
     /// this subscription the reads stayed pinned to whatever id was active at wiring time for the whole
@@ -420,8 +426,20 @@ final class AppModel: ObservableObject {
             .compactMap { $0 }
             .removeDuplicates()
             .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.requestPostOffloadRefresh() }
+            .store(in: &hrCancellables)
+        // The trailing edge of a burst whose last slice ended WITHOUT stamping `lastSyncedAt` (a timeout, a
+        // disconnect): the held refresh must still run once the offload is over. Longer than the 2 s above,
+        // so a burst that DID end with a stamp is released by that path first and this one finds nothing held
+        // (one refresh per burst, not two).
+        live.$backfilling
+            .dropFirst()
+            .removeDuplicates()
+            .filter { !$0 }
+            .debounce(for: .seconds(5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                Task { [weak self] in await self?.refreshAfterCompletedBackfill() }
+                guard let self, self.postOffloadRefreshPending else { return }
+                self.requestPostOffloadRefresh()
             }
             .store(in: &hrCancellables)
 
@@ -740,6 +758,27 @@ final class AppModel: ObservableObject {
         // exist. The bridge coalesces a call that lands during an in-flight write-back.
         await healthWriteBack?()
         #endif
+    }
+
+    /// The debounce above only coalesces slices that land within 2 s of each other. A deep offload is
+    /// re-kicked slice after slice (#364 auto-continue, up to 24 per connection) and a slice can take
+    /// minutes, so the refresh used to start after the FIRST slice: a full 21-day re-score competing with
+    /// the rest of the download for the store and the main actor — slowing the acks the strap waits on —
+    /// then queueing a second pass behind itself for the slices that followed. The strap log of 2026-09-30
+    /// showed exactly that pair on every burst. Hold it while a slice of the same burst is still running;
+    /// the burst's last slice (or `backfilling` dropping) releases it once, over everything that landed.
+    private func requestPostOffloadRefresh() {
+        if live.backfilling {
+            let since = postOffloadRefreshHeldSince ?? Date()
+            if Date().timeIntervalSince(since) < Self.postOffloadRefreshMaxHold {
+                postOffloadRefreshHeldSince = since
+                postOffloadRefreshPending = true
+                return
+            }
+        }
+        postOffloadRefreshPending = false
+        postOffloadRefreshHeldSince = nil
+        Task { [weak self] in await self?.refreshAfterCompletedBackfill() }
     }
 
     private func refreshAfterCompletedBackfill() async {

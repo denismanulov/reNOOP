@@ -910,6 +910,10 @@ final class IntelligenceEngine: ObservableObject {
         // so only genuinely-daytime windows face the stricter nap bar. (Computed once; a DST
         // boundary inside the window is a negligible edge case for an hour-of-day band.)
         let tzOffset = TimeZone.current.secondsFromGMT()
+        // WHOOP 4.0 step auto-calibration: each day's ticks-per-step divisor, resolved once so the whole
+        // pass agrees. With the opt-in off this is `up.stepTicksPerStep` for every day, as before.
+        let stepFactors = StepCalibrationStore.snapshot(
+            manual: up.stepTicksPerStep, today: AnalyticsEngine.dayString(now, offsetSec: tzOffset))
 
         // ── Pass 1: analyse each offloaded night against the IMPORTED-ONLY baseline. For a BLE-only
         // user the imported daily rows are empty, so the HRV baseline isn't usable yet and recovery is
@@ -1259,7 +1263,11 @@ final class IntelligenceEngine: ObservableObject {
                             // watermark gate above, never this one. Both reads are index-only aggregates
                             // over the same `(deviceId, ts)` keys; a miss costs the 7 full stream reads
                             // this gate exists to skip.
-                            streams: streamFp + "|rrAlias5=\(activeWhoop5RR && owner == Repository.whoopSource)",
+                            // The day's own step divisor rides in the same slot: a learned factor moves
+                            // for one day at a time, so it must invalidate that day and no other. In the
+                            // pass-global signature it would drop every cached day on each measurement.
+                            streams: streamFp + "|rrAlias5=\(activeWhoop5RR && owner == Repository.whoopSource)"
+                                + "|stepDiv=\(stepFactors.factor(day: day).bitPattern)",
                             // #1575: `hrvTraceActive &&` matters. With the HRV trace OFF no detail
                             // line is ever produced, so the flag describes nothing — but it would still
                             // flip at midnight and invalidate yesterday, charging EVERY user an extra
@@ -1515,6 +1523,8 @@ final class IntelligenceEngine: ObservableObject {
                 // the same reason `hrvDiag` is carried on the scan and replayed below. A local buffer
                 // crosses no actor.
                 var strainDiagLines: [String] = []
+                var dayProfile = up
+                dayProfile.stepTicksPerStep = stepFactors.factor(day: day)
                 let res = AnalyticsEngine.analyzeDay(day: day,
                                                      strainDiag: { strainDiagLines.append($0) },
                                                      hr: hr, rr: rr, resp: resp,
@@ -1526,7 +1536,7 @@ final class IntelligenceEngine: ObservableObject {
                                                      skinTempAnchorRaw: skinAnchorRaw,   // #938 second capture
                                                      skinTempWornToleranceSec: skinWornToleranceSec,   // #1467
                                                      spo2: spo2,                   // #93
-                                                     profile: up, baselines: baselines1, maxHROverride: maxHR,
+                                                     profile: dayProfile, baselines: baselines1, maxHROverride: maxHR,
                                                      tzOffsetSeconds: tzOffset, wristOff: wristOff,
                                                      sleepNeedHours: sleepNeedHours,
                                                      sleepConsistency: sleepConsistency,
@@ -1747,7 +1757,7 @@ final class IntelligenceEngine: ObservableObject {
                 if stepsTraceActive && !daySteps.isEmpty {
                     stepsTrace = StepsEstimateEngine.rawCounterTrace(
                         daySteps: daySteps, dayKey: day, tzOffsetSeconds: tzOffset,
-                        ticksPerStep: up.stepTicksPerStep)
+                        ticksPerStep: stepFactors.factor(day: day))
                 }
                 // ── RHR floor-vs-mean diagnostic (#691) ────────────────────────────────────────────────
                 // Make the recurring "NOOP's resting HR reads LOWER than my sleeping-HR app" reports
@@ -2151,6 +2161,7 @@ final class IntelligenceEngine: ObservableObject {
             offsetSec: tzOffset,
             habitualMidsleepSec: habitualMidsleepSec,
             ticksPerStep: up.stepTicksPerStep,
+            stepFactors: stepFactors,
             mode: dayCycleMode,
             cache: dayCycleCache,
             profile: up,

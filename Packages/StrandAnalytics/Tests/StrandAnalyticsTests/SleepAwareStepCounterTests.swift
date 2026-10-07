@@ -31,11 +31,26 @@ final class SleepAwareStepCounterTests: XCTestCase {
 
     func testDiagnosticRejectionReasonsAreSeparated() {
         let count = SleepAwareStepCounter.count([
-            sample(0, 100, 0), sample(1, 102, 1), sample(2, 110, 1),
-            sample(4, 117, 2), sample(5, 120, 0)
+            sample(0, 100, 0), sample(1, 102, 1), sample(2, 111, 1),
+            sample(4, 118, 2), sample(5, 121, 0)
         ], sleepSessions: [])
         XCTAssertEqual(count.totalTicks, 9)
         XCTAssertEqual(count.rejectedActivityClassTicks, 3)
-        XCTAssertEqual(count.rejectedImplausibleTicks, 8)
+        XCTAssertEqual(count.rejectedImplausibleTicks, 9)
+    }
+
+    func testBufferedReleaseAfterFlatRunCounts() {
+        let flat = (0...9).map { sample($0, 500, nil) }
+        let count = SleepAwareStepCounter.count(flat + [sample(10, 512, nil), sample(11, 514, nil)],
+                                                sleepSessions: [])
+        XCTAssertEqual(count.totalTicks, 14)
+        XCTAssertEqual(count.rejectedImplausibleTicks, 0)
+    }
+
+    func testLastMovedTimeCarriesAcrossPages() {
+        let accumulator = SleepAwareStepCounter.Accumulator(sleepSessions: [], hasActivityClasses: false)
+        accumulator.acceptPage((0...9).map { sample($0, 500, nil) })
+        accumulator.acceptPage([sample(10, 512, nil)])
+        XCTAssertEqual(accumulator.finish().totalTicks, 12)
     }
 }

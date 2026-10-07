@@ -12,6 +12,7 @@ import WhoopStore
 // under the system's glass ‹.
 //
 //  1 Welcome
+//  · Other strap apps    — only when NOOP / WHOOP is installed beside reNOOP: two apps split the history
 //  2 Find your strap     — wear it, pick the model, Scan; turns into "Connected" once the strap bonds
 //  3 About you           — date of birth / sex / units / weight / height; only answered rows reach ProfileStore
 //  4 Your history        — optional WHOOP / Apple Health import; Done → onFinished()
@@ -28,19 +29,21 @@ public struct OnboardingWizard: View {
         self.onFinished = onFinished
     }
 
-    /// Opens on a later step (index 0…3), with the steps before it behind the back button (the DEBUG screenshot
-    /// harness).
+    /// Opens on a later step (index 0…4), with the steps before it behind the back button (the DEBUG screenshot
+    /// harness). The conditional other-apps step is only in the path when it is the one asked for.
     init(onFinished: @escaping () -> Void, startAt index: Int) {
         self.onFinished = onFinished
         let last = Step(rawValue: min(max(index, 0), Step.allCases.count - 1)) ?? .welcome
-        _path = State(initialValue: Step.allCases.filter { $0 != .welcome && $0.rawValue <= last.rawValue })
+        _path = State(initialValue: Step.allCases.filter {
+            $0 != .welcome && $0.rawValue <= last.rawValue && ($0 != .otherApps || $0 == last)
+        })
     }
 
     // NOTE: the root deliberately does NOT observe the fast-updating model/live/profile env objects —
     // doing so re-rendered the whole wizard on every HR tick. Child steps observe what they need.
 
     fileprivate enum Step: Int, CaseIterable, Hashable {
-        case welcome, scan, profile, importData
+        case welcome, otherApps, scan, profile, importData
     }
 
     /// The steps pushed over Welcome; the last one is on screen.
@@ -61,6 +64,7 @@ public struct OnboardingWizard: View {
         Group {
             switch step {
             case .welcome:    WelcomeStep(next: next)
+            case .otherApps:  OtherAppsStep(next: next)
             case .scan:       ScanStep(next: next)
             case .profile:    ProfileStep(answers: $profileAnswers, next: next)
             case .importData: ImportStep(next: next)
@@ -73,9 +77,12 @@ public struct OnboardingWizard: View {
 
     // MARK: Navigation
 
-    /// The next step, or finish after the last one.
+    /// The next step, or finish after the last one. The other-apps step is skipped when no other strap app
+    /// is installed: most people never see it.
+    @MainActor
     private func push(after step: Step) {
-        guard let next = Step(rawValue: step.rawValue + 1) else { onFinished(); return }
+        guard var next = Step(rawValue: step.rawValue + 1) else { onFinished(); return }
+        if next == .otherApps, OtherStrapApps.installed().isEmpty { next = .scan }
         path.append(next)
     }
 }
@@ -286,6 +293,74 @@ private struct WelcomeStep: View {
     }
 }
 
+// MARK: - 1½ · Other strap apps
+
+/// Shown only when another app that syncs WHOOP straps is installed (`OtherStrapApps`). The strap keeps one
+/// history queue and drops each chunk as soon as any app acks it, so two apps on one strap each end up with
+/// holes — on 2026-09-30 a whole night went to upstream NOOP and never reached reNOOP. Continue is never
+/// blocked: the choice is the user's, this step only makes sure it is made knowingly.
+private struct OtherAppsStep: View {
+    let next: () -> Void
+    @State private var installed: [String] = []
+
+    var body: some View {
+        SetupPage(title: installed.isEmpty ? String(localized: "No Other Strap Apps")
+                                           : String(localized: "One App per Strap"),
+                  message: message,
+                  art: {
+                      SetupGlyph(systemName: installed.isEmpty ? "checkmark.circle" : "exclamationmark.triangle",
+                                 tint: installed.isEmpty ? StrandPalette.settingsGreen : StrandPalette.settingsOrange)
+                  }) {
+            if !installed.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    SetupCard {
+                        ForEach(Array(installed.enumerated()), id: \.element) { i, name in
+                            if i > 0 { SetupDivider() }
+                            SetupRow(stacks: false) {
+                                Text(verbatim: name)
+                            } trailing: {
+                                Text("Installed")
+                                    .foregroundStyle(StrandPalette.textSecondary)
+                            }
+                        }
+                    }
+                    // iOS tells an app whether another is INSTALLED, never what it may do: turning its
+                    // Bluetooth off (the advice above) cannot change this card, and without this line
+                    // "Check Again" reads as if the fix had not worked.
+                    Text("reNOOP can see that it's installed, not its Bluetooth access. If you turned it off, just continue.")
+                        .font(StrandFont.pro(13))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16)
+                }
+            }
+        } tray: {
+            SetupButton(title: "Continue", action: next)
+            if !installed.isEmpty {
+                SetupButton(title: "Check Again", prominent: false) { refresh() }
+            }
+        }
+        .onAppear { refresh() }
+        #if os(iOS)
+        // Back from Settings or the Home Screen after turning the other app off or deleting it.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            refresh()
+        }
+        #endif
+    }
+
+    private var message: String {
+        guard let apps = OtherStrapApps.phrase(installed) else {
+            return String(localized: "No other strap app found on this iPhone.")
+        }
+        return String(localized: "\(apps) can also sync your strap, and each hour of its history goes to whichever app syncs first. Turn off Bluetooth for it in Settings or delete it.")
+    }
+
+    private func refresh() {
+        withAnimation(StrandMotion.gentle) { installed = OtherStrapApps.installed() }
+    }
+}
+
 // MARK: - 2 · Find your strap
 
 private struct ScanStep: View {
@@ -395,6 +470,10 @@ private struct ScanStep: View {
     /// One sentence for where the search stands.
     private var message: String {
         if live.bonded {
+            // `ForeignOffloadDetector` saw another app pull this strap's history while we are connected.
+            if live.otherAppSyncingAt != nil {
+                return String(localized: "Your strap is bonded, but another app is syncing it too. Keep only one.")
+            }
             if let pct = live.batteryPct { return String(localized: "Your strap is bonded · \(Int(pct))% battery.") }
             return String(localized: "Your strap is bonded and ready to stream.")
         }

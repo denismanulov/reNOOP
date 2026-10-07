@@ -93,6 +93,7 @@ import WhoopStore
                         candidates: [(owner: String, priority: Int)], physiologyOwners: [String],
                         workouts: [WorkoutRow], windowStart: Int,
                         now: Int, offsetSec: Int, habitualMidsleepSec: Int?, ticksPerStep: Double,
+                        stepFactors: StepCalibrationStore.Snapshot? = nil,
                         mode: DayCycleMode, cache: Cache,
                         profile: UserProfile, maxHROverride: Double?, effortMethod: StrainScorer.Method,
                         recoveryReader: BoundaryRecoveryReader? = nil,
@@ -318,7 +319,9 @@ import WhoopStore
                 cache.cycles[window.sleepId] = cached
             }
             guard let result = cached, result.evaluated else { continue }
-            let scaled = Int((Double(result.count.totalTicks) / max(ticksPerStep, 0.5)).rounded())
+            // The wake day's own divisor when step auto-calibration supplies one, else the pass-wide one.
+            let dayTicksPerStep = stepFactors?.factor(day: day) ?? ticksPerStep
+            let scaled = Int((Double(result.count.totalTicks) / max(dayTicksPerStep, 0.5)).rounded())
             steps[day] = scaled
             let status = active ? "active" : "closed"
             trace?("stepsCycle wakeDay=\(day) status=\(status) onsetTs=\(window.onset) "
@@ -329,7 +332,7 @@ import WhoopStore
                 + "rejectedClass=\(result.count.rejectedActivityClassTicks) "
                 + "rejectedImplausible=\(result.count.rejectedImplausibleTicks) "
                 + "gravitySamples=\(result.count.gravitySamplesAvailable) auxSamples=\(result.count.auxSamplesAvailable) "
-                + "ticksPerStep=\(ticksPerStep) scaledSteps=\(scaled)")
+                + "ticksPerStep=\(dayTicksPerStep) scaledSteps=\(scaled)")
             } catch {
                 trace?("stepsCycle wakeDay=\(day) status=error error=databaseRead")
                 continue windowLoop

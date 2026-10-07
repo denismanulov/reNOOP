@@ -1762,16 +1762,45 @@ final class Repository: ObservableObject {
         guard !edited.isEmpty else { return [] }
         var healed = false
         for row in edited {
+            // Every input `restageFromRaw` reads for this night, witnessed without reading the rows. When
+            // they match the last pass, re-staging would only reproduce the JSON that pass already compared
+            // or wrote, so skip it. A witness that cannot be read never skips.
+            let inputs = await restageInputs(start: row.effectiveStartTs, end: row.endTs, store: store)
+            if let inputs, restagedInputsByNight[row.startTs] == inputs + (row.stagesJSON ?? "") { continue }
             // Re-derive over the LOCKED corrected window (effective onset → wake). Skip when the raw
             // isn't dense yet, or when the result already matches what's stored (steady state , no write).
             guard let newJSON = await restageFromRaw(start: row.effectiveStartTs, end: row.endTs),
-                  newJSON != row.stagesJSON else { continue }
+                  newJSON != row.stagesJSON else {
+                if let inputs { restagedInputsByNight[row.startTs] = inputs + (row.stagesJSON ?? "") }
+                continue
+            }
             let n = (try? await store.updateSleepStages(deviceId: computedDeviceId,
                                                         detectedStartTs: row.startTs,
                                                         stagesJSON: newJSON)) ?? 0
-            if n > 0 { healed = true }
+            if n > 0 {
+                healed = true
+                if let inputs { restagedInputsByNight[row.startTs] = inputs + newJSON }
+            }
         }
         return healed ? await editedRows() : edited
+    }
+
+    /// What each edited night was last re-staged from, keyed by its detected `startTs`: the witness from
+    /// `restageInputs` followed by the stages JSON that pass left stored. Per process, like the engine's
+    /// `dayScanCache`. Every re-score used to re-read and re-stage every edited night in the window — on
+    /// the 2026-09-30 phone that was most of a warm pass's `score2` phase, for an unchanged answer.
+    private var restagedInputsByNight: [Int: String] = [:]
+
+    /// The inputs `restageFromRaw(start:end:)` reads, as a comparable witness: its window, the two staging
+    /// switches it consults, and COUNT/MAX over every raw stream in the same `±1 h` read range (the same
+    /// witnesses the engine's per-day reuse cache trusts). nil when a fingerprint cannot be read.
+    private func restageInputs(start: Int, end: Int, store: WhoopStore) async -> String? {
+        let lo = start - 3_600, hi = end + 3_600
+        guard let hr = try? await store.hrFingerprint(deviceId: deviceId, from: lo, to: hi),
+              let streams = try? await store.dayStreamFingerprint(deviceId: deviceId, from: lo, to: hi)
+        else { return nil }
+        return "\(start)|\(end)|v2=\(PuffinExperiment.experimentalSleepV2Enabled)"
+            + "|mw=\(PuffinExperiment.motionAwareWakeEnabled)|h\(hr.count):\(hr.maxTs)|\(streams)|"
     }
 
     // MARK: - Metric explorer reads (generic substrate)

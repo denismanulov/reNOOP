@@ -144,6 +144,14 @@ final class Collector {
         return try? await s.storageStats()
     }
 
+    /// Stored step-counter rows of this collector's device over `[from, to]`, oldest first. Empty
+    /// without a concrete store.
+    func stepSamples(from: Int, to: Int) async -> [StepSample] {
+        guard let store = concreteStore, from <= to else { return [] }
+        return (try? await store.stepSamples(deviceId: deviceId, from: from, to: to,
+                                             limit: to - from + 2)) ?? []
+    }
+
     /// Decoded history rows in a stable long-form CSV for arbitrary user-selected export windows.
     func historySensorsCSV(from: Int, to: Int) async -> Data {
         guard let store = concreteStore, from <= to else { return Data("stream,unix_s,v1,v2,v3,v4\n".utf8) }

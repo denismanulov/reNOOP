@@ -71,7 +71,10 @@ struct DeviceReadsView: View {
         LimitRow(feature: "Stress (on-device)", spokenFeature: String(localized: "Stress"), whoop4: .full, whoop5: .full),
         LimitRow(feature: "Workout detection", spokenFeature: String(localized: "Workout detection"), whoop4: .full, whoop5: .full),
         LimitRow(feature: "Skin temperature", spokenFeature: String(localized: "Skin temperature"), whoop4: .partial, whoop5: .full),
-        LimitRow(feature: "Steps", spokenFeature: String(localized: "Steps"), whoop4: .partial, whoop5: .full),
+        // `.full` on a 4.0 as well: its 104-byte v24 record carries the firmware's own cumulative step
+        // counter (`step_counter@92`), counted the same way as the 5/MG counter. The motion-volume
+        // estimate only fills days that have no counter rows.
+        LimitRow(feature: "Steps", spokenFeature: String(localized: "Steps"), whoop4: .full, whoop5: .full),
         LimitRow(feature: "Blood oxygen (SpO₂ %)", spokenFeature: String(localized: "Blood oxygen"), whoop4: .none, whoop5: .none),
         LimitRow(feature: "ECG", spokenFeature: String(localized: "ECG"), whoop4: .none, whoop5: .partial),
         LimitRow(feature: "Blood pressure", spokenFeature: String(localized: "Blood pressure"), whoop4: .none, whoop5: .none),

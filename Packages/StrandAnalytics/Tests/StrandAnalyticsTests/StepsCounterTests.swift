@@ -51,9 +51,9 @@ final class StepsCounterTests: XCTestCase {
     }
 
     func testRejectsPhysicallyImpossibleOneSecondSpikeButAllowsSameTicksAcrossTime() {
-        XCTAssertNil(StepsCounter.stepsInWindow([step(0, 100), step(1, 107)]))
-        XCTAssertEqual(StepsCounter.stepsInWindow([step(0, 100), step(2, 107)]), 7)
-        XCTAssertEqual(StepsCounter.stepsInWindow([step(0, 100), step(1, 104)]), 4)
+        XCTAssertNil(StepsCounter.stepsInWindow([step(0, 100), step(1, 109)]))
+        XCTAssertEqual(StepsCounter.stepsInWindow([step(0, 100), step(2, 109)]), 9)
+        XCTAssertEqual(StepsCounter.stepsInWindow([step(0, 100), step(1, 108)]), 8)
     }
 
     func testClassedStreamCountsOnlyWalkAndRunDeltas() {
@@ -73,5 +73,36 @@ final class StepsCounterTests: XCTestCase {
         XCTAssertEqual(StepsCounter.stepsInWindow([
             step(0, 100), step(10, 140), step(20, 170),
         ]), 70)
+    }
+
+    func testBufferedReleaseAfterFlatRunCounts() {
+        // A pedometer holds the first steps of a walk back, then publishes them in one record. Ten flat
+        // seconds, a 12-step release, then one more step: all 13 are real.
+        let flat = (0...9).map { step($0, 100) }
+        XCTAssertEqual(StepsCounter.stepsInWindow(flat + [step(10, 112), step(11, 113)]), 13)
+    }
+
+    func testReleaseIsBoundedByTheConfirmationWindow() {
+        // The credit stops at 8 s x 4 ticks = 32, however long the counter was flat.
+        let flat = (0...60).map { step($0, 100) }
+        XCTAssertEqual(StepsCounter.stepsInWindow(flat + [step(61, 132)]), 32)
+        XCTAssertNil(StepsCounter.stepsInWindow(flat + [step(61, 133)]))
+    }
+
+    func testSpikeRightAfterMovementIsStillRejected() {
+        // The counter moved one second ago, so there is no flat run to credit: +9 in a second is dropped.
+        XCTAssertEqual(StepsCounter.stepsInWindow([step(0, 100), step(1, 102), step(2, 111)]), 2)
+    }
+
+    func testJitteredSecondDuringSteadyWalkingCounts() {
+        // Real WHOOP 4.0 walk, 2026-10-03: steady 2-3 ticks per second with one record carrying 6, where
+        // record timing put two seconds' worth of ticks into one. Every tick is a real one: 26 in all.
+        let deltas = [2, 3, 2, 3, 3, 2, 6, 2, 3]
+        var counter = 100
+        let samples = [step(0, counter)] + deltas.enumerated().map { index, delta -> StepSample in
+            counter += delta
+            return step(index + 1, counter)
+        }
+        XCTAssertEqual(StepsCounter.stepsInWindow(samples), 26)
     }
 }

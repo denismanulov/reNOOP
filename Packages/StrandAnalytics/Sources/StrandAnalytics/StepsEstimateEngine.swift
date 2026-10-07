@@ -2,14 +2,15 @@ import Foundation
 import WhoopProtocol
 
 /// Estimate daily steps for a WHOOP 4.0 from the strap's MOTION, calibrated per-user against a phone
-/// step count (Apple Health / Health Connect).
+/// step count (Apple Health / Health Connect). Used for days that have no firmware step counter rows:
+/// history synced before `step_counter@92` was decoded, or a record layout that does not carry it. A day
+/// with counter rows is counted by `StepsCounter` instead and outranks this estimate.
 ///
-/// WHY THIS IS A CALIBRATED ESTIMATE, NOT A PEDOMETER. A WHOOP 4.0 does not send a step count over BLE,
-/// and the accelerometer/gravity data we DO get is sparse (~one vector per stored record, roughly minute
-/// granularity) — far below the ~25–50 Hz a true step counter needs to see individual footfalls. So we
-/// cannot count steps. What we CAN measure is movement VOLUME (how much the gravity vector moved over the
-/// day), and we map that volume to steps with a coefficient learned from days where the phone ALSO counted
-/// steps. The output is always framed as an estimate.
+/// WHY THIS IS A CALIBRATED ESTIMATE, NOT A PEDOMETER. The gravity vector arrives once per stored record
+/// (1 Hz), far below the ~25–50 Hz a step detector needs to see individual footfalls, so steps cannot be
+/// counted from it. What it does give is movement VOLUME (how much the gravity vector moved over the
+/// day), mapped to steps with a coefficient learned from days where the phone ALSO counted steps. The
+/// output is always framed as an estimate.
 ///
 /// THE MODEL. `steps ≈ k · motionIntensity`, a through-origin fit (no steps ⇒ no motion). `k` (steps per
 /// unit of motion) is the only free parameter, and it is PERSONAL — it depends on wrist vs hip placement,

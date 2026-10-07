@@ -302,16 +302,23 @@ public enum WidgetLink: String, CaseIterable {
     /// The strap-sync Live Activity: Devices, where the strap and its sync live.
     case devices
 
-    public static let scheme = "noop"
+    /// reNOOP registers its own `renoop` scheme rather than upstream's `noop`: two installed apps claiming
+    /// one scheme leave iOS to pick either, and a free `noop` is what lets the app see that upstream NOOP
+    /// is installed beside it (`OtherStrapApps`).
+    public static let scheme = "renoop"
+    /// Links built before the rename still resolve.
+    public static let legacyScheme = "noop"
 
-    /// `noop://<route>`. Built from a fixed ASCII scheme and host, so it always parses.
+    /// `renoop://<route>`. Built from a fixed ASCII scheme and host, so it always parses.
     public var url: URL {
         URL(string: "\(WidgetLink.scheme)://\(rawValue)") ?? URL(fileURLWithPath: "/")
     }
 
-    /// The route a `noop://` URL names, or nil for any other URL (including `import-health` and `oura`).
+    /// The route a `renoop://` (or legacy `noop://`) URL names, or nil for any other URL (including
+    /// `import-health` and `oura`).
     public init?(url: URL) {
-        guard url.scheme?.lowercased() == WidgetLink.scheme, let host = url.host?.lowercased() else { return nil }
+        guard let s = url.scheme?.lowercased(), s == WidgetLink.scheme || s == WidgetLink.legacyScheme,
+              let host = url.host?.lowercased() else { return nil }
         self.init(rawValue: host)
     }
 }

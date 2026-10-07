@@ -595,6 +595,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Window after the last offload frame/HISTORY_COMPLETE during which a type-0x2F frame is treated
     /// as trailing-historical, not live. ~10 s comfortably covers the post-completion drain lull.
     static let deepPacketLiveCooldownSeconds: TimeInterval = 10
+    /// Another app pulling this strap's history over the shared link (see `ForeignOffloadDetector`).
+    private var foreignOffload = ForeignOffloadDetector()
     /// How far back the inactivity reminder (#419) reads gravity on each offload completion (4 h
     /// comfortably spans the threshold + re-nudge cadence and a separating Active break for bout
     /// continuity). Mirrors the Android WhoopBleClient.INACTIVITY_LOOKBACK_S.
@@ -928,6 +930,22 @@ public final class BLEManager: NSObject, ObservableObject {
     private var rawCaptureInFlight = false
     private var rawCaptureStoppedAt = Date.distantPast
     private var unexpectedImuStopAt = Date.distantPast
+    /// Experimental WHOOP 4.0 raw-stream probe (default off, see `RawStreamProbe`). Its switch goes out
+    /// as a confirmed write so the probe's own request is never one of several queued in one burst.
+    private lazy var rawStreamProbe = RawStreamProbe(
+        send: { [weak self] on in
+            self?.send(.sendR10R11Realtime, payload: [on ? 0x01 : 0x00], writeType: .withResponse)
+        },
+        log: { [weak self] line in self?.log(line) })
+    /// Experimental WHOOP 4.0 step auto-calibration (default off, see `StepAutoCalibrator`).
+    private lazy var stepCalibrator = StepAutoCalibrator(
+        startStream: { [weak self] in self?.rawStreamProbe.burstStarted() },
+        stopStream: { [weak self] in self?.rawStreamProbe.burstStopped() },
+        steps: { [weak self] from, to in await self?.collector?.stepSamples(from: from, to: to) ?? [] },
+        log: { [weak self] line in self?.log(line) })
+    /// Bumped at every offload end, so of several offloads ending back to back only the last one's
+    /// delayed step-calibration check runs.
+    private var stepCalibrationCheck = 0
     /// Ordered queue of frames awaiting drain through the serial Backfiller task.
     private var backfillFrameQueue: [[UInt8]] = []
     /// True while the drain task is running (prevents a second drain task from launching).
@@ -2574,9 +2592,26 @@ public final class BLEManager: NSObject, ObservableObject {
         // offload (re/sync_openwhoop.py, re/diagnose_biometrics.py) uses [0x00] too. Plain offload — the
         // strap streams HISTORY_START → type-47 records → HISTORY_END (acked) … → HISTORY_COMPLETE.
         send(.sendHistoricalData, payload: [0x00], writeType: .withResponse)
+        foreignOffload.noteOwnOffloadActivity(at: Date())
         armBackfillTimeout()
         log("Backfill: session started — historical offload requested")
         return true
+    }
+
+    /// A history record reached us while we run no offload of our own: evidence of a second app pulling
+    /// this strap's history. Rare-event evidence, so the line is always on — once per sighting streak.
+    private func noteHistoryOutsideOwnOffload() {
+        let now = Date()
+        guard foreignOffload.noteHistoryOutsideOwnOffload(at: now) else { return }
+        if let last = state.otherAppSyncingAt, now.timeIntervalSince(last) < 600 {
+            state.otherAppSyncingAt = now
+            return
+        }
+        state.otherAppSyncingAt = now
+        OtherStrapAppWarning.shared.reportForeignOffload()
+        log("Another app is pulling this strap's history (\(ForeignOffloadDetector.framesToFlag)+ records "
+            + "outside our offload within \(Int(ForeignOffloadDetector.windowSeconds)) s). Whichever app acks a "
+            + "chunk first keeps it; the other never stores those hours. Keep one app connected to the strap.")
     }
 
     /// Feed a frame to the Backfiller preserving exact arrival order. Frames are appended
@@ -2708,6 +2743,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // any type-0x2F records the strap flushes in the seconds after the session aren't miscounted as
         // the live R22 stream — they're the offload's tail.
         lastOffloadFrameAt = Date()
+        foreignOffload.noteOwnOffloadActivity(at: Date())
         backfillTimeout?.cancel()
         backfillTimeout = nil
         backfillFrameQueue.removeAll()
@@ -2717,6 +2753,26 @@ public final class BLEManager: NSObject, ObservableObject {
         // Inactivity reminder (#419): read-only hook on the natural offload completion (no cadence
         // change). Only on a true HISTORY_COMPLETE — a timeout/disconnect didn't bring a fresh window.
         if reason == "HISTORY_COMPLETE" { maybeBuzzInactivity() }
+        // Step auto-calibration reads the history this offload just banked. Offloads often end in
+        // quick succession, so it waits a few seconds and runs only if none is in flight by then.
+        if reason == "HISTORY_COMPLETE", selectedModel.deviceFamily == .whoop4 {
+            stepCalibrationCheck &+= 1
+            let check = stepCalibrationCheck
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, check == self.stepCalibrationCheck, !self.backfilling,
+                      self.state.connected else { return }
+                // On the Mac the app being frontmost says nothing about how the wearer walks.
+                #if os(iOS)
+                let appOnScreen = UIApplication.shared.applicationState == .active
+                #else
+                let appOnScreen = false
+                #endif
+                Task { @MainActor in
+                    await self.stepCalibrator.offloadSettled(batteryPct: self.state.batteryPct,
+                                                             appOnScreen: appOnScreen)
+                }
+            }
+        }
         // Success-side summary (#150 forensics): we logged failures (decoded-to-0) but never successes,
         // so a strap log couldn't tell a banking strap from a broken one. Emit the per-session persistence
         // tally whenever anything actually landed — the win-rate signal a log previously lacked.
@@ -2726,6 +2782,7 @@ public final class BLEManager: NSObject, ObservableObject {
             // #1008/#1118: the pre-storage R-R census for this offload. Emitted next to the persisted
             // tally so one line pair says what the decoder OFFERED and what the store KEPT.
             if let rrLine = bf.sessionRrEmissionLine() { log(rrLine) }
+            if let timing = bf.sessionChunkTiming.logLine { log(timing) }
             // #67: WHERE the rows landed + WHY (the clock ref that decoded them). A reset-RTC strap banks
             // last night into the past; this line makes the misdating self-evident in the strap log instead
             // of leaving "persisted N rows across 1 night(s)" looking like a clean sync.
@@ -3278,6 +3335,7 @@ public final class BLEManager: NSObject, ObservableObject {
         send(.sendR10R11Realtime, payload: [0x01])   // the heavy burst rides alongside the toggle on Live
         reconcileRealtime()                          // arms TOGGLE_REALTIME_HR(1) on the off→on edge
         realtimeArmedAt = Date()       // start the arm→drop stopwatch for the marginal-radio detector
+        if selectedModel.deviceFamily == .whoop4 { rawStreamProbe.liveStarted() }
     }
     /// Stop the Live-tab realtime streams. The lightweight 0x2A37 HR keeps recording if firmware emits it.
     /// The TOGGLE only actually disarms if the continuous-capture preference no longer wants it either —
@@ -3291,6 +3349,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // what continuous capture keeps; the reconciler decides whether to disarm that.
         send(.sendR10R11Realtime, payload: [0x00])
         reconcileRealtime()
+        if selectedModel.deviceFamily == .whoop4 { rawStreamProbe.liveStopped() }
     }
 
     /// The "Continuous HRV capture" preference flipped: hold the realtime stream open with no Live screen
@@ -6257,6 +6316,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         connectSettledSignaled = false
         restoreNeedsResubscribe = false    // #613: a real reconnect isn't a restore — never force-toggle here
         realtimeArmedAt = nil   // cleared after the marginal-radio detector above read it (#80)
+        rawStreamProbe.disconnected()
+        stepCalibrator.disconnected()
         // Reset backfill state so the next connect starts a fresh offload (incl. the syncing pill —
         // a dropped link mid-offload must not leave "Syncing strap history…" stuck on, #77).
         backfillStarted = false
@@ -7013,6 +7074,9 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
         state.connectSettled &+= 1
         restoreNeedsResubscribe = false   // #613: forced re-subscribe pass is done — keep-alive resumes normal
         log("Connect settled: handshake done + cmd-notify confirmed — alarm re-arm (if due) can fire now")
+        if selectedModel.deviceFamily == .whoop4 {
+            rawStreamProbe.connectSettled(liveWanted: screenWantsRealtime)
+        }
     }
 
     /// SET_CLOCK(10) payload — the 8-byte form `[seconds u32 LE][subseconds u32 LE]`, subseconds in
@@ -7307,6 +7371,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                     // is a permanent loss. The verdict is formed once here, from the verifier, and
                     // handed to the counter — no parse on this path, which is why it was skipped.
                     router.noteOffloadFrameVerdict(verifyFrame(frame, family: .whoop4))
+                    foreignOffload.noteOwnOffloadActivity(at: Date())
                     armBackfillTimeout()
                     routeBackfillFrame(frame)
                     // …but a REAL-TIME physical gesture (double-tap / wrist) must still fire even mid-
@@ -7316,6 +7381,11 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                     router.mirrorStrapConsoleIfPresent(frame: frame)
                     continue
                 }
+                // A step-calibration burst reads the accelerometer block of the raw IMU packets. With no
+                // burst running the guard is one stored Bool, so this costs nothing per frame.
+                if stepCalibrator.wantsFrames, let imu = Whoop4RawImu.accel(frame) {
+                    stepCalibrator.accept(imu)
+                }
                 // #47: decode this live WHOOP4 frame ONCE here and thread the result to every consumer
                 // (router / clock-correlation / collector) instead of each re-parsing it — steady-state
                 // drops 2→1 parse per frame, pre-clock 3→1. This is the WHOOP4 custom-notify case (5/MG has
@@ -7323,6 +7393,9 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                 // for isOffloadFrame, and byte-identical to all three original parses (router.family /
                 // collector.family / the no-family clock parse all resolve to .whoop4 here; a DEBUG assert in
                 // the router + collector re-checks the invariant).
+                if !backfilling, ForeignOffloadDetector.isHistoryRecord(frame, family: .whoop4) {
+                    noteHistoryOutsideOwnOffload()
+                }
                 let parsed = parseFrame(frame, family: .whoop4)
                 router.handle(parsed: parsed, frame: frame)       // live/UI path
                 //
@@ -7353,6 +7426,13 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                 // Devices dialog (raw hex + payload triage + capture diff). Sibling of the #451 dump below.
                 if frame.count > 6, frame[6] == WhoopCommand.getExtendedBatteryInfo.rawValue {
                     handleExtendedBatteryProbeResponse(frame, isWhoop5: false)
+                }
+                // The raw-stream probe's acknowledgement. Unlike the probe replies around it this one
+                // drives state (it stops the probe's retries and clears its "stream is on" marker), so
+                // it is taken only from an intact COMMAND_RESPONSE, never from a bare opcode byte.
+                if parsed.ok, parsed.typeName == "COMMAND_RESPONSE", frame.count > 6,
+                   frame[6] == WhoopCommand.sendR10R11Realtime.rawValue {
+                    rawStreamProbe.responseReceived()
                 }
                 // #690: the read-only body-location probe's COMMAND_RESPONSE (in-flight-guarded inside).
                 if frame.count > 6, frame[6] == WhoopCommand.getBodyLocationAndStatus.rawValue {
@@ -7427,6 +7507,9 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                 router.noteReassemblerHeaderDrops(reassembler.headerChecksumDrops)
                 for frame in completedFrames {
                     let isOffload = backfilling && BLEManager.isOffloadFrame(frame, family: .whoop5)
+                    if !backfilling, ForeignOffloadDetector.isHistoryRecord(frame, family: .whoop5) {
+                        noteHistoryOutsideOwnOffload()
+                    }
                     noteWhoop5R22Telemetry(frame, duringOffload: isOffload)   // #174 deep-data telemetry
                     // Durable EVENT-frame log for deep-data research (#103) — BEFORE the offload
                     // branch, so it sees both live events and their history replays (either path
@@ -7447,6 +7530,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                         // the router counts rejections, so a frame that skips it would be invisible
                         // to the counter the hardware run is judged on. One verdict, no parse.
                         router.noteOffloadFrameVerdict(verifyFrame(frame, family: .whoop5))
+                        foreignOffload.noteOwnOffloadActivity(at: Date())
                         armBackfillTimeout()
                         routeBackfillFrame(frame)
                         // A real-time double-tap / wrist gesture still fires during a 5/MG offload (which

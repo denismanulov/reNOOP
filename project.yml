@@ -326,10 +326,15 @@ targets:
         OURA_CLIENT_ID: $(OURA_CLIENT_ID)
         OURA_CLIENT_SECRET: $(OURA_CLIENT_SECRET)
         OURA_REDIRECT_URI: $(OURA_REDIRECT_URI)
-        # Registers the noop:// URL scheme so ASWebAuthenticationSession's OAuth redirect
-        # (noop://oura/callback) reaches OuraOAuthProvider instead of bouncing off the OS.
+        # reNOOP registers `renoop://` (widgets, Live Activities, Shortcuts) and deliberately NOT upstream's
+        # `noop://`: two apps claiming one scheme leave iOS to pick either, and leaving `noop` free is what
+        # lets `canOpenURL` see upstream NOOP installed beside this app (OtherStrapApps). The Oura OAuth
+        # redirect keeps working without registration: ASWebAuthenticationSession consumes its own
+        # callback scheme.
         CFBundleURLTypes:
-          - CFBundleURLSchemes: [noop]
+          - CFBundleURLSchemes: [renoop]
+        # Only these are asked about, and only to warn that another app may be syncing the strap.
+        LSApplicationQueriesSchemes: [noop, whoop]
     entitlements:
       path: StrandiOS/Resources/NOOP.entitlements
       properties:

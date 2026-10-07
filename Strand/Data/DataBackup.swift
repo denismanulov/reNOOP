@@ -1,4 +1,5 @@
 import Foundation
+import os
 #if canImport(AppKit)
 import AppKit
 #elseif canImport(UIKit)
@@ -497,6 +498,11 @@ enum DataBackup {
                 sidecar = dbURL
             }
 
+            // From here the file under this process's open store is going away. Latch that BEFORE the
+            // first byte moves, so the history offload stops acking chunks it can no longer store (see
+            // `LiveStoreReplacement`). A failed copy below rolls back by copying too, so the latch stays.
+            if LiveStoreReplacement.isLiveStore(dbPath) { LiveStoreReplacement.markReplaced() }
+
             // Remove the live DB and its WAL/SHM siblings, then drop the backup in.
             removeIfPresent(dbURL)
             removeIfPresent(URL(fileURLWithPath: dbPath + "-wal"))
@@ -737,3 +743,63 @@ enum DataBackup {
         try? fm.copyItem(at: src, to: dst)
     }
 }
+
+/// A restore replaces `whoop.sqlite` while this process still holds it open: both `WhoopStore` pools
+/// (BLE's and the Repository's) keep pointing at the file that was removed, so until the process
+/// restarts nothing it writes reaches the restored store. On 2026-09-30 that silently cost a whole
+/// night — the app kept running for thirteen hours, every offload chunk failed to persist, and a second
+/// app on the same strap acked (and so trimmed) the history this one never stored.
+///
+/// The latch is set immediately before the swap and never cleared: a restored store is only safe to
+/// write from a fresh process. `Backfiller` reads it to hold every ack, so the strap keeps its history
+/// for the relaunched app, and the iOS shell reads it to ask for the relaunch.
+enum LiveStoreReplacement {
+    private static let lock = OSAllocatedUnfairLock(initialState: false)
+
+    /// True once this process has replaced the file under its own open store.
+    static var happened: Bool { lock.withLock { $0 } }
+
+    static func markReplaced() {
+        lock.withLock { $0 = true }
+    }
+
+    /// Whether `dbPath` is the store this process opened (a unit test restores into a throwaway file,
+    /// which must not latch the test host).
+    static func isLiveStore(_ dbPath: String) -> Bool {
+        guard let live = try? StorePaths.defaultDatabasePath() else { return false }
+        return URL(fileURLWithPath: live).standardizedFileURL.path
+            == URL(fileURLWithPath: dbPath).standardizedFileURL.path
+    }
+}
+
+#if canImport(UIKit)
+/// Drives the iOS root alert that asks for the relaunch a restore needs. Presented once the restore has
+/// RETURNED — never while it is still copying the store, where closing the app would tear the file — and
+/// again every time the app comes back to the foreground until the process is gone, because backgrounding
+/// the app instead of answering leaves it running on a store it cannot write.
+@MainActor
+final class StoreRestartPrompt: ObservableObject {
+    static let shared = StoreRestartPrompt()
+    @Published var isPresented = false
+    private var restoreReturned = false
+
+    /// Called by the restore flows when `DataBackup` hands back its result, whatever it is. A restore that
+    /// failed before the swap never latched, so this presents nothing for it.
+    func restoreDidFinish() {
+        restoreReturned = true
+        present()
+    }
+
+    func present() {
+        guard restoreReturned, LiveStoreReplacement.happened else { return }
+        isPresented = true
+    }
+
+    /// Ends the process. iOS has no API for an app to relaunch itself; the user opens it again and the
+    /// fresh process opens the restored store.
+    func closeApp() {
+        UserDefaults.standard.synchronize()
+        exit(0)
+    }
+}
+#endif

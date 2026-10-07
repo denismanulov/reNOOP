@@ -325,6 +325,12 @@ public func extractHistoricalStreams(_ parsed: [ParsedFrame],
                 // activity_class@63 (0=still/1=walk/2=run) rides on the same record — nil when invalid/absent.
                 out.steps.append(StepSample(ts: ts, counter: c, activityClass: p["activity_class"]?.intValue))
             }
+            // step_counter@92 is the WHOOP 4.0 firmware pedometer total (cumulative u32). The decoder
+            // emits the key only for a v24 record long enough to carry it, so no other layout reaches
+            // this branch. A WHOOP 4.0 record has no activity class.
+            if let c = p["step_counter"]?.intValue {
+                out.steps.append(StepSample(ts: ts, counter: c))
+            }
             // Band sleep_state (#175): the strap's OWN @81 high-nibble state (0 wake/1 still/2 asleep/3 up),
             // decoded but DROPPED here until now, so the whole band-state chain (persist → the H7 re-onset
             // confirm guard → Deep Timeline track) had no source. Carried VERBATIM including 0 (a real wake

@@ -276,11 +276,17 @@ final class ProfileStore: ObservableObject {
     /// Variable step for the calibration stepper so high values stay reachable: fine near
     /// the 1.0 default (where most people land), coarse up at the 20s+ a 5/MG needs. A flat
     /// 0.1 step from 0.5 to 30 would be ~295 taps — unusable.
-    /// - `< 2.0` → 0.1   (precision around the default)
+    /// - `< 1.5` → 0.01  (a WHOOP 4.0 firmware counter measured about 1.26 ticks per step, which a
+    ///   0.1 grid cannot express)
+    /// - `1.5–2.0` → 0.1
     /// - `2.0–5.0` → 0.5
     /// - `≥ 5.0` → 1.0   (ballpark the ~24× overcount in ~19 taps)
+    ///
+    /// The Android twin (`ProfileStore.stepScaleIncrement` in `SettingsScreen.kt`) has not adopted the
+    /// 0.01 band and still steps by 0.1 below 2.0.
     static func stepScaleIncrement(for value: Double) -> Double {
         switch value {
+        case ..<1.5: return 0.01
         case ..<2.0: return 0.1
         case ..<5.0: return 0.5
         default: return 1.0

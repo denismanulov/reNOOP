@@ -250,6 +250,12 @@ extension WhoopStore {
     /// [hrFingerprint] uses, materialising no rows. `COUNT(*)` is the load-bearing half: it moves when a
     /// backfill lands rows INSIDE a window already covered, which `MAX(ts)` alone would miss.
     ///
+    /// `w5owner` is the one figure that is not windowed: "has this device EVER banked a 5/MG-tagged beat".
+    /// `+deviceId` keeps the planner off the `(deviceId, ts, …)` key, which would visit every beat the
+    /// device ever stored (1.86 M on a heavy WHOOP 4.0, a table lookup each, for a tag it never has) on
+    /// every one of the 21 nights; `rrInterval_source_suspect` answers it from the tagged rows alone. Same
+    /// result either way.
+    ///
     /// The five R-R figures come from ONE walk (the `rr` derived table). Each needs `srcChannel` or
     /// `tsSuspect`, which the key index does not hold, so every beat in the window costs a table lookup;
     /// as five sub-selects they paid it up to five times, and on a 54-hour WHOOP 5 window (~280k beats)
@@ -277,7 +283,7 @@ extension WhoopStore {
                   (SELECT COUNT(*) FROM ppgHrSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS pc,
                   (SELECT COALESCE(MAX(ts), 0) FROM ppgHrSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS pm,
                   rr.rc AS rc, rr.rm AS rm, rr.w5 AS w5, rr.w7 AS w7,
-                  EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = :d AND srcChannel IN (5, 6, 7)) AS w5owner,
+                  EXISTS(SELECT 1 FROM rrInterval WHERE +deviceId = :d AND srcChannel IN (5, 6, 7)) AS w5owner,
                   rr.w4h AS w4h,
                   COALESCE((SELECT QUOTE(brand) || ':' || QUOTE(model) FROM pairedDevice
                             WHERE id = :d), 'absent') AS registry,

@@ -46,7 +46,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>noop</string>
+				<string>renoop</string>
 			</array>
 		</dict>
 	</array>
@@ -54,6 +54,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.healthcare-fitness</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>noop</string>
+		<string>whoop</string>
+	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAlarmKitUsageDescription</key>

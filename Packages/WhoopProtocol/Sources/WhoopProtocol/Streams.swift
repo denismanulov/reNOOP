@@ -342,8 +342,11 @@ public struct GravitySample: Equatable, Codable {
     }
 }
 
-/// WHOOP 5/MG cumulative u16 step / motion counter (step_motion_counter@57). APPROXIMATE — the @57
-/// step semantics are unverified against the official WHOOP app (#78). Mirrors Android StepSample.
+/// A cumulative step counter reading. WHOOP 5/MG: the u16 step / motion counter at
+/// step_motion_counter@57, whose step semantics are unverified against the official WHOOP app (#78).
+/// WHOOP 4.0: the u32 firmware pedometer total at step_counter@92 of the 104-byte v24 record, with no
+/// activity class. Consumers take wrap-aware differences, so both widths read the same way. Mirrors
+/// Android StepSample.
 ///
 /// `activityClass` is the per-record activity-class enum decoded from @63 (community finding #316):
 /// 0=still, 1=walk, 2=run; nil when the byte was 0xFF/invalid or absent. A lightweight, no-cloud
