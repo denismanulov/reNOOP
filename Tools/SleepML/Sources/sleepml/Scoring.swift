@@ -70,7 +70,8 @@ struct Confusion {
 
 /// One night scored: the confusion over its scored epochs, and the shape measures kappa does not see.
 struct NightScore {
-    let night: Night
+    let dataset: String
+    let subject: String
     let confusion: Confusion
     /// Minutes from the window start to the first deep epoch; nil when there is none.
     let deepLatencyTruth: Double?
@@ -78,6 +79,13 @@ struct NightScore {
     /// Runs of consecutive wake epochs inside the window, and their lengths in minutes.
     let wakeBoutsTruth: [Double]
     let wakeBoutsPred: [Double]
+    /// Times the stage changes from one epoch to the next: how fragmented the hypnogram is.
+    let changesTruth: Int
+    let changesPred: Int
+}
+
+func stageChanges(_ labels: [String?]) -> Int {
+    zip(labels, labels.dropFirst()).reduce(0) { $0 + (($1.0 != nil && $1.1 != nil && $1.0 != $1.1) ? 1 : 0) }
 }
 
 func wakeBouts(_ labels: [String?]) -> [Double] {
@@ -90,16 +98,18 @@ func wakeBouts(_ labels: [String?]) -> [Double] {
     return out
 }
 
-func score(_ night: Night, start: Int, end: Int, pred: [String]) -> NightScore {
-    let truth = night.truthGrid(start: start, end: end)
+/// Score one night's predicted labels against its truth grid; both run over every epoch of the window,
+/// `truth` nil where the PSG carries no score.
+func score(dataset: String, subject: String, truth: [String?], pred: [String]) -> NightScore {
     var c = Confusion()
     for (t, p) in zip(truth, pred) { if let t = t { c.add(ref: t, pred: p) } }
     func latency(_ labels: [String?]) -> Double? {
         labels.firstIndex(of: "deep").map { Double($0) / 2 }
     }
-    return NightScore(night: night, confusion: c,
+    return NightScore(dataset: dataset, subject: subject, confusion: c,
                       deepLatencyTruth: latency(truth), deepLatencyPred: latency(pred.map { Optional($0) }),
-                      wakeBoutsTruth: wakeBouts(truth), wakeBoutsPred: wakeBouts(pred.map { Optional($0) }))
+                      wakeBoutsTruth: wakeBouts(truth), wakeBoutsPred: wakeBouts(pred.map { Optional($0) }),
+                      changesTruth: stageChanges(truth), changesPred: stageChanges(pred.map { Optional($0) }))
 }
 
 func mean(_ v: [Double]) -> Double { v.isEmpty ? .nan : v.reduce(0, +) / Double(v.count) }
