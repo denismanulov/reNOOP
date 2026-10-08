@@ -49,7 +49,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -130,8 +129,8 @@ import kotlinx.coroutines.launch
 
 /**
  * AI Coach, drawn as a messenger conversation. The transcript scrolls over a faint colour wash and
- * under glass: a floating header (Back, a capsule with the Coach's picture, its name and one status
- * line, and the settings action) and, at the foot, the suggestion chips and the entry capsule with its
+ * under glass: a floating header (a capsule with the Coach's picture, its name and one status line,
+ * and the settings action) and, at the foot, the suggestion chips and the entry capsule with its
  * one action button. Reply bubbles sit on the left in surfaceContainerHighest (Markdown), questions on the
  * right in primaryContainer, both in the same chat-sized type with their clock time in the bottom
  * corner; corners group a run from one side, each day is headed by one chip, a new message settles in
@@ -149,7 +148,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun CoachScreen(
     vm: CoachViewModel = viewModel(),
-    onBack: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -191,7 +189,6 @@ fun CoachScreen(
             backdrop = backdrop,
             model = model.takeIf { configured && it.isNotBlank() },
             busy = configured && sending,
-            onBack = onBack,
             onOpenSettings = onOpenSettings,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -230,7 +227,8 @@ private fun GlassIconButton(
 }
 
 /**
- * The floating header: Back, the Coach's capsule, Settings. The capsule's second line is the one status
+ * The floating header: the Coach's capsule and Settings (no Back: the screen is a tab's root). The
+ * capsule's second line is the one status
  * the screen states about the Coach: "typing…" while a reply is being produced ([busy]), else the
  * [model] that will answer, else nothing. The capsule is at least 48 dp and grows with the text size
  * (CR-1). The app Scaffold already pads its content below the status bar.
@@ -240,7 +238,6 @@ private fun CoachHeader(
     backdrop: GlassBackdrop,
     model: String?,
     busy: Boolean,
-    onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -249,7 +246,6 @@ private fun CoachHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        GlassIconButton(backdrop, Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.nav_back), onBack)
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -429,6 +425,8 @@ private fun CoachConversation(
     // The list moves its items as layers, which redraws nothing, so the glass over it is told when the
     // list was laid out again (a scroll, or a reply growing and pushing the rest up under the header).
     SideEffect { backdrop.observe = { listState.layoutInfo } }
+    // Tapping the Coach tab while it is already showing returns to the newest message.
+    OnScrollToTop { listState.animateScrollToItem(0) }
 
     val canRetry = remember(messages, sending, consent) { vm.canRetryLastReply(context) }
 

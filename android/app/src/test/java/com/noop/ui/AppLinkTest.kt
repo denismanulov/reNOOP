@@ -75,7 +75,7 @@ class AppLinkTest {
 
     @Test
     fun theCoachWidgetOpensCoachOnlyWhileCoachIsOn() {
-        assertEquals(AppLinkTarget.Screen(MainTab.Browse, Destination.Coach.route), target(AppLink.Coach))
+        assertEquals(AppLinkTarget.TabRoot(MainTab.Coach), target(AppLink.Coach))
         assertNull(target(AppLink.Coach, coachEnabled = false))
     }
 

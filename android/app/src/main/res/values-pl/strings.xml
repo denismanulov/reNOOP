@@ -1013,7 +1013,7 @@
     <string name="nav_browse">Przeglądaj</string>
     <string name="browse_categories">Kategorie</string>
     <string name="browse_all_metrics">Wszystkie wskaźniki</string>
-    <string name="browse_coach">Trener</string>
+    <string name="nav_coach">Trener</string>
     <string name="browse_journal">Dziennik</string>
     <string name="browse_lab_results">Wyniki badań</string>
     <string name="browse_trends">Trendy</string>

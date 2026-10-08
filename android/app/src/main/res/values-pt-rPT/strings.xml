@@ -1022,7 +1022,7 @@
     <string name="nav_browse">Explorar</string>
     <string name="browse_categories">Categorias</string>
     <string name="browse_all_metrics">Todas as métricas</string>
-    <string name="browse_coach">Treinador</string>
+    <string name="nav_coach">Treinador</string>
     <string name="browse_journal">Diário</string>
     <string name="browse_lab_results">Resultados laboratoriais</string>
     <string name="browse_trends">Tendências</string>

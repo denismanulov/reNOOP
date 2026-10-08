@@ -999,7 +999,7 @@
     <string name="nav_browse">Sfoglia</string>
     <string name="browse_categories">Categorie</string>
     <string name="browse_all_metrics">Tutte le metriche</string>
-    <string name="browse_coach">Coach</string>
+    <string name="nav_coach">Coach</string>
     <string name="browse_journal">Diario</string>
     <string name="browse_lab_results">Risultati di laboratorio</string>
     <string name="browse_trends">Andamenti</string>

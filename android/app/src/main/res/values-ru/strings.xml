@@ -992,7 +992,7 @@
     <string name="nav_browse">Обзор</string>
     <string name="browse_categories">Категории</string>
     <string name="browse_all_metrics">Все показатели</string>
-    <string name="browse_coach">ИИ-тренер</string>
+    <string name="nav_coach">ИИ-тренер</string>
     <string name="browse_journal">Журнал</string>
     <string name="browse_lab_results">Результаты анализов</string>
     <string name="browse_trends">Тренды</string>

@@ -1017,7 +1017,7 @@
     <string name="nav_browse">浏览</string>
     <string name="browse_categories">类别</string>
     <string name="browse_all_metrics">所有指标</string>
-    <string name="browse_coach">教练</string>
+    <string name="nav_coach">教练</string>
     <string name="browse_journal">日志</string>
     <string name="browse_lab_results">化验结果</string>
     <string name="browse_trends">趋势</string>

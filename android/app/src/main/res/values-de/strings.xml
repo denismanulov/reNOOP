@@ -1043,7 +1043,7 @@
     <string name="nav_browse">Durchsuchen</string>
     <string name="browse_categories">Kategorien</string>
     <string name="browse_all_metrics">Alle Werte</string>
-    <string name="browse_coach">Coach</string>
+    <string name="nav_coach">Coach</string>
     <string name="browse_journal">Tagebuch</string>
     <string name="browse_lab_results">Laborergebnisse</string>
     <string name="browse_trends">Trends</string>

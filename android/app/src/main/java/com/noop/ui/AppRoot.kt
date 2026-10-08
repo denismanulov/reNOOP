@@ -245,11 +245,11 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             // away it docks as the mini-player above the bar.
             Column {
             NowRunningBar(viewModel)
-            // Four labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
+            // Up to five labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
             // "Workouts" lost their last letter); TalkBack still reads each name in full (CR-1).
             CappedFontScale(max = 1.3f) {
                 NavigationBar {
-                    MainTab.entries.forEach { tab ->
+                    MainTab.shown(CoachEnabledStore.enabled).forEach { tab ->
                         val selected = tab == currentTab
                         NavigationBarItem(
                             selected = selected,
@@ -332,15 +332,15 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     onOpenMetric = { nav.push(metricRoute(it.key, it.source)) },
                 )
             }
-            composable(Destination.Coach.route) {
-                // A normal push, so Back returns to the conversation (#2243).
-                CoachScreen(onBack = { nav.popBackStack() }, onOpenSettings = { nav.push(Destination.CoachSettings.route) })
+            tabRoot(MainTab.Coach, scrollTop) {
+                // The settings page is a normal push, so Back returns to the conversation (#2243).
+                CoachScreen(onOpenSettings = { nav.push(Destination.CoachSettings.route) })
             }
             composable(Destination.CoachSettings.route) {
                 // The SAME CoachViewModel the conversation is using, not a fresh one: `viewModel()` resolves
                 // against the NavBackStackEntry, and CoachViewModel keeps consent in memory, so a revoke made
                 // against a second instance would leave the conversation sending on the old one. Coach is
-                // always below this entry: it is reachable only from the strip on that screen.
+                // always below this entry: it is the root of the tab this page is pushed in.
                 val coachEntry = remember(it) { nav.getBackStackEntry(Destination.Coach.route) }
                 CoachSettingsScreen(vm = viewModel(coachEntry), onBack = { nav.popBackStack() })
             }
@@ -507,7 +507,7 @@ private fun androidx.navigation.NavGraphBuilder.tabRoot(
 /**
  * Selects [tab]: everything above the graph is popped with its state saved (the tab being left, root
  * included), then [tab]'s saved stack is restored, or its root pushed the first time. Popping to the
- * graph rather than to the start destination treats all four tabs alike, so the Summary's pushed screens
+ * graph rather than to the start destination treats all the tabs alike, so the Summary's pushed screens
  * survive a trip to another tab as reliably as any other tab's do.
  */
 private fun NavHostController.selectTab(tab: MainTab) {
@@ -553,9 +553,9 @@ private fun NavHostController.push(route: String) {
     navigate(route) { launchSingleTop = true }
 }
 
-/** Opens Coach in Browse; dropped while the AI Coach switch is off (a stale brief tap still asks). */
+/** Shows the Coach tab; dropped while the AI Coach switch is off (a stale brief tap still asks). */
 private fun NavHostController.openCoach() {
-    if (CoachEnabledStore.enabled) openInTab(MainTab.Browse, Destination.Coach.route)
+    if (CoachEnabledStore.enabled) showTabRoot(MainTab.Coach)
 }
 
 // MARK: - Navigation motion
