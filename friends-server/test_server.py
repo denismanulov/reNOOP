@@ -93,6 +93,13 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual(200, Client(self.base, body["token"]).call("GET", "/v1/me")[0])
 
+    def test_sign_up_needs_only_a_nickname_and_a_password(self):
+        status, body = self.anon.call("POST", "/v1/register", {"nick": "Ruslan", "password": "correct horse"})
+        self.assertEqual(201, status)
+        self.assertEqual(("ruslan", "ruslan"), (body["me"]["nick"], body["me"]["name"]))
+        renamed = Client(self.base, body["token"]).call("PATCH", "/v1/me", {"name": "Руслан"})[1]
+        self.assertEqual("Руслан", renamed["name"])
+
     def test_wrong_password_and_unknown_nick_read_the_same(self):
         self.signup("ruslan")
         wrong = self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "not the one"})
@@ -200,6 +207,21 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual("Running", day["workouts"][0]["sport"])
         self.assertNotIn("hr", day)  # heart rate is off unless its owner turns it on
         self.assertEqual(self.today(), day["day"])
+
+    def test_the_heart_rate_line_is_on_a_persons_page_not_in_the_feed(self):
+        ruslan, denis, misha = self.signup("ruslan"), self.signup("denchik"), self.signup("mishka")
+        self.befriend(ruslan, "ruslan", denis, "denchik")
+        denis.call("PATCH", "/v1/me", {"share": {"hr": True}})
+        denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())
+        in_feed = ruslan.call("GET", "/v1/feed")[1]["friends"][0]["days"][0]["hr"]
+        self.assertEqual(62, in_feed["lastBpm"])
+        self.assertNotIn("series", in_feed)
+        status, page = ruslan.call("GET", "/v1/users/denchik/days?days=3")
+        self.assertEqual(200, status)
+        self.assertEqual(2, len(page["days"][0]["hr"]["series"]))
+        self.assertEqual(200, denis.call("GET", "/v1/users/denchik/days")[0])
+        # Not a friend: the same answer as for a nickname nobody has.
+        self.assertEqual(misha.call("GET", "/v1/users/nobody_here/days"), misha.call("GET", "/v1/users/denchik/days"))
 
     def test_switching_a_section_off_erases_what_was_uploaded(self):
         ruslan, denis = self.signup("ruslan"), self.signup("denchik")

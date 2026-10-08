@@ -38,7 +38,7 @@ An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP stat
 | `GET /healthz` | | `{"ok": true}` |
 | `GET /v1/info` | | `{"name", "api": 1, "inviteRequired"}` |
 | `GET /v1/nicks/{nick}` | | `{"nick", "free"}` |
-| `POST /v1/register` | `{"nick", "name", "password", "invite"?}` | `201 {"token", "me"}` |
+| `POST /v1/register` | `{"nick", "password", "name"?, "invite"?}` | `201 {"token", "me"}` |
 | `POST /v1/login` | `{"nick", "password"}` | `{"token", "me"}` |
 | `DELETE /v1/session` | | `204`, this phone is signed out |
 | `GET /v1/me` | | profile with `share` |
@@ -48,7 +48,8 @@ An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP stat
 | `PUT /v1/me/avatar` | raw JPEG, PNG or WebP, at most 200 KB | profile, `avatarRev` bumped |
 | `DELETE /v1/me/avatar` | | `204` |
 | `PUT /v1/me/days/{YYYY-MM-DD}` | a day (below) | `204`, replaces that day |
-| `GET /v1/feed?days=7` | | me and every friend, newest day first (1 to 14 days) |
+| `GET /v1/feed?days=7` | | me and every friend, newest day first (1 to 14 days), without `hr.series` |
+| `GET /v1/users/{nick}/days?days=7` | | one friend (or yourself) in full, `hr.series` included |
 | `GET /v1/users/{nick}` | | `{"nick", "name", "avatarRev", "relation"}` |
 | `GET /v1/users/{nick}/avatar` | | the picture, for its owner, friends and a pending request |
 | `GET /v1/friends/requests` | | `{"incoming": [...], "outgoing": [...]}` |
@@ -59,7 +60,8 @@ An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP stat
 
 `relation` is `self`, `friend`, `outgoing`, `incoming` or `none`. Sending a request to someone who
 already asked you is an acceptance. A nickname is 3 to 20 characters of `a-z`, `0-9` and `_`, stored
-lower-case; a leading `@` is accepted and ignored. A password is 8 to 128 characters.
+lower-case; a leading `@` is accepted and ignored. A password is 8 to 128 characters. Sign-up needs
+only those two: the display name starts as the nickname and is changed later with `PATCH /v1/me`.
 
 ### A day
 
@@ -92,6 +94,8 @@ The sharing switches map to members as: `scores` to `recovery`, `strain`, `sleep
 
 In the feed each day also carries `day` and `updatedAt` (when the phone last uploaded it), and each
 friend carries `share`, so the tab can say "does not share sleep" instead of drawing an empty card.
+The feed leaves out `hr.series`, which is most of a day's bytes; a friend's own page asks for it with
+`/v1/users/{nick}/days`.
 
 ## Limits
 

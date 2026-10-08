@@ -388,7 +388,8 @@ def h_register(app, req):
     app.limiter.check(("register", req.ip), 5, 3600)
     body = req.json(("nick", "name", "password", "invite"))
     nick = clean_nick(body.get("nick"))
-    name = clean_name(body.get("name"))
+    # Sign-up asks for a nickname and a password only; the display name starts as the nickname.
+    name = clean_name(body["name"]) if body.get("name") is not None else nick
     password = clean_password(body.get("password"))
     if app.invite_code is not None:
         invite = body.get("invite")
@@ -655,29 +656,53 @@ def h_day_put(app, req):
     return 204, None
 
 
-def h_feed(app, req):
+def _days_query(req):
     try:
         days = int(req.query.get("days", ["7"])[0])
     except ValueError:
         raise ApiError(400, "bad_query", "days")
     days = max(1, min(FEED_MAX_DAYS, days))
+    today = datetime.fromtimestamp(time.time(), timezone.utc).date()
+    return (today - timedelta(days=days)).isoformat()
+
+
+def _days_of(db, user, share, since, with_series):
+    rows = db.execute(
+        "SELECT day, payload, updated_at FROM days WHERE user_id = ? AND day >= ? ORDER BY day DESC",
+        (user["id"], since),
+    ).fetchall()
+    out = []
+    for row in rows:
+        entry = filter_day(json.loads(row["payload"]), share)
+        if not with_series and "hr" in entry:
+            del entry["hr"]["series"]
+        entry["day"] = row["day"]
+        entry["updatedAt"] = row["updated_at"]
+        out.append(entry)
+    return out
+
+
+def h_user_days(app, req):
+    """One person's days in full, heart-rate line included: what a friend's own page draws."""
+    db = app.db()
+    other = app.user_by_nick(db, clean_nick(req.match.group(1)))
+    if app.relation(db, req.user["id"], other["id"]) not in ("self", "friend"):
+        raise ApiError(404, "no_such_user", "No one has this nickname.")
+    share = share_of(other)
+    profile = public_profile(other)
+    profile["share"] = share
+    profile["days"] = _days_of(db, other, share, _days_query(req), with_series=True)
+    return profile
+
+
+def h_feed(app, req):
+    """Everyone at a glance. Carries the latest heart rate but not the day's line, which is the bulk of a day."""
+    since = _days_query(req)
     db = app.db()
     me = req.user
-    today = datetime.fromtimestamp(time.time(), timezone.utc).date()
-    since = (today - timedelta(days=days)).isoformat()
 
     def days_of(user, share):
-        rows = db.execute(
-            "SELECT day, payload, updated_at FROM days WHERE user_id = ? AND day >= ? ORDER BY day DESC",
-            (user["id"], since),
-        ).fetchall()
-        out = []
-        for row in rows:
-            entry = filter_day(json.loads(row["payload"]), share)
-            entry["day"] = row["day"]
-            entry["updatedAt"] = row["updated_at"]
-            out.append(entry)
-        return out
+        return _days_of(db, user, share, since, with_series=False)
 
     friends = db.execute(
         "SELECT u.* FROM friendships f JOIN users u ON u.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END "
@@ -720,6 +745,7 @@ ROUTES = [
     ("GET", r"/v1/feed", h_feed, True, 0),
     ("GET", r"/v1/users/([^/]{1,40})", h_user, True, 0),
     ("GET", r"/v1/users/([^/]{1,40})/avatar", h_user_avatar, True, 0),
+    ("GET", r"/v1/users/([^/]{1,40})/days", h_user_days, True, 0),
     ("GET", r"/v1/friends/requests", h_requests, True, 0),
     ("POST", r"/v1/friends/requests", h_request_send, True, MAX_JSON_BYTES),
     ("POST", r"/v1/friends/requests/([^/]{1,40})/accept", h_request_accept, True, 0),
