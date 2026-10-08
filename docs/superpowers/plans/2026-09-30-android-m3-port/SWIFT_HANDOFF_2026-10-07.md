@@ -189,6 +189,40 @@ differences at 23 to 70, a float32 at 71, then a u16 and two bytes. Under that r
 give a float of about 0.136 at 71. Three frames settle nothing; the conflict is worth a look by whoever
 next touches v25.
 
+### Step auto-calibration mis-measured a second wearer (2026-10-08)
+
+The Experimental step auto-calibration was on for one day on a second WHOOP 4.0 and wearer. It was
+switched off again and the manual divisor set by hand. What that day showed:
+
+| | Value |
+|---|---|
+| bursts taken in 24 h | 4 of 4 allowed |
+| accepted | 1, giving 1.04 ticks per step (76 ticks over 73.2 steps in 40 s) |
+| refused as "no clear gait" | 3 |
+| of those, taken while the counter was advancing | 2 (77 and 60 ticks during the 40 s) |
+| of those, taken during detected sleep | 1 (05:09 local, 14 ticks during the burst) |
+
+Against that, a phone carried in a pocket counted 2,561 steps between 08:00 and 10:00 local while the
+strap counter added 3,424: 1.34 ticks per step, inside the 1.14 to 1.49 already recorded for the first
+strap. Of the 3,424, 405 came in 33 opening increments of 11 or 12, and the remaining 3,019 over 1,571
+walking seconds (1.92 ticks per second). Without the opening increments the ratio is still 1.18.
+
+What follows and what does not:
+
+- The one accepted measurement disagrees with the phone by 29 %. The phone can undercount, so 1.34 is
+  an upper bound, but 1.04 is outside anything measured on either strap by other means.
+- `GaitCadence` was built on three recordings of slow walking (1.31 to 1.50 steps per second). This
+  wearer's counter runs near 1.9 ticks per second, a brisker walk the detector's own notes call
+  untested. Two refusals on real walking and one doubtful acceptance fit that, but the burst samples
+  are not kept, so which test failed is not known.
+- A burst fired during sleep because "walking" is decided from 10 ticks in 12 seconds of the offload.
+- Whether an opening increment of 11 or 12 is real steps credited late or extra cannot be told from
+  the record. Arm motion in the 8 seconds before each one is above baseline, which fits late credit.
+  Three counted walks of different lengths on one strap would separate the two.
+
+Nothing in the calibrator was changed. Before it is relied on, it needs brisk-walk recordings, and it
+would help if a refused burst said which criterion refused it.
+
 ### Other levels, for orientation only
 
 Same unpaired comparison, same wearer. HRV, sleep efficiency, deep-sleep share, daily Effort and daily
