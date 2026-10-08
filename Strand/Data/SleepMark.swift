@@ -94,11 +94,12 @@ struct SleepMark: Equatable, Sendable {
             : String(localized: "Logged wake-up at \(clock).")
     }
 
-    /// The line shown after a tapped WAKE mark, which unlike the other marks is also kept as a request
-    /// to end the night at this instant (`WakeMarkTrim`, `AppModel.logWakeNow`).
+    /// The line shown after a tapped WAKE mark, from the Sleep page's menu or the Summary's in-progress
+    /// card. Unlike the other marks it starts a sync and is kept as an upper bound on the night
+    /// (`WakeMarkTrim`, `AppModel.logWakeNow`); the detector finds the wake itself.
     var wakeRequestConfirmation: String {
         let clock = SleepMark.clockFormatter.string(from: date)
-        return String(localized: "Wake-up logged at \(clock). Once the night has synced, it will end there.")
+        return String(localized: "Marked awake at \(clock). Syncing to find when you woke.")
     }
 
     // MARK: - Constants / formatters

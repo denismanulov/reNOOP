@@ -90,6 +90,14 @@ enum SummaryLoader {
 
     static let seriesDays = 7
 
+    /// The picked day's night and the newest sample on record, read together so the Sleep card and the
+    /// in-progress card are drawn from one result.
+    static func sleep(repo: Repository, wakeDayKey: String) async -> SummarySleepLoad {
+        async let night = SleepNightLoader.night(repo: repo, wakeDayKey: wakeDayKey)
+        async let newest = repo.newestHRSampleTs()
+        return SummarySleepLoad(night: await night, newestDataTs: await newest)
+    }
+
     static func load(repo: Repository, profile: ProfileStore, offset: Int, prefs: Prefs) async -> SummarySnapshot {
         var snap = SummarySnapshot()
         let isToday = offset == 0

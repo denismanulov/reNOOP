@@ -549,6 +549,14 @@ final class Repository: ObservableObject {
         return latest
     }
 
+    /// The newest heart-rate sample on record for the active strap (unix seconds), or nil with none or no
+    /// store. The Summary reads it to tell a night still being counted from one that has ended. Twin of
+    /// Kotlin `latestHrSampleTsUnion`.
+    func newestHRSampleTs() async -> Int? {
+        guard let store = await ensureStore() else { return nil }
+        return await unionLatestHRSampleTs(store: store)
+    }
+
     /// Today's row, by the device's LOGICAL local day , NOT just the newest stored row, which after a
     /// historical import was months-old data shown as today's hero (issue #23). The logical day rolls at
     /// 04:00 local (see `logicalDayKey`), so between midnight and 4am we keep resolving the prior logical

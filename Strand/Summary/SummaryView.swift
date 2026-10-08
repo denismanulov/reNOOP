@@ -18,6 +18,7 @@ struct SummaryView: View {
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var ble: BLEManager
+    @EnvironmentObject private var app: AppModel
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
     @ScaledMetric(relativeTo: .body) private var trendsGlyphSize: CGFloat = 20
     @Environment(\.dynamicTypeSize) private var dts
@@ -27,7 +28,9 @@ struct SummaryView: View {
     @State private var showDayPicker = false
     @State private var snapshot = SummarySnapshot()
     /// The night that ended on the picked day, for the Sleep card.
-    @State private var sleepNight: Night?
+    @State private var sleepLoad = SummarySleepLoad()
+    /// Non-nil while today's night has not been seen to end: the card that says so and its figure.
+    @State private var sleepInProgress: SummarySleepInProgress?
     /// Health's Trends, as of now (not the picked day): the first few lead the section at the bottom.
     @State private var trends: HealthTrendsSnapshot?
 
@@ -84,6 +87,9 @@ struct SummaryView: View {
                              showPicker: $showDayPicker) { dayPicker }
                         .padding(.horizontal, -8)
                     ringsCard
+                    if let sleepInProgress {
+                        SleepInProgressCard(state: sleepInProgress, onAwake: markAwake)
+                    }
                     tilesRow
                     pinnedSection
                     trendsSection
@@ -123,7 +129,18 @@ struct SummaryView: View {
         #endif
         .refreshable { await refresh() }
         .task(id: "sleep-\(repo.refreshSeq)-\(dayOffset)") {
-            sleepNight = await SleepNightLoader.night(repo: repo, wakeDayKey: selectedKey)
+            // The night still on screen may belong to the day just left; do not let its card linger.
+            resolveSleepInProgress()
+            let loaded = await SummaryLoader.sleep(repo: repo, wakeDayKey: selectedKey)
+            guard !Task.isCancelled else { return }
+            sleepLoad = loaded
+            resolveSleepInProgress()
+            // Fresh data goes stale with no reload to say so; ask again each minute while this shows.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled else { return }
+                resolveSleepInProgress()
+            }
         }
         .task(id: "trends-\(repo.refreshSeq)-\(skinTempDisplayRaw)") {
             let prefer = SkinTempDisplay.Kind(rawValue: skinTempDisplayRaw) ?? .absolute
@@ -352,6 +369,31 @@ struct SummaryView: View {
     private func stamp(dayKey: String?) -> String? {
         guard dayOffset == 0 || dayKey != selectedKey else { return nil }
         return SummaryStamp.text(dayKey: dayKey, todayKey: todayKey)
+    }
+
+    private var sleepNight: Night? { sleepLoad.night }
+
+    /// Is today's night one the app has not seen end? Asked after every load, each minute, and on the
+    /// card's button. One resolver, one clock, one loaded night for both the answer and the figure.
+    private func resolveSleepInProgress() {
+        #if DEBUG
+        // `--demo-sleep-in-progress`: show the card over the demo seed, whose night has no fresh data.
+        if CommandLine.arguments.contains("--demo-sleep-in-progress"), dayOffset == 0 {
+            sleepInProgress = SummarySleepInProgress(asleepMinutes: sleepNight?.stages.asleep ?? 337)
+            return
+        }
+        #endif
+        sleepInProgress = SummarySleepInProgress.resolve(
+            sleepLoad, isToday: dayOffset == 0, selectedDayKey: selectedKey,
+            nowTs: Int(Date().timeIntervalSince1970), pendingWakeTs: WakeMarkStore.pending())
+    }
+
+    /// The wearer says they are awake: mark it, which starts a sync, and let the detector find when
+    /// they woke. The card goes away on the tap, because the pending mark now postdates the night's start.
+    private func markAwake() {
+        let mark = app.logWakeNow()
+        resolveSleepInProgress()
+        Confirmation.shared.show(mark.wakeRequestConfirmation, systemImage: "sun.max.fill")
     }
 
     private var pinnedSection: some View {
