@@ -133,9 +133,16 @@ struct CoachSettingsView: View {
                 Button(coach.hasKey ? "Update Key" : "Save Key", action: commit)
             }
         } footer: {
-            // Setup failures only: once connected, the conversation shows a failed send under itself.
-            if !coach.isConfigured, let error = coach.errorText, !error.isEmpty {
-                Text(error).foregroundStyle(StrandPalette.settingsRed)
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                // The field empties on save and the stored key is never shown again, so without this
+                // line a saved key and no key look the same.
+                if Self.showsKeySavedLine(hasKey: coach.hasKey, keyDraft: keyDraft) {
+                    Text("A key is saved. Enter a new one to replace it.")
+                }
+                // Setup failures only: once connected, the conversation shows a failed send under itself.
+                if !coach.isConfigured, let error = coach.errorText, !error.isEmpty {
+                    Text(error).foregroundStyle(StrandPalette.settingsRed)
+                }
             }
         }
         if coach.provider == .custom && !coach.isConfigured {
@@ -151,8 +158,17 @@ struct CoachSettingsView: View {
         }
     }
 
-    private var keyDraftIsEmpty: Bool {
-        keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var keyDraftIsEmpty: Bool { Self.isBlank(keyDraft) }
+
+    private static func isBlank(_ draft: String) -> Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether the key field carries its "a key is saved" line: a key is stored and nothing is typed.
+    /// The same emptiness test as the Save/Update row's, so exactly one of the two shows under a stored
+    /// key. Twin of the `supporting` line on Android's key field.
+    static func showsKeySavedLine(hasKey: Bool, keyDraft: String) -> Bool {
+        hasKey && isBlank(keyDraft)
     }
 
     /// Bridges the model Picker to `coach.model`, with a "Custom…" sentinel that opens the free-text
