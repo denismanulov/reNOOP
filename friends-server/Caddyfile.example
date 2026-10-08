@@ -1,0 +1,8 @@
+# Replace the name with the domain that points at this server. Caddy fetches and renews the
+# certificate by itself; ports 80 and 443 must be reachable from outside.
+friends.example.com {
+	request_body {
+		max_size 256KB
+	}
+	reverse_proxy 127.0.0.1:8787
+}
