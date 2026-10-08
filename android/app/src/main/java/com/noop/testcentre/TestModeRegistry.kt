@@ -52,7 +52,7 @@ object TestModeRegistry {
     fun mode(d: TestDomain): TestMode? = all.firstOrNull { it.domain == d }
 
     private fun sleep() = TestMode(
-        domain = TestDomain.SLEEP, title = "Sleep & Rest",
+        domain = TestDomain.SLEEP, title = "Sleep",
         blurb = "Wear it a few nights so we can see which gate kept or dropped each sleep run.",
         icon = "ic_bed", priority = TestPriority.HIGH,
         // Only the captures the .sleep sink actually receives are kept. That sink only ever gets the
@@ -169,8 +169,8 @@ object TestModeRegistry {
     )
 
     private fun recovery() = TestMode(
-        domain = TestDomain.RECOVERY, title = "Recovery (Charge)",
-        blurb = "Turn this on if Charge looks wrong, to see which term moved it.",
+        domain = TestDomain.RECOVERY, title = "Recovery",
+        blurb = "Turn this on if Recovery looks wrong, to see which term moved it.",
         icon = "ic_recovery", priority = TestPriority.MED,
         // Dropped forecastInputs: the recovery trace emits baseline/term/nilTerm/renorm/score, no forecast line.
         captures = listOf("chargeTermBreakdown", "baselinesPerNight", "termZScores", "nilTerm"),

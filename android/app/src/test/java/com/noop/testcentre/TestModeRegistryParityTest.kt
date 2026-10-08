@@ -26,14 +26,14 @@ class TestModeRegistryParityTest {
     }
 
     @Test fun lookupByDomain() {
-        assertEquals("Sleep & Rest", TestModeRegistry.mode(TestDomain.SLEEP)?.title)
+        assertEquals("Sleep", TestModeRegistry.mode(TestDomain.SLEEP)?.title)
         assertEquals("Connection & Sync", TestModeRegistry.mode(TestDomain.CONNECTION)?.title)
         assertEquals("Workouts & GPS", TestModeRegistry.mode(TestDomain.WORKOUTS)?.title)
         assertEquals("Display & Performance", TestModeRegistry.mode(TestDomain.DISPLAY)?.title)
         assertEquals("Import & Data Ingest", TestModeRegistry.mode(TestDomain.IMPORT)?.title)
         assertEquals("Steps", TestModeRegistry.mode(TestDomain.STEPS)?.title)
         assertEquals("Battery & Charging", TestModeRegistry.mode(TestDomain.BATTERY)?.title)
-        assertEquals("Recovery (Charge)", TestModeRegistry.mode(TestDomain.RECOVERY)?.title)
+        assertEquals("Recovery", TestModeRegistry.mode(TestDomain.RECOVERY)?.title)
         assertEquals("HRV & Autonomic", TestModeRegistry.mode(TestDomain.HRV)?.title)
         assertNull(TestModeRegistry.mode(TestDomain.NOTIFICATIONS))
     }

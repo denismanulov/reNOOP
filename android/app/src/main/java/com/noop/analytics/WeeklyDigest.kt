@@ -37,9 +37,9 @@ enum class WeeklyMetric(val key: String) {
     /** Human label (matches the rest of the app's naming). */
     val label: String
         get() = when (this) {
-            CHARGE -> "Charge"
-            EFFORT -> "Effort"
-            REST -> "Rest"
+            CHARGE -> "Recovery"
+            EFFORT -> "Strain"
+            REST -> "Sleep"
             RHR -> "Resting HR"
             HRV -> "HRV"
         }
@@ -153,13 +153,13 @@ enum class BalanceRead {
     val sentence: String
         get() = when (this) {
             OVERREACHING ->
-                "Your Effort outpaced your Charge this week: you leaned into the red. Watch for a recovery dip."
+                "Your Strain outpaced your Recovery this week: you leaned into the red. Watch for a recovery dip."
             BALANCED ->
-                "Effort and Charge tracked together this week: a sustainable load."
+                "Strain and Recovery tracked together this week: a sustainable load."
             UNDERLOADED ->
-                "You carried more Charge than you spent this week: there's room to push if you want it."
+                "You carried more Recovery than you spent this week: there's room to push if you want it."
             INSUFFICIENT ->
-                "Not enough Effort and Charge days this week to read your balance."
+                "Not enough Strain and Recovery days this week to read your balance."
         }
 }
 
@@ -382,7 +382,7 @@ object WeeklyDigestEngine {
                         "changes are rough, not a trend.",
                 )
             } else if (consistencySD != null && consistencySD <= 6.0) {
-                lines.add("A steady week: Rest held even (±${round1(consistencySD)} pts) and nothing moved much.")
+                lines.add("A steady week: Sleep held even (±${round1(consistencySD)} pts) and nothing moved much.")
             } else {
                 lines.add("A steady week: no metric moved meaningfully from last week.")
             }

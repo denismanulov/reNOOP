@@ -64,7 +64,7 @@ public enum TestModeRegistry {
     public static func mode(_ d: TestDomain) -> TestMode? { all.first { $0.domain == d } }
 
     static let sleep = TestMode(
-        domain: .sleep, title: "Sleep & Rest",
+        domain: .sleep, title: "Sleep",
         blurb: "Wear it a few nights so we can see which gate kept or dropped each sleep run.",
         icon: "bed.double.fill", priority: .high,
         // Only the captures the sleep sink actually receives are kept: the SleepStager gate-verdict ladder
@@ -173,8 +173,8 @@ public enum TestModeRegistry {
         includesScreenshot: false, requires5MG: false)
 
     static let recovery = TestMode(
-        domain: .recovery, title: "Recovery (Charge)",
-        blurb: "Turn this on if Charge looks wrong, to see which term moved it.",
+        domain: .recovery, title: "Recovery",
+        blurb: "Turn this on if Recovery looks wrong, to see which term moved it.",
         icon: "heart.text.square.fill", priority: .med,
         // Dropped forecastInputs: the recovery trace emits baseline/term/nilTerm/renorm/score, no forecast line.
         captures: ["chargeTermBreakdown", "baselinesPerNight", "termZScores", "nilTerm"],

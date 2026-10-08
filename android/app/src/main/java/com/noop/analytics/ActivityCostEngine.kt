@@ -84,10 +84,10 @@ data class ActivityCost(
         val mag = abs(delta)
         val points = ActivityCostEngine.roundToIntHalfUp(mag)
         if (mag < ActivityCostEngine.barelyMovesPoints) {
-            return "Sessions like this barely move your next-day Charge (n=$n)."
+            return "Sessions like this barely move your next-day Recovery (n=$n)."
         }
         val direction = if (delta >= 0) "cost you" else "lift"
-        val head = "Sessions like this usually $direction about $points Charge " +
+        val head = "Sessions like this usually $direction about $points Recovery " +
             "point${if (points == 1) "" else "s"} the next morning"
         val days = daysToBaseline
         return if (days != null) {

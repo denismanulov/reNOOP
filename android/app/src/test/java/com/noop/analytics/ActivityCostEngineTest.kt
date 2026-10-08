@@ -202,7 +202,7 @@ class ActivityCostEngineTest {
             baselineMean = 70.0, daysToBaseline = 2, n = 9, confidence = ScoreConfidence.SOLID,
         )
         assertEquals(
-            "Sessions like this usually cost you about 12 Charge points the next morning " +
+            "Sessions like this usually cost you about 12 Recovery points the next morning " +
                 "and take about 2 days to bounce back (n=9).",
             c.sentence(),
         )
@@ -215,7 +215,7 @@ class ActivityCostEngineTest {
             baselineMean = 70.0, daysToBaseline = null, n = 9, confidence = ScoreConfidence.SOLID,
         )
         assertEquals(
-            "Sessions like this usually cost you about 12 Charge points the next morning (n=9).",
+            "Sessions like this usually cost you about 12 Recovery points the next morning (n=9).",
             c.sentence(),
         )
     }
@@ -226,7 +226,7 @@ class ActivityCostEngineTest {
             sport = "walk", delta = 0.4, meanNextMorning = 69.6,
             baselineMean = 70.0, daysToBaseline = 1, n = 6, confidence = ScoreConfidence.BUILDING,
         )
-        assertEquals("Sessions like this barely move your next-day Charge (n=6).", c.sentence())
+        assertEquals("Sessions like this barely move your next-day Recovery (n=6).", c.sentence())
     }
 
     @Test
@@ -236,7 +236,7 @@ class ActivityCostEngineTest {
             baselineMean = 70.0, daysToBaseline = 1, n = 8, confidence = ScoreConfidence.SOLID,
         )
         assertEquals(
-            "Sessions like this usually lift about 1 Charge point the next morning " +
+            "Sessions like this usually lift about 1 Recovery point the next morning " +
                 "and take about 1 day to bounce back (n=8).",
             c.sentence(),
         )

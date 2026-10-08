@@ -14,14 +14,14 @@ final class TestModeRegistryTests: XCTestCase {
     }
 
     func testLookupByDomain() {
-        XCTAssertEqual(TestModeRegistry.mode(.sleep)?.title, "Sleep & Rest")
+        XCTAssertEqual(TestModeRegistry.mode(.sleep)?.title, "Sleep")
         XCTAssertEqual(TestModeRegistry.mode(.connection)?.title, "Connection & Sync")
         XCTAssertEqual(TestModeRegistry.mode(.workouts)?.title, "Workouts & GPS")
         XCTAssertEqual(TestModeRegistry.mode(.display)?.title, "Display & Performance")
         XCTAssertEqual(TestModeRegistry.mode(.dataImport)?.title, "Import & Data Ingest")
         XCTAssertEqual(TestModeRegistry.mode(.steps)?.title, "Steps")
         XCTAssertEqual(TestModeRegistry.mode(.battery)?.title, "Battery & Charging")
-        XCTAssertEqual(TestModeRegistry.mode(.recovery)?.title, "Recovery (Charge)")
+        XCTAssertEqual(TestModeRegistry.mode(.recovery)?.title, "Recovery")
         XCTAssertEqual(TestModeRegistry.mode(.hrv)?.title, "HRV & Autonomic")
         XCTAssertNil(TestModeRegistry.mode(.notifications))
     }

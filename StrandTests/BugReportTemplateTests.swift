@@ -22,9 +22,9 @@ final class BugReportTemplateTests: XCTestCase {
 
     func testTestProfileOptionsCoverAllProfilesPlusEscapes() {
         let t = templateText()
-        for label in ["Sleep & Rest", "Connection & Sync", "Workouts & GPS",
+        for label in ["Sleep", "Connection & Sync", "Workouts & GPS",
                       "Display & Performance", "Import & Data Ingest", "Steps",
-                      "Notifications, Alarm & Wake", "Battery & Charging", "Recovery (Charge)",
+                      "Notifications, Alarm & Wake", "Battery & Charging", "Recovery",
                       "HRV & Autonomic", "Sources, Fusion & Metric Decode",
                       "Stress & Illness", "Longevity, Cycles & Haptics",
                       "Log everything", "Not a test-mode bug"] {

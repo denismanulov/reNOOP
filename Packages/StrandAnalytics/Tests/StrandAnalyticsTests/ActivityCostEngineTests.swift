@@ -208,7 +208,7 @@ final class ActivityCostEngineTests: XCTestCase {
         let c = ActivityCost(sport: "running", delta: 12.0, meanNextMorning: 58,
                              baselineMean: 70, daysToBaseline: 2, n: 9, confidence: .solid)
         XCTAssertEqual(c.sentence(),
-            "Sessions like this usually cost you about 12 Charge points the next morning "
+            "Sessions like this usually cost you about 12 Recovery points the next morning "
             + "and take about 2 days to bounce back (n=9).")
     }
 
@@ -216,14 +216,14 @@ final class ActivityCostEngineTests: XCTestCase {
         let c = ActivityCost(sport: "running", delta: 12.0, meanNextMorning: 58,
                              baselineMean: 70, daysToBaseline: nil, n: 9, confidence: .solid)
         XCTAssertEqual(c.sentence(),
-            "Sessions like this usually cost you about 12 Charge points the next morning (n=9).")
+            "Sessions like this usually cost you about 12 Recovery points the next morning (n=9).")
     }
 
     func testSentenceBarelyMoves() {
         let c = ActivityCost(sport: "walk", delta: 0.4, meanNextMorning: 69.6,
                              baselineMean: 70, daysToBaseline: 1, n: 6, confidence: .building)
         XCTAssertEqual(c.sentence(),
-            "Sessions like this barely move your next-day Charge (n=6).")
+            "Sessions like this barely move your next-day Recovery (n=6).")
     }
 
     func testSentenceLiftDirectionAndSingularDay() {
@@ -231,7 +231,7 @@ final class ActivityCostEngineTests: XCTestCase {
         let c = ActivityCost(sport: "yoga", delta: -1.0, meanNextMorning: 71,
                              baselineMean: 70, daysToBaseline: 1, n: 8, confidence: .solid)
         XCTAssertEqual(c.sentence(),
-            "Sessions like this usually lift about 1 Charge point the next morning "
+            "Sessions like this usually lift about 1 Recovery point the next morning "
             + "and take about 1 day to bounce back (n=8).")
     }
 

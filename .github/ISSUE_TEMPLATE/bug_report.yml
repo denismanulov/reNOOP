@@ -93,7 +93,7 @@ body:
         fills this in for you. Leave it as "Not a test-mode bug" otherwise.
       options:
         - Not a test-mode bug
-        - Sleep & Rest
+        - Sleep
         - Connection & Sync
         - Workouts & GPS
         - Display & Performance
@@ -101,7 +101,7 @@ body:
         - Steps
         - Notifications, Alarm & Wake
         - Battery & Charging
-        - Recovery (Charge)
+        - Recovery
         - HRV & Autonomic
         - Sources, Fusion & Metric Decode
         - Stress & Illness

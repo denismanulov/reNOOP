@@ -84,10 +84,10 @@ public struct ActivityCost: Equatable, Sendable {
         let mag = abs(delta)
         let points = ActivityCostEngine.roundToInt(mag)
         if mag < ActivityCostEngine.barelyMovesPoints {
-            return "Sessions like this barely move your next-day Charge (n=\(n))."
+            return "Sessions like this barely move your next-day Recovery (n=\(n))."
         }
         let direction = delta >= 0 ? "cost you" : "lift"
-        let head = "Sessions like this usually \(direction) about \(points) Charge "
+        let head = "Sessions like this usually \(direction) about \(points) Recovery "
             + "point\(points == 1 ? "" : "s") the next morning"
         if let days = daysToBaseline {
             return head + " and take about \(days) day\(days == 1 ? "" : "s") to bounce back (n=\(n))."
