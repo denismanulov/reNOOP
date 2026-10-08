@@ -94,9 +94,9 @@ is not enough.
 
 ### What is not established
 
-- **Nothing has been seen working on the author's own strap yet.** The build was installed on the
-  evening of 2026-10-07 with the switch on. Past nights cannot be recovered, because the raw records
-  were never stored, so the first real figure needs one new night.
+- **One night has been seen on the author's own strap, and it shows the mean is a weak estimator.**
+  See "First night on a third strap" below. Past nights cannot be recovered, because the raw records
+  were never stored.
 - **No reference comparison exists.** Not against a pulse oximeter, not against the WHOOP app's nightly
   figure. The only sanity reference is unpaired: one wearer's WHOOP export shows a nightly median of
   96.2 % (25th to 75th percentile 95.4 to 96.9), from months before the reNOOP data begins.
@@ -107,6 +107,37 @@ is not enough.
   recorded here.
 - It is a candidate under the rule in `AGENTS.md` for signals derived from sensor data: instrumentation
   behind a default-off switch, not a shipped metric.
+
+### First night on a third strap (2026-10-08)
+
+The path works end to end: the night of 2026-10-08 banked 608 nonzero bytes in 21 windows of 28 to 29
+seconds, about 19 minutes apart, all inside the detected sleep session, and the Summary card shows
+`94 %` under the "strap estimate (unverified)" caption.
+
+| | Readings | Mean | Median |
+|---|---|---|---|
+| all in-band readings | 343 | 93.5 | 95 |
+| in-band readings before 06:00 local | 230 | 95.2 | 95 |
+| per-window medians, windows with at least 5 in-band readings | 15 windows | 93.3 | 95 |
+
+What the night shows, and what it does not:
+
+- **The mean is pulled down by a few late windows.** All 62 readings below 90 fall after 06:04, in
+  the last two hours before waking, in runs such as 78 to 82 and 84 to 90. Whether those are motion
+  or contact artifacts cannot be told from the byte alone, but a wearer whose WHOOP history never
+  went below 92 as a nightly figure is unlikely to have spent minutes at 80.
+- **Readings inside a window are not independent.** A window is typically one value repeated twenty
+  times. Averaging readings weights a window by how long its value was held; the window is the unit
+  the strap measures in.
+- **One window was a flat 98** for 24 seconds straight after status codes, which fits the reported
+  fallback. Three other windows moved between 97 and 99 and do not look like one.
+- **The code vocabulary is wider than the first two straps showed:** `1`, `2`, `8`, `16`, `24`, `32`,
+  `40`, `128`, `144`, `160`.
+
+No estimator was changed on this evidence. One night from one wearer picks nothing, and the raw bytes
+are stored, so any estimator can be recomputed over past nights later. If one is chosen, a median over
+per-window medians is the candidate to test first, on grounds that do not depend on matching a target
+value.
 
 ## 2. Findings that changed no code
 
