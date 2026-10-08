@@ -1254,6 +1254,7 @@
     <string name="sleep_menu_naps">Drzemki</string>
     <string name="sleep_menu_log_sleep">Zaloguj się idź spać</string>
     <string name="sleep_menu_log_wake">Zaloguj się, budząc się</string>
+    <string name="sleep_wake_logged">Pobudka zapisana o %1$s. Po zsynchronizowaniu nocy sen zakończy się o tej porze.</string>
     <string name="sleep_menu_more">Więcej</string>
     <string name="sleep_deleted">Sen usunięty.</string>
     <string name="sleep_deleted_window">Sen usunięty. reNOOP nie wykryje już snu między %1$s a %2$s.</string>

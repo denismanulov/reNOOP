@@ -1251,6 +1251,7 @@
     <string name="sleep_menu_naps">Cochilos</string>
     <string name="sleep_menu_log_sleep">Log indo dormir</string>
     <string name="sleep_menu_log_wake">Registo acordando</string>
+    <string name="sleep_wake_logged">Despertar registado às %1$s. Quando a noite estiver sincronizada, termina aí.</string>
     <string name="sleep_menu_more">Mais</string>
     <string name="sleep_deleted">Sono eliminado.</string>
     <string name="sleep_deleted_window">Sono eliminado. O reNOOP não voltará a detetar sono entre %1$s e %2$s.</string>

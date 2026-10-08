@@ -957,6 +957,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 reconcileStrapAlarm()  // #5/#59/#536: one reconcile covers both strap-alarm features
             }
         }
+        // A pending "I'm awake" mark is applied once the night it belongs to is on record. The cached
+        // days change at the end of every scoring pass, which is when that can first be true. The
+        // short wait lets the same pass finish writing its sleep sessions.
+        viewModelScope.launch {
+            recentDays.collect {
+                if (com.noop.data.WakeMarkStore.pending(appContext) != null) {
+                    delay(2_000L)
+                    applyPendingWakeMark()
+                }
+            }
+        }
         // Recompute the illness banner + today's row whenever cached days change.
         viewModelScope.launch {
             recentDays.collect { days ->
@@ -3186,6 +3197,55 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val clock = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
         ble.externalLog("Moment marked @ $clock")
         ble.buzz(1)
+    }
+
+    /**
+     * The wearer tapped "I'm awake" (#461). Logged exactly as Phase 1 logged it, and now also kept as a
+     * pending request to end the night at this instant: [applyPendingWakeMark] does that as soon as the
+     * night is on record, which is usually after the sync this starts. Returns the mark for the toast.
+     */
+    fun logWakeNow(): SleepMark {
+        val mark = SleepMark.now(SleepMarkType.WAKE)
+        ble.externalLog(mark.logLine())
+        com.noop.data.WakeMarkStore.setPending(appContext, mark.tsMs / 1000L)
+        viewModelScope.launch {
+            runCatching { repository.upsertMetricSeries(listOf(mark.metricPoint("my-whoop"))) }
+            // The night may already be on record up to this minute; if not, the sync brings it in and
+            // the pass after it applies the mark.
+            applyPendingWakeMark()
+        }
+        syncNow()
+        return mark
+    }
+
+    /**
+     * End the night a pending wake mark falls in at that mark, if such a night is on record yet. Safe to
+     * call after every scoring pass: with no pending mark it reads one preference and returns. The trim
+     * goes through [updateSleepSessionTimes], the hand-edit path, so it is marked `userEdited` and a
+     * later pass cannot re-detect the longer night back over it.
+     */
+    suspend fun applyPendingWakeMark() {
+        val wakeTs = com.noop.data.WakeMarkStore.pending(appContext) ?: return
+        val now = System.currentTimeMillis() / 1000L
+        val sessions = runCatching {
+            // Sessions are read by START time, so reach back a day to see the night the mark ends.
+            repository.sleepSessionsMerged(deviceId, wakeTs - 86_400L, wakeTs)
+        }.getOrDefault(emptyList())
+        val decision = com.noop.analytics.WakeMarkTrim.decide(
+            sessions.map { it.effectiveStartTs to it.endTs }, wakeTs, now,
+        )
+        when (decision) {
+            is com.noop.analytics.WakeMarkTrim.Decision.Trim -> {
+                val night = sessions[decision.index]
+                com.noop.data.WakeMarkStore.clear(appContext)
+                ble.externalLog(
+                    "Sleep mark · wake moved the end of sleep ${night.endTs - decision.newEndTs} s earlier",
+                )
+                updateSleepSessionTimes(night, night.effectiveStartTs, decision.newEndTs)
+            }
+            com.noop.analytics.WakeMarkTrim.Decision.Expired -> com.noop.data.WakeMarkStore.clear(appContext)
+            com.noop.analytics.WakeMarkTrim.Decision.Wait -> Unit
+        }
     }
 
     /** Record a "sleep mark" via the existing [SleepMark] analytics + the shareable strap log, with a

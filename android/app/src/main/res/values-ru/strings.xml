@@ -1233,6 +1233,7 @@
     <string name="sleep_menu_naps">Дневные сны</string>
     <string name="sleep_menu_log_sleep">Отметить отход ко сну</string>
     <string name="sleep_menu_log_wake">Отметить пробуждение</string>
+    <string name="sleep_wake_logged">Пробуждение отмечено в %1$s. Когда ночь синхронизируется, сон закончится в это время.</string>
     <string name="sleep_menu_more">Ещё</string>
     <string name="sleep_deleted">Сон удалён.</string>
     <string name="sleep_deleted_window">Сон удалён. reNOOP больше не будет находить сон между %1$s и %2$s.</string>

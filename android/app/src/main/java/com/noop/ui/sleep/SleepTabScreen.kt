@@ -272,6 +272,13 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
     }
 
     fun logMark(type: SleepMarkType) {
+        if (type == SleepMarkType.WAKE) {
+            // A wake mark is more than a log line: it asks for the night to end at this instant.
+            val mark = vm.logWakeNow()
+            val at = clockLabel(mark.tsMs / 1000L, is24h, locale)
+            Toast.makeText(context, context.getString(R.string.sleep_wake_logged, at), Toast.LENGTH_LONG).show()
+            return
+        }
         val mark = SleepMark.now(type)
         vm.ble.externalLog(mark.logLine())
         scope.launch { runCatching { vm.repo.upsertMetricSeries(listOf(mark.metricPoint("my-whoop"))) } }

@@ -1272,6 +1272,7 @@
     <string name="sleep_menu_naps">Nickerchen</string>
     <string name="sleep_menu_log_sleep">Schlafengehen erfassen</string>
     <string name="sleep_menu_log_wake">Aufwachen erfassen</string>
+    <string name="sleep_wake_logged">Aufwachen um %1$s erfasst. Sobald die Nacht synchronisiert ist, endet sie dort.</string>
     <string name="sleep_menu_more">Mehr</string>
     <string name="sleep_deleted">Schlaf gelöscht.</string>
     <string name="sleep_deleted_window">Schlaf gelöscht. reNOOP erkennt zwischen %1$s und %2$s keinen Schlaf mehr.</string>
