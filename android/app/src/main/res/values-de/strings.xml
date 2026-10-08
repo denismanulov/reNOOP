@@ -1258,7 +1258,7 @@
     <!-- Friends tab (reNOOP fork): end -->
     <string name="browse_categories">Kategorien</string>
     <string name="browse_all_metrics">Alle Werte</string>
-    <string name="browse_coach">Coach</string>
+    <string name="nav_coach">Coach</string>
     <string name="browse_journal">Tagebuch</string>
     <string name="browse_lab_results">Laborergebnisse</string>
     <string name="browse_trends">Trends</string>
@@ -1981,9 +1981,7 @@
     <string name="picker_use">„%1$s“ verwenden</string>
     <string name="intervals_finish_question">Diese Intervalleinheit beenden?</string>
     <string name="coach_title">KI-Coach</string>
-    <string name="coach_subtitle">%1$s · KI kann Fehler machen</string>
     <string name="coach_custom_server">Eigener Server</string>
-    <string name="coach_your_server">Dein Server</string>
     <string name="coach_empty_title">Coach</string>
     <string name="coach_empty_message">Verbinde deinen eigenen KI-Anbieter.</string>
     <string name="coach_set_up">Einrichten</string>
@@ -1994,6 +1992,15 @@
     <string name="coach_try_again">Erneut versuchen</string>
     <string name="coach_update_key">Schlüssel aktualisieren</string>
     <string name="coach_thinking">Coach denkt nach</string>
+    <string name="coach_typing">schreibt…</string>
+    <string name="coach_phrase_thinking">Denke nach…</string>
+    <string name="coach_phrase_pondering">Überlege…</string>
+    <string name="coach_phrase_mulling">Lasse es sacken…</string>
+    <string name="coach_phrase_connecting">Verbinde die Punkte…</string>
+    <string name="coach_phrase_weighing">Wäge ab…</string>
+    <string name="coach_phrase_wording">Suche die Worte…</string>
+    <string name="coach_greeting">Was möchtest du wissen?</string>
+    <string name="coach_jump_to_latest">Zu den neuesten Nachrichten</string>
     <string name="coach_you_said">Du sagtest: %1$s</string>
     <string name="coach_coach_said">Coach sagte: %1$s</string>
     <string name="coach_send">Senden</string>

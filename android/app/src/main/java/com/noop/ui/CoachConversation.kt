@@ -10,7 +10,7 @@ import java.time.temporal.ChronoUnit
 // MARK: - Coach conversation rules (Messages-style transcript)
 //
 // The pure decisions behind the Coach conversation screen, kept out of Compose so a JVM test can pin
-// them: which messages carry a time stamp and how it reads, which corners a bubble rounds, which
+// them: which messages are headed by a day chip and how it reads, which corners a bubble rounds, which
 // suggestion chips the composer offers, whether the last reply can be asked again, and how dictation
 // merges into a draft. Twin of the rules in Swift `CoachView` / `AICoachEngine`.
 
@@ -28,20 +28,21 @@ internal enum class CoachDayWord { TODAY, YESTERDAY, WEEKDAY, DATE }
 
 internal object CoachConversationRules {
 
-    /** A stamp heads the conversation and any message that follows the previous one by an hour or more. */
-    const val STAMP_GAP_MS: Long = 60 * 60 * 1000L
-
     /**
-     * The time stamp shown above message [index] of [ids], or null for none. Messages Messages stamps:
-     * the first one, and any that follows the previous by [STAMP_GAP_MS] or more. A message with no
-     * recorded time (one restored from before times were kept) gets no stamp, and neither does the one
-     * after it, since there is no gap to measure. Twin of Swift `CoachView.stamp(before:in:)`.
+     * The day chip shown above message [index] of [ids]: the message's own time when it is the first
+     * dated message of its local day, else null. Every bubble carries its own clock time, so the chip
+     * names the day alone and each day gets one, as Telegram dates a chat. A message with no recorded
+     * time (one restored from before times were kept) gets no chip and is skipped when looking back for
+     * the previous day, so one undated message never makes its neighbours repeat the day.
      */
-    fun stampBefore(index: Int, ids: List<String>, times: Map<String, Long>): Long? {
+    fun dayChipBefore(index: Int, ids: List<String>, times: Map<String, Long>, zone: ZoneId = ZoneId.systemDefault()): Long? {
         val time = times[ids.getOrNull(index) ?: return null] ?: return null
-        if (index == 0) return time
-        val previous = times[ids[index - 1]] ?: return null
-        return if (time - previous >= STAMP_GAP_MS) time else null
+        val day = Instant.ofEpochMilli(time).atZone(zone).toLocalDate()
+        for (i in index - 1 downTo 0) {
+            val previous = times[ids[i]] ?: continue
+            return if (Instant.ofEpochMilli(previous).atZone(zone).toLocalDate() == day) null else time
+        }
+        return time
     }
 
     /** How a stamp at [stampMs] names its day, seen at [nowMs]: Today, Yesterday, a weekday within the

@@ -86,7 +86,6 @@ internal enum class BrowseDestination(
     val group: BrowseGroup,
 ) {
     AllMetrics(ALL_METRICS_ROUTE, R.string.browse_all_metrics, Icons.Filled.GridView, BrowseTint.Oxygen, BrowseGroup.Categories),
-    Coach(Destination.Coach.route, R.string.browse_coach, Icons.Filled.AutoAwesome, BrowseTint.Body, BrowseGroup.Categories),
     Journal(Destination.Insights.route, R.string.browse_journal, Icons.AutoMirrored.Filled.MenuBook, BrowseTint.Mind, BrowseGroup.Categories),
     LabResults(Destination.LabBook.route, R.string.browse_lab_results, Icons.AutoMirrored.Filled.Assignment, BrowseTint.Core, BrowseGroup.Categories),
     Trends(Destination.Trends.route, R.string.browse_trends, Icons.AutoMirrored.Filled.TrendingUp, BrowseTint.Accent, BrowseGroup.Categories),
@@ -96,9 +95,9 @@ internal enum class BrowseDestination(
     Mindfulness(Destination.Breathe.route, R.string.browse_mindfulness, Icons.Filled.SelfImprovement, BrowseTint.Respiratory, BrowseGroup.Tools),
 }
 
-/** The rows of [group] with no query. Coach is listed only while the AI Coach switch is on (iOS parity). */
-internal fun browseRows(group: BrowseGroup, coachEnabled: Boolean): List<BrowseDestination> =
-    BrowseDestination.entries.filter { it.group == group && (coachEnabled || it != BrowseDestination.Coach) }
+/** The rows of [group] with no query. Coach is not among them: on Android it is a tab of its own. */
+internal fun browseRows(group: BrowseGroup): List<BrowseDestination> =
+    BrowseDestination.entries.filter { it.group == group }
 
 private val COMBINING_MARKS = Regex("\\p{Mn}+")
 
@@ -134,18 +133,17 @@ internal data class BrowseSearchResult(
 }
 
 /**
- * Runs a Browse search: the screens whose localized title contains [query] (Coach only while it is on),
+ * Runs a Browse search: the screens whose localized title contains [query],
  * then the catalogue metrics whose title does, one row per metric key.
  */
 internal fun browseSearch(
     query: String,
     locale: Locale,
-    coachEnabled: Boolean,
     titleOf: (BrowseDestination) -> String,
     catalogue: List<BrowseMetricEntry>,
 ): BrowseSearchResult {
     val screens = BrowseGroup.entries
-        .flatMap { browseRows(it, coachEnabled) }
+        .flatMap { browseRows(it) }
         .filter { browseMatches(titleOf(it), query, locale) }
     val metrics = catalogue
         .distinctBy { it.key }
@@ -163,7 +161,6 @@ fun BrowseScreen(onOpen: (String) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
     val focusManager = LocalFocusManager.current
-    val coachEnabled = CoachEnabledStore.enabled
     val listState = rememberLazyListState()
     OnScrollToTop { listState.animateScrollToItem(0) }
 
@@ -171,8 +168,8 @@ fun BrowseScreen(onOpen: (String) -> Unit) {
     val titleOf: (BrowseDestination) -> String = { titles.getValue(it) }
     val catalogue = remember(locale) { browseMetricEntries() }
     val trimmed = query.trim()
-    val result = remember(trimmed, locale, coachEnabled, titles) {
-        if (trimmed.isEmpty()) null else browseSearch(trimmed, locale, coachEnabled, titleOf, catalogue)
+    val result = remember(trimmed, locale, titles) {
+        if (trimmed.isEmpty()) null else browseSearch(trimmed, locale, titleOf, catalogue)
     }
     val open: (String) -> Unit = { route ->
         focusManager.clearFocus()
@@ -204,11 +201,11 @@ fun BrowseScreen(onOpen: (String) -> Unit) {
                     SectionHeader(stringResource(R.string.browse_categories), modifier = Modifier.padding(bottom = 8.dp))
                 }
                 item(key = "categories") {
-                    DestinationGroup(sortedByTitle(browseRows(BrowseGroup.Categories, coachEnabled), locale, titleOf), titleOf, open)
+                    DestinationGroup(sortedByTitle(browseRows(BrowseGroup.Categories), locale, titleOf), titleOf, open)
                 }
                 item(key = "tools") {
                     Spacer(Modifier.height(16.dp))
-                    DestinationGroup(sortedByTitle(browseRows(BrowseGroup.Tools, coachEnabled), locale, titleOf), titleOf, open)
+                    DestinationGroup(sortedByTitle(browseRows(BrowseGroup.Tools), locale, titleOf), titleOf, open)
                 }
             } else if (result.isEmpty) {
                 item(key = "empty") {

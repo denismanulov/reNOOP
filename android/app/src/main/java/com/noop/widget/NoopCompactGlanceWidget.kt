@@ -60,6 +60,7 @@ private fun CompactWidgetContent(snap: WidgetSnapshot) {
             CompactScoreCell(
                 uiString(R.string.metric_title_effort), R.drawable.ic_widget_effort, snap.effortPct,
                 WidgetColors.effort, GlanceModifier.defaultWeight(),
+                figure = effortFigure(snap),
             )
             CompactScoreCell(
                 uiString(R.string.metric_title_rest), R.drawable.ic_widget_rest, snap.restPct,
@@ -83,10 +84,11 @@ private fun CompactScoreCell(
     pct: Int?,
     hue: ColorProvider,
     modifier: GlanceModifier,
+    figure: String? = null,
 ) {
     val spoken = WidgetCaptions.spoken(
         label,
-        pct?.let { uiString(R.string.l10n_today_screen_pct_ee63e247, it) },
+        pct?.let { figure ?: uiString(R.string.l10n_today_screen_pct_ee63e247, it) },
         uiString(R.string.widget_no_data),
     )
     Column(
@@ -100,7 +102,7 @@ private fun CompactScoreCell(
             colorFilter = ColorFilter.tint(if (pct == null) WidgetColors.onSurfaceVariant else hue),
         )
         Text(
-            text = WidgetCaptions.score(pct),
+            text = figure ?: WidgetCaptions.score(pct),
             style = WidgetType.figure(
                 20.sp, if (pct == null) WidgetColors.onSurfaceVariant else WidgetColors.onSurface,
             ),

@@ -1273,7 +1273,7 @@
     <!-- Friends tab (reNOOP fork): end -->
     <string name="browse_categories">Categories</string>
     <string name="browse_all_metrics">All Metrics</string>
-    <string name="browse_coach">Coach</string>
+    <string name="nav_coach">Coach</string>
     <string name="browse_journal">Journal</string>
     <string name="browse_lab_results">Lab Results</string>
     <string name="browse_trends">Trends</string>
@@ -1996,9 +1996,7 @@
     <string name="picker_use">Use “%1$s”</string>
     <string name="intervals_finish_question">End this interval session?</string>
     <string name="coach_title">AI Coach</string>
-    <string name="coach_subtitle">%1$s · AI can make mistakes</string>
     <string name="coach_custom_server">Custom Server</string>
-    <string name="coach_your_server">Your server</string>
     <string name="coach_empty_title">Coach</string>
     <string name="coach_empty_message">Connect your own AI provider.</string>
     <string name="coach_set_up">Set Up</string>
@@ -2009,6 +2007,15 @@
     <string name="coach_try_again">Try Again</string>
     <string name="coach_update_key">Update Key</string>
     <string name="coach_thinking">Coach is thinking</string>
+    <string name="coach_typing">typing…</string>
+    <string name="coach_phrase_thinking">Thinking…</string>
+    <string name="coach_phrase_pondering">Pondering…</string>
+    <string name="coach_phrase_mulling">Mulling it over…</string>
+    <string name="coach_phrase_connecting">Connecting the dots…</string>
+    <string name="coach_phrase_weighing">Weighing it up…</string>
+    <string name="coach_phrase_wording">Finding the words…</string>
+    <string name="coach_greeting">What would you like to know?</string>
+    <string name="coach_jump_to_latest">Jump to latest</string>
     <string name="coach_you_said">You said: %1$s</string>
     <string name="coach_coach_said">Coach said: %1$s</string>
     <string name="coach_send">Send</string>

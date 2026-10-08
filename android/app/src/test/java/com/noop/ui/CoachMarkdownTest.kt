@@ -100,4 +100,14 @@ class CoachMarkdownTest {
         assertEquals(listOf(listOf("HRV", "72")), table.rows)
         assertEquals(3, next)
     }
+
+    // The bubble lays the time over the end of the last line, which only running text can make room for.
+    @Test fun aReplyEndingInTextTakesTheTailAndOneEndingInATableOrHeadingDoesNot() {
+        assertTrue(coachMarkdownTakesTail("Sleep was solid.\n\nKeep today easy."))
+        assertTrue(coachMarkdownTakesTail("Plan:\n- easy run\n- early night\n\n"))
+        assertTrue(coachMarkdownTakesTail("1. warm up\n2. intervals"))
+        assertEquals(false, coachMarkdownTakesTail("Compare:\n| metric | you |\n|---|---|\n| HRV | 62 |"))
+        assertEquals(false, coachMarkdownTakesTail("All good.\n### Next"))
+        assertEquals(false, coachMarkdownTakesTail("  \n"))
+    }
 }

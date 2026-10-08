@@ -1028,7 +1028,7 @@
     <string name="nav_browse">Parcourir</string>
     <string name="browse_categories">Catégories</string>
     <string name="browse_all_metrics">Toutes les mesures</string>
-    <string name="browse_coach">Coach</string>
+    <string name="nav_coach">Coach</string>
     <string name="browse_journal">Journal</string>
     <string name="browse_lab_results">Résultats d’analyses</string>
     <string name="browse_trends">Tendances</string>
@@ -1751,9 +1751,7 @@
     <string name="picker_use">Utiliser « %1$s »</string>
     <string name="intervals_finish_question">Terminer cette séance d’intervalles ?</string>
     <string name="coach_title">Coach IA</string>
-    <string name="coach_subtitle">%1$s · L’IA peut faire des erreurs</string>
     <string name="coach_custom_server">Serveur personnalisé</string>
-    <string name="coach_your_server">Votre serveur</string>
     <string name="coach_empty_title">Coach</string>
     <string name="coach_empty_message">Connectez votre propre fournisseur d’IA.</string>
     <string name="coach_set_up">Configurer</string>
@@ -1764,6 +1762,15 @@
     <string name="coach_try_again">Réessayer</string>
     <string name="coach_update_key">Mettre à jour la clé</string>
     <string name="coach_thinking">Coach réfléchit</string>
+    <string name="coach_typing">écrit…</string>
+    <string name="coach_phrase_thinking">Je réfléchis…</string>
+    <string name="coach_phrase_pondering">Je médite…</string>
+    <string name="coach_phrase_mulling">Je retourne la question…</string>
+    <string name="coach_phrase_connecting">Je relie les points…</string>
+    <string name="coach_phrase_weighing">Je pèse le pour et le contre…</string>
+    <string name="coach_phrase_wording">Je cherche les mots…</string>
+    <string name="coach_greeting">Que voulez-vous savoir ?</string>
+    <string name="coach_jump_to_latest">Aller aux derniers messages</string>
     <string name="coach_you_said">Vous avez dit : %1$s</string>
     <string name="coach_coach_said">Coach a dit : %1$s</string>
     <string name="coach_send">Envoyer</string>

@@ -78,7 +78,7 @@ internal sealed interface AppLinkTarget {
             AppLink.HeartRate -> Screen(MainTab.Browse, Destination.Live.route)
             // The strap's own Day Stress (0-3), the curve the widget draws.
             AppLink.Stress -> Metric(MainTab.Summary, "stress", WhoopRepository.WHOOP_SOURCE)
-            AppLink.Coach -> if (coachEnabled) Screen(MainTab.Browse, Destination.Coach.route) else null
+            AppLink.Coach -> if (coachEnabled) TabRoot(MainTab.Coach) else null
             AppLink.Workout -> if (workoutActive) Recording(confirmFinish = false) else null
             AppLink.WorkoutFinish -> if (workoutActive) Recording(confirmFinish = true) else null
         }

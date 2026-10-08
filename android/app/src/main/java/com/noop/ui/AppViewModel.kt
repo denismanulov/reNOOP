@@ -1072,6 +1072,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             // (pure, honest-null until last night is scored); Effort = the 0–100 strain. (#516)
                             restPct = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
                             effortPct = anchorRow?.strain?.roundToInt(),
+                            effort = anchorRow?.strain,
                             heartRate = live.heartRate,
                             // The ACTIVE device's charge (#2075): a ring reports its own and does not
                             // funnel into live.batteryPct, so publishing that put the strap's number on

@@ -1,5 +1,7 @@
 package com.noop.widget
 
+import com.noop.ui.EffortScale
+import com.noop.ui.UnitFormatter
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -14,6 +16,35 @@ class WidgetCaptionsTest {
         assertEquals("68", WidgetCaptions.score(68))
         assertEquals("0", WidgetCaptions.score(0))
         assertEquals("—", WidgetCaptions.score(null))
+    }
+
+    @Test
+    fun strainOnTheAppsOwnScaleIsTheWholeNumberLikeTheOtherRings() {
+        assertEquals("19", WidgetCaptions.effort(19, 19.1, EffortScale.HUNDRED))
+        assertEquals("—", WidgetCaptions.effort(null, null, EffortScale.HUNDRED))
+    }
+
+    /** The wearer who reads strain as WHOOP does must not see 19 where the Summary says 4.0. */
+    @Test
+    fun strainOnTheWhoopScaleIsTheSummarysFigure() {
+        assertEquals("4.0", WidgetCaptions.effort(19, 19.1, EffortScale.WHOOP))
+        assertEquals(
+            UnitFormatter.effortDisplay(19.1, EffortScale.WHOOP),
+            WidgetCaptions.effort(19, 19.1, EffortScale.WHOOP),
+        )
+        assertEquals("21.0", WidgetCaptions.effort(100, 100.0, EffortScale.WHOOP))
+        assertEquals("0.0", WidgetCaptions.effort(0, 0.0, EffortScale.WHOOP))
+        assertEquals("—", WidgetCaptions.effort(null, null, EffortScale.WHOOP))
+    }
+
+    /**
+     * Why the snapshot carries the stored double and not only the whole number: 19.76 is 4.1 of 21, and
+     * the whole number it rounds to, 20, is 4.2.
+     */
+    @Test
+    fun theWhoopFigureComesFromTheStoredValueNotTheRoundedOne() {
+        assertEquals("4.1", WidgetCaptions.effort(20, 19.76, EffortScale.WHOOP))
+        assertEquals("4.2", WidgetCaptions.effort(20, null, EffortScale.WHOOP))
     }
 
     @Test

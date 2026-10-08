@@ -24,4 +24,4 @@ android/app/src/main/res/values-it/strings.xml it 24
 android/app/src/main/res/values-pl/strings.xml pl 15
 android/app/src/main/res/values-pt-rPT/strings.xml pt-rPT 16
 android/app/src/main/res/values-ru/strings.xml ru 10
-android/app/src/main/res/values-zh/strings.xml zh 11
+android/app/src/main/res/values-zh/strings.xml zh 10

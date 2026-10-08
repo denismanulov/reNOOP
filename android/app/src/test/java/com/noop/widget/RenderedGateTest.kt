@@ -57,6 +57,24 @@ class RenderedGateTest {
     }
 
     /**
+     * A change of strain scale changes what the ring prints and brings no new data with it. And on the
+     * 0 to 21 scale the figure moves in tenths the whole number does not see: 40.0 and 40.4 are both
+     * 40, and are 8.4 and 8.5 of 21.
+     */
+    @Test
+    fun theStrainFigureCountsOnTheScaleTheWearerReads() {
+        val a = snap().copy(effort = 40.0)
+        assertTrue(RenderedGate.changed(a, dark = false, effortScale = com.noop.ui.EffortScale.HUNDRED))
+        assertTrue("the scale changed", RenderedGate.changed(a, dark = false, effortScale = com.noop.ui.EffortScale.WHOOP))
+        assertFalse(RenderedGate.changed(a, dark = false, effortScale = com.noop.ui.EffortScale.WHOOP))
+        val b = a.copy(effort = 40.4)
+        assertTrue("8.4 became 8.5", RenderedGate.changed(b, dark = false, effortScale = com.noop.ui.EffortScale.WHOOP))
+        RenderedGate.resetForTest()
+        RenderedGate.changed(a, dark = false, effortScale = com.noop.ui.EffortScale.HUNDRED)
+        assertFalse("on 0 to 100 both print 40", RenderedGate.changed(b, dark = false, effortScale = com.noop.ui.EffortScale.HUNDRED))
+    }
+
+    /**
      * The heart-rate VALUE has to count, because PushGate deliberately does not know it — it keys on
      * whether a reading exists, so that a stream of samples cannot admit a push each. If this gate
      * ignored the value too, a changing heart rate would never reach the screen.

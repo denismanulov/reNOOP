@@ -1203,7 +1203,7 @@
     <!-- Friends tab (reNOOP fork): end -->
     <string name="browse_categories">Категории</string>
     <string name="browse_all_metrics">Все показатели</string>
-    <string name="browse_coach">ИИ-тренер</string>
+    <string name="nav_coach">ИИ-тренер</string>
     <string name="browse_journal">Журнал</string>
     <string name="browse_lab_results">Результаты анализов</string>
     <string name="browse_trends">Тренды</string>
@@ -1942,9 +1942,7 @@
     <string name="picker_use">Использовать «%1$s»</string>
     <string name="intervals_finish_question">Завершить интервальную тренировку?</string>
     <string name="coach_title">ИИ-тренер</string>
-    <string name="coach_subtitle">%1$s · ИИ может ошибаться</string>
     <string name="coach_custom_server">Свой сервер</string>
-    <string name="coach_your_server">Ваш сервер</string>
     <string name="coach_empty_title">ИИ-тренер</string>
     <string name="coach_empty_message">Подключите своего ИИ-провайдера.</string>
     <string name="coach_set_up">Настроить</string>
@@ -1955,6 +1953,15 @@
     <string name="coach_try_again">Повторить</string>
     <string name="coach_update_key">Обновить ключ</string>
     <string name="coach_thinking">ИИ-тренер думает</string>
+    <string name="coach_typing">печатает…</string>
+    <string name="coach_phrase_thinking">Думаю…</string>
+    <string name="coach_phrase_pondering">Размышляю…</string>
+    <string name="coach_phrase_mulling">Обдумываю…</string>
+    <string name="coach_phrase_connecting">Сопоставляю…</string>
+    <string name="coach_phrase_weighing">Взвешиваю…</string>
+    <string name="coach_phrase_wording">Подбираю слова…</string>
+    <string name="coach_greeting">Что хотите узнать?</string>
+    <string name="coach_jump_to_latest">К последним сообщениям</string>
     <string name="coach_you_said">Вы сказали: %1$s</string>
     <string name="coach_coach_said">ИИ-тренер: %1$s</string>
     <string name="coach_send">Отправить</string>
