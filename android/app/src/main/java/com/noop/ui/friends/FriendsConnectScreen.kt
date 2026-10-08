@@ -101,9 +101,13 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
 
     var create by rememberSaveable { mutableStateOf(true) }
     var nick by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var invite by rememberSaveable { mutableStateOf("") }
-    var showPassword by rememberSaveable { mutableStateOf(false) }
+    // The secrets are held for this composition only: saved instance state can be written to disk.
+    var password by remember { mutableStateOf("") }
+    var invite by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+    // True once the nickname field was typed in during this visit. A nickname restored with the form
+    // (a rotation, a return to the tab) is not asked about again until it is touched.
+    var nickTyped by remember { mutableStateOf(false) }
     var inviteRequired by rememberSaveable { mutableStateOf(false) }
     var infoAsked by remember(serverUrl) { mutableStateOf(false) }
     var nickState by remember { mutableStateOf<NickState>(NickState.Idle) }
@@ -112,8 +116,8 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
     var editServer by remember { mutableStateOf(false) }
 
     // The live nickname check: sign-up only, and only after the typing has paused.
-    LaunchedEffect(nick, create, serverUrl) {
-        if (!create || nick.isEmpty()) {
+    LaunchedEffect(nick, create, serverUrl, nickTyped) {
+        if (!create || nick.isEmpty() || !nickTyped) {
             nickState = NickState.Idle
             return@LaunchedEffect
         }
@@ -214,7 +218,7 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
             ) {
                 OutlinedTextField(
                     value = nick,
-                    onValueChange = { nick = FriendsNick.filterTyping(it); failure = null },
+                    onValueChange = { nick = FriendsNick.filterTyping(it); nickTyped = true; failure = null },
                     label = { Text(stringResource(R.string.friends_connect_nick)) },
                     prefix = { Text(stringResource(R.string.friends_at_sign)) },
                     singleLine = true,

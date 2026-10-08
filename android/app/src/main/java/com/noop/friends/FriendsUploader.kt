@@ -26,8 +26,11 @@ import java.util.concurrent.TimeUnit
 
 object FriendsUploader {
     enum class Outcome {
-        /** Nobody is signed in: nothing was read and nothing was sent. */
+        /** Nobody is signed in, or the session changed while this ran: nothing more was sent. */
         SIGNED_OUT,
+
+        /** The server no longer knows the session (a 401). It has been forgotten on this phone too. */
+        SESSION_ENDED,
 
         /** Every day is on the server as the app holds it (sent now, or unchanged since it was last sent). */
         DONE,
@@ -64,18 +67,15 @@ object FriendsUploader {
 
     private suspend fun upload(app: Context, store: FriendsStore): Outcome {
         val noopApp = app as? NoopApplication ?: return Outcome.FAILED
+        val session = store.epoch
         val token = store.token() ?: return Outcome.SIGNED_OUT
         val api = FriendsApi.create(store.serverUrl, token) ?: return Outcome.FAILED
 
         val me = when (val answer = api.me()) {
-            is FriendsResult.Ok -> answer.value.also(store::saveMe)
+            is FriendsResult.Ok -> answer.value.also { store.saveMe(it, session) }
             is FriendsResult.Fail -> return when (answer.error) {
                 FriendsError.OFFLINE -> Outcome.OFFLINE
-                FriendsError.UNAUTHORIZED -> {
-                    // The session ended elsewhere. Forgetting it here is what stops every later trigger.
-                    FriendsSessionEnd.local(app)
-                    Outcome.SIGNED_OUT
-                }
+                FriendsError.UNAUTHORIZED -> endedByServer(app, store, session)
                 else -> Outcome.FAILED
             }
         }
@@ -85,23 +85,32 @@ object FriendsUploader {
         val keep = days.mapTo(HashSet()) { it.key }
         var outcome = Outcome.DONE
         for (day in days) {
-            if (!store.isSignedIn) return Outcome.SIGNED_OUT
+            // The session this run started under is gone: nothing more is sent with its token.
+            if (store.epoch != session) return Outcome.SIGNED_OUT
             val nowTs = System.currentTimeMillis() / 1000L
             val json = FriendsDayPayload.toJson(FriendsDayPayload.build(day.inputs, share, nowTs))
             if (!FriendsUploadPolicy.shouldUpload(store.uploadMark(day.key), json)) continue
             when (val sent = api.putDay(day.key, json)) {
-                is FriendsResult.Ok -> store.recordUpload(day.key, FriendsDayPayload.fingerprint(json), keep, nowTs)
+                is FriendsResult.Ok ->
+                    store.recordUpload(day.key, FriendsDayPayload.fingerprint(json), keep, nowTs, session)
                 is FriendsResult.Fail -> outcome = when (sent.error) {
                     FriendsError.OFFLINE -> return Outcome.OFFLINE
-                    FriendsError.UNAUTHORIZED -> {
-                        FriendsSessionEnd.local(app)
-                        return Outcome.SIGNED_OUT
-                    }
+                    FriendsError.UNAUTHORIZED -> return endedByServer(app, store, session)
                     else -> Outcome.FAILED
                 }
             }
         }
         return outcome
+    }
+
+    /**
+     * The server answered 401 to the session [session]. Forgetting it here is what stops every later
+     * trigger. If the phone has moved on to another session meanwhile, that one is left alone.
+     */
+    private fun endedByServer(app: Context, store: FriendsStore, session: Int): Outcome {
+        if (store.epoch != session) return Outcome.SIGNED_OUT
+        FriendsSessionEnd.local(app)
+        return Outcome.SESSION_ENDED
     }
 }
 

@@ -23,6 +23,7 @@ import com.noop.friends.FriendsUploader
 import com.noop.ui.ProfileAvatarStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -95,6 +96,9 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
 
     private var refreshJob: Job? = null
 
+    /** The session ([FriendsStore.epoch]) the running refresh was started under. */
+    private var refreshSession = -1
+
     init {
         if (store.isSignedIn) {
             viewModelScope.launch {
@@ -111,6 +115,11 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
             }
         } else {
             _feed.value = FriendsFeedState(restored = true)
+        }
+        // The session can also end outside this view model (the background upload met a 401): the
+        // account's data leaves the screen's state then too.
+        viewModelScope.launch {
+            store.nick.collect { nick -> if (nick == null) resetState() }
         }
     }
 
@@ -133,8 +142,7 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun serverInfo(): FriendsResult<FriendsServerInfo> =
         anonymousApi()?.info() ?: FriendsResult.Fail(FriendsError.NOT_SIGNED_IN)
 
-    /** Creates an account ([create]) or signs in to one. Null on success, else why not. */
-    suspend fun signIn(create: Boolean, nickTyped: String, password: String, invite: String?): FriendsError? {
+    private suspend fun signInNow(create: Boolean, nickTyped: String, password: String, invite: String?): FriendsError? {
         val nick = FriendsNick.clean(nickTyped) ?: return FriendsError.BAD_NICK
         val api = anonymousApi() ?: return FriendsError.NOT_SIGNED_IN
         val answer = if (create) api.register(nick, password, invite?.trim()) else api.login(nick, password)
@@ -143,9 +151,10 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
             is FriendsResult.Ok -> {
                 val saved = withContext(Dispatchers.IO) { store.saveSession(answer.value) }
                 if (!saved) return FriendsError.UNKNOWN
+                // Nothing of an earlier account on this phone may stay in memory under the new one.
+                resetState()
                 _me.value = answer.value.me
                 _sessionEnded.value = false
-                _feed.value = FriendsFeedState(restored = true)
                 refresh(force = true)
                 null
             }
@@ -172,19 +181,25 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refresh(force: Boolean = false) {
         if (!store.isSignedIn) return
-        if (refreshJob?.isActive == true) return
+        val session = store.epoch
+        // One refresh at a time per session. One still running for an earlier session (it will find its
+        // session gone and stop) must not hold back the first refresh of the new one.
+        if (refreshJob?.isActive == true && refreshSession == session) return
         val state = _feed.value
         val age = nowSec() - state.fetchedAt
         if (!force && state.feed != null && state.error == null && age in 0 until AUTO_REFRESH_EVERY_S) return
+        refreshSession = session
         refreshJob = viewModelScope.launch {
             _feed.update { it.copy(refreshing = true) }
             // The upload first, so the "you" on the tab is what the server holds as of now.
-            withContext(Dispatchers.IO) { FriendsUploader.run(getApplication()) }
-            _lastUploadAt.value = store.lastUploadAt
-            if (!store.isSignedIn) {
+            val outcome = withContext(Dispatchers.IO) { FriendsUploader.run(getApplication()) }
+            if (outcome == FriendsUploader.Outcome.SESSION_ENDED) {
                 sessionWasEnded()
                 return@launch
             }
+            // Signed out, or signed in as someone else, while this ran: whoever did that owns the screen now.
+            if (store.epoch != session) return@launch
+            _lastUploadAt.value = store.lastUploadAt
             fetchFeed()
         }
     }
@@ -205,19 +220,23 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun fetchFeed() {
+        val session = store.epoch
         val api = sessionApi()
         if (api == null) {
             _feed.update { it.copy(refreshing = false, error = FriendsError.NOT_SIGNED_IN) }
             return
         }
-        when (val answer = api.feed()) {
+        val answer = api.feed()
+        // The session this was asked under has ended meanwhile: its answer belongs to nobody on screen.
+        if (store.epoch != session) return
+        when (answer) {
             is FriendsResult.Ok -> {
                 val (feed, text) = answer.value
                 val now = nowSec()
                 val mine = feed.me.profile.copy(share = feed.me.share)
                 withContext(Dispatchers.IO) {
-                    store.saveFeed(text, now)
-                    store.saveMe(mine)
+                    store.saveFeed(text, now, session)
+                    store.saveMe(mine, session)
                 }
                 _me.value = mine
                 _feed.value = FriendsFeedState(feed = feed, fetchedAt = now, restored = true)
@@ -251,20 +270,21 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun sendRequest(nick: String): FriendsResult<FriendProfile> =
-        guarded { it.sendRequest(nick) }.also { afterFriendChange(it) }
+        detached { guarded { it.sendRequest(nick) }.also { afterFriendChange(it) } }
 
     suspend fun acceptRequest(nick: String): FriendsResult<FriendProfile> =
-        guarded { it.acceptRequest(nick) }.also { afterFriendChange(it) }
+        detached { guarded { it.acceptRequest(nick) }.also { afterFriendChange(it) } }
 
     /** Declines an incoming request or withdraws an outgoing one. */
     suspend fun dropRequest(nick: String): FriendsResult<Unit> =
-        guarded { it.deleteRequest(nick) }.also { afterFriendChange(it) }
+        detached { guarded { it.deleteRequest(nick) }.also { afterFriendChange(it) } }
 
-    suspend fun unfriend(nick: String): FriendsResult<Unit> =
+    suspend fun unfriend(nick: String): FriendsResult<Unit> = detached {
         guarded { it.unfriend(nick) }.also {
             if (it is FriendsResult.Ok) _pages.update { pages -> pages - nick }
             afterFriendChange(it)
         }
+    }
 
     private fun afterFriendChange(result: FriendsResult<*>) {
         if (result !is FriendsResult.Ok) return
@@ -288,14 +308,9 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
 
     // MARK: My profile
 
-    suspend fun rename(name: String): FriendsError? = profileCall { it.patchMe(name = name.trim()) }
+    suspend fun rename(name: String): FriendsError? = detached { profileCall { it.patchMe(name = name.trim()) } }
 
-    /**
-     * Changes the sharing switches. The server erases a switched-off section from every stored day, so
-     * what this phone remembers having sent no longer describes the server: the marks are dropped and
-     * today and yesterday go up again, at once and (should the app be closed first) from the queue.
-     */
-    suspend fun setShare(share: FriendShare): FriendsError? {
+    private suspend fun setShareNow(share: FriendShare): FriendsError? {
         val error = profileCall { it.patchMe(share = share) }
         if (error == null) {
             withContext(Dispatchers.IO) { store.clearUploadMarks() }
@@ -305,15 +320,14 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
         return error
     }
 
-    /** Makes the on-device profile photo the picture friends see. */
-    suspend fun uploadProfilePhoto(): FriendsError? {
+    private suspend fun uploadProfilePhotoNow(): FriendsError? {
         val jpeg = withContext(Dispatchers.IO) {
             ProfileAvatarStore.storedJpeg(getApplication())?.let { FriendsAvatars.fitForUpload(it) }
         } ?: return FriendsError.BAD_IMAGE
         return profileCall { it.putAvatar(jpeg) }
     }
 
-    suspend fun removePicture(): FriendsError? {
+    private suspend fun removePictureNow(): FriendsError? {
         val answer = guarded { it.deleteAvatar() }
         if (answer is FriendsResult.Ok) {
             _me.value?.copy(avatarRev = 0)?.let { cleared ->
@@ -325,7 +339,7 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
         return answer.errorOrNull
     }
 
-    suspend fun changePassword(old: String, new: String): FriendsError? =
+    private suspend fun changePasswordNow(old: String, new: String): FriendsError? =
         when (val answer = guarded { it.changePassword(old, new) }) {
             is FriendsResult.Ok -> {
                 val kept = withContext(Dispatchers.IO) { store.replaceToken(answer.value) }
@@ -334,14 +348,12 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
             is FriendsResult.Fail -> answer.error
         }
 
-    /** Signs out on this phone. The server is told when it can be reached; the phone forgets either way. */
-    suspend fun signOut() {
+    private suspend fun signOutNow() {
         sessionApi()?.logout()
         endSessionLocally(ended = false)
     }
 
-    /** Deletes the account on the server, then forgets it here. Null on success. */
-    suspend fun deleteAccount(password: String): FriendsError? {
+    private suspend fun deleteAccountNow(password: String): FriendsError? {
         // Not through [guarded]: a wrong password here is a 401 that must not sign the phone out.
         val api = sessionApi() ?: return FriendsError.NOT_SIGNED_IN
         return when (val answer = api.deleteAccount(password)) {
@@ -356,26 +368,63 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun profileCall(call: suspend (FriendsApi) -> FriendsResult<FriendProfile>): FriendsError? =
-        when (val answer = guarded(call)) {
+    private suspend fun profileCall(call: suspend (FriendsApi) -> FriendsResult<FriendProfile>): FriendsError? {
+        val session = store.epoch
+        return when (val answer = guarded(call)) {
             is FriendsResult.Ok -> {
+                if (store.epoch != session) return null
                 // A profile answer always carries the switches; keep the old ones if a server ever omits them.
                 val mine = answer.value.let { p -> if (p.share == null) p.copy(share = _me.value?.share) else p }
                 _me.value = mine
-                withContext(Dispatchers.IO) { store.saveMe(mine) }
+                withContext(Dispatchers.IO) { store.saveMe(mine, session) }
                 refreshFeedOnly()
                 null
             }
             is FriendsResult.Fail -> answer.error
         }
+    }
+
+    // MARK: Changes that must finish
+    //
+    // Each of these runs in the view model's scope and is only awaited by the screen. A screen that goes
+    // away mid-request (a tab switch, a rotation) stops waiting; the request still completes and its
+    // result is still kept. Cut short instead, a sign-up could create the account and lose its token, and
+    // a password change could end every session including this one.
+
+    /** Creates an account ([create]) or signs in to one. Null on success, else why not. */
+    suspend fun signIn(create: Boolean, nickTyped: String, password: String, invite: String?): FriendsError? =
+        detached { signInNow(create, nickTyped, password, invite) }
+
+    /**
+     * Changes the sharing switches. The server erases a switched-off section from every stored day, so
+     * what this phone remembers having sent no longer describes the server: the marks are dropped and
+     * today and yesterday go up again, at once and (should the app be closed first) from the queue.
+     */
+    suspend fun setShare(share: FriendShare): FriendsError? = detached { setShareNow(share) }
+
+    /** Makes the on-device profile photo the picture friends see. */
+    suspend fun uploadProfilePhoto(): FriendsError? = detached { uploadProfilePhotoNow() }
+
+    suspend fun removePicture(): FriendsError? = detached { removePictureNow() }
+
+    suspend fun changePassword(old: String, new: String): FriendsError? = detached { changePasswordNow(old, new) }
+
+    /** Signs out on this phone. The server is told when it can be reached; the phone forgets either way. */
+    suspend fun signOut() = detached { signOutNow() }
+
+    /** Deletes the account on the server, then forgets it here. Null on success. */
+    suspend fun deleteAccount(password: String): FriendsError? = detached { deleteAccountNow(password) }
+
+    private suspend fun <T> detached(block: suspend () -> T): T = viewModelScope.async { block() }.await()
 
     // MARK: Plumbing
 
     /** A call with the session. A dead session ends it here, once, for every screen. */
     private suspend fun <T> guarded(call: suspend (FriendsApi) -> FriendsResult<T>): FriendsResult<T> {
+        val session = store.epoch
         val api = sessionApi() ?: return FriendsResult.Fail(FriendsError.NOT_SIGNED_IN)
         val answer = call(api)
-        if (answer.errorOrNull == FriendsError.UNAUTHORIZED) endSessionLocally(ended = true)
+        if (answer.errorOrNull == FriendsError.UNAUTHORIZED && store.epoch == session) endSessionLocally(ended = true)
         return answer
     }
 

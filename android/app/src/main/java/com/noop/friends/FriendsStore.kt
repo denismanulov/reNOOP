@@ -27,6 +27,17 @@ class FriendsStore private constructor(private val app: Context) {
 
     val isSignedIn: Boolean get() = _nick.value != null
 
+    /**
+     * Counts the sessions this process has seen: it moves whenever one starts or ends. Work that began
+     * under one session (a feed being fetched, a day being uploaded) carries the value it started with,
+     * and what it brings back is written only while that value still stands. Without it, signing out and
+     * in as someone else while a request was in flight could file the old account's answer, or the mark
+     * of a day uploaded to the old account, under the new one.
+     */
+    @Volatile
+    var epoch: Int = 0
+        private set
+
     /** The server address in use; always one [FriendsServerUrl] accepts. */
     var serverUrl: String
         get() = prefs.getString(KEY_SERVER, null)?.let(FriendsServerUrl::normalised) ?: FriendsServerUrl.DEFAULT
@@ -45,6 +56,7 @@ class FriendsStore private constructor(private val app: Context) {
             .putString(KEY_NICK, session.me.nick)
             .putString(KEY_ME, FriendsJson.profileText(session.me))
             .apply()
+        epoch++
         _nick.value = session.me.nick
         return true
     }
@@ -57,8 +69,8 @@ class FriendsStore private constructor(private val app: Context) {
     fun cachedMe(): FriendProfile? =
         prefs.getString(KEY_ME, null)?.let { runCatching { FriendsJson.profile(it) }.getOrNull() }
 
-    fun saveMe(profile: FriendProfile) {
-        if (!isSignedIn) return
+    fun saveMe(profile: FriendProfile, startedIn: Int = epoch) {
+        if (!isSignedIn || startedIn != epoch) return
         prefs.edit().putString(KEY_ME, FriendsJson.profileText(profile)).apply()
     }
 
@@ -70,8 +82,8 @@ class FriendsStore private constructor(private val app: Context) {
         return CachedFeed(json, prefs.getLong(KEY_FEED_AT, 0L))
     }
 
-    fun saveFeed(json: String, fetchedAt: Long) {
-        if (!isSignedIn) return
+    fun saveFeed(json: String, fetchedAt: Long, startedIn: Int = epoch) {
+        if (!isSignedIn || startedIn != epoch) return
         prefs.edit().putString(KEY_FEED, json).putLong(KEY_FEED_AT, fetchedAt).apply()
     }
 
@@ -82,8 +94,8 @@ class FriendsStore private constructor(private val app: Context) {
     fun uploadMark(day: String): String? = prefs.getString(MARK_PREFIX + day, null)
 
     /** Records an accepted upload of [day] and forgets the marks of every day not in [keep]. */
-    fun recordUpload(day: String, fingerprint: String, keep: Set<String>, atSec: Long) {
-        if (!isSignedIn) return
+    fun recordUpload(day: String, fingerprint: String, keep: Set<String>, atSec: Long, startedIn: Int = epoch) {
+        if (!isSignedIn || startedIn != epoch) return
         val edit = prefs.edit().putString(MARK_PREFIX + day, fingerprint).putLong(KEY_UPLOAD_AT, atSec)
         for (key in prefs.all.keys) {
             if (key.startsWith(MARK_PREFIX) && key.removePrefix(MARK_PREFIX) !in keep + day) edit.remove(key)
@@ -107,6 +119,7 @@ class FriendsStore private constructor(private val app: Context) {
         val edit = prefs.edit().remove(KEY_NICK).remove(KEY_ME).remove(KEY_FEED).remove(KEY_FEED_AT).remove(KEY_UPLOAD_AT)
         for (key in prefs.all.keys) if (key.startsWith(MARK_PREFIX)) edit.remove(key)
         edit.apply()
+        epoch++
         _nick.value = null
     }
 
