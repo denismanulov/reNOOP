@@ -113,6 +113,10 @@ internal class SummaryUi(
     val today: AppToday,
     val snapshot: SummarySnapshot,
     val sleepNight: SummarySleepNight?,
+    /** Non-null while today's night has not been seen to end; the card that says so and its button. */
+    val sleepInProgress: SummarySleepInProgress?,
+    /** The wearer says he is awake: sync, and let the detector find when he woke. */
+    val onAwake: () -> Unit,
     val trends: List<HealthTrendItem>?,
     val tiles: List<KeyMetric>,
     val pinned: List<KeyMetric>,
@@ -176,6 +180,33 @@ internal fun SummaryScreen(vm: AppViewModel, actions: SummaryActions) {
     LaunchedEffect(days, selectedKey, reloadTick) {
         sleepNight = SummaryLoader.sleepNight(vm, days, selectedKey)
     }
+    // Is today's night one the app has not seen end? Asked again whenever the days change (every
+    // scoring pass) and when the wearer taps the card's button.
+    var newestDataTs by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(days, reloadTick) { newestDataTs = SummaryLoader.newestDataTs(vm) }
+    var wakeTick by remember { mutableIntStateOf(0) }
+    val pendingWakeTs = remember(wakeTick, days) { com.noop.data.WakeMarkStore.pending(context) }
+    val sleepInProgress = sleepNight
+        ?.takeIf { dayOffset == 0 && it.wakeDayKey == selectedKey && it.stages.asleep > 0 }
+        ?.takeIf {
+            SleepInProgress.isInProgress(
+                bedTs = it.bedTs, lastAsleepTs = it.wakeTs, newestDataTs = newestDataTs,
+                nowTs = maxOf(nowSec, System.currentTimeMillis() / 1000), pendingWakeTs = pendingWakeTs,
+            )
+        }
+        ?.let { SummarySleepInProgress(asleepMinutes = it.stages.asleep) }
+    val onAwake: () -> Unit = {
+        val mark = vm.logWakeNow()
+        wakeTick++
+        android.widget.Toast.makeText(
+            context,
+            context.getString(
+                R.string.sleep_wake_logged,
+                com.noop.ui.sleep.clockLabel(mark.tsMs / 1000L, com.noop.ui.ClockPrefs.uses24Hour(context), locale),
+            ),
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+    }
     // Health's Trends as of now, not the picked day: the first few lead the section.
     var trends by remember { mutableStateOf<List<HealthTrendItem>?>(null) }
     LaunchedEffect(days, reloadTick) {
@@ -188,6 +219,8 @@ internal fun SummaryScreen(vm: AppViewModel, actions: SummaryActions) {
         today = today,
         snapshot = snapshot,
         sleepNight = sleepNight?.takeIf { it.wakeDayKey == selectedKey && it.stages.asleep > 0 },
+        sleepInProgress = sleepInProgress,
+        onAwake = onAwake,
         trends = trends,
         tiles = tiles,
         pinned = SummaryPins.pinned(enabled, tiles),
@@ -303,6 +336,7 @@ private fun LazyListScope.detailedLayout(
     notices(ui, actions)
     item(key = "pager") { DayPagerRow(pager, Modifier.padding(horizontal = 4.dp)) }
     item(key = "rings") { Box(gutter) { SummaryRings(ui, actions) } }
+    ui.sleepInProgress?.let { item(key = "sleep-in-progress") { Box(gutter) { SleepInProgressCard(it, ui.locale, ui.onAwake) } } }
     item(key = "tiles") { Box(gutter) { FitnessTilesRow(ui, actions, onChangeTile) } }
     item(key = "pinned-header") {
         SectionHeader(
@@ -484,6 +518,7 @@ private fun LazyListScope.compactLayout(
     item(key = "c-title") { CompactTopRow(pager, actions) }
     notices(ui, actions)
     item(key = "c-dials") { Box(gutter) { ScoreDialsCard(ui, actions) } }
+    ui.sleepInProgress?.let { item(key = "c-sleep-in-progress") { Box(gutter) { SleepInProgressCard(it, ui.locale, ui.onAwake) } } }
     ui.snapshot.highlights.forEachIndexed { i, h ->
         item(key = "c-highlight-${h.key}") {
             Box(gutter) {

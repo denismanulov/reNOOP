@@ -1240,7 +1240,10 @@
     <string name="sleep_menu_naps">小睡</string>
     <string name="sleep_menu_log_sleep">记录入睡</string>
     <string name="sleep_menu_log_wake">记录醒来</string>
-    <string name="sleep_wake_logged">已记录 %1$s 醒来。夜间数据同步后，睡眠将在该时间结束。</string>
+    <string name="sleep_wake_logged">已在 %1$s 标记为醒来。正在同步以确定醒来时刻。</string>
+    <string name="summary_sleep_in_progress_title">睡眠仍在进行</string>
+    <string name="summary_sleep_in_progress_body">起床后点一下。reNOOP 会同步并找出你醒来的时刻。</string>
+    <string name="summary_sleep_in_progress_awake">我醒了</string>
     <string name="sleep_menu_more">更多</string>
     <string name="sleep_deleted">已删除睡眠。</string>
     <string name="sleep_deleted_window">已删除睡眠。reNOOP 不会再在 %1$s 至 %2$s 之间检测睡眠。</string>

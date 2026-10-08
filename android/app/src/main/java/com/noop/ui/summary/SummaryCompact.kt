@@ -205,6 +205,46 @@ internal fun HighlightBanner(h: SummaryHighlight, primary: Boolean, onClick: () 
     }
 }
 
+/**
+ * The night still being counted: how long so far, and the button that ends it. Shown instead of
+ * leaving a growing total to read as a finished night. The button does not set the wake time; it
+ * starts a sync and the detector finds the moment in the strap's data.
+ */
+@Composable
+internal fun SleepInProgressCard(state: SummarySleepInProgress, locale: java.util.Locale, onAwake: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(M3Dimens.cardRadius),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Bedtime, contentDescription = null, modifier = Modifier.size(28.dp))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        stringResource(R.string.summary_sleep_in_progress_title),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                    Text(stringResource(R.string.summary_sleep_in_progress_body), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.weight(1f)) {
+                    MetricFigure(
+                        durationTokens(state.asleepMinutes, locale),
+                        MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+                        MaterialTheme.typography.titleMedium,
+                    )
+                }
+                androidx.compose.material3.Button(onClick = onAwake) {
+                    Text(stringResource(R.string.summary_sleep_in_progress_awake))
+                }
+            }
+        }
+    }
+}
+
 /** One square of the pinned grid. */
 private sealed interface GridTile {
     data class Sleep(val night: SummarySleepNight) : GridTile

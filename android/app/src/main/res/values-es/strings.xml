@@ -1258,7 +1258,10 @@
     <string name="sleep_menu_naps">Siestas</string>
     <string name="sleep_menu_log_sleep">Registrar que te vas a dormir</string>
     <string name="sleep_menu_log_wake">Registrar que te despiertas</string>
-    <string name="sleep_wake_logged">Despertar registrado a las %1$s. Cuando la noche se sincronice, terminará ahí.</string>
+    <string name="sleep_wake_logged">Marcado como despierto a las %1$s. Sincronizando para encontrar cuándo despertaste.</string>
+    <string name="summary_sleep_in_progress_title">El sueño sigue en curso</string>
+    <string name="summary_sleep_in_progress_body">Toca cuando te levantes. reNOOP sincroniza y encuentra cuándo despertaste.</string>
+    <string name="summary_sleep_in_progress_awake">Estoy despierto</string>
     <string name="sleep_menu_more">Más</string>
     <string name="sleep_deleted">Sueño eliminado.</string>
     <string name="sleep_deleted_window">Sueño eliminado. reNOOP no volverá a detectar sueño entre %1$s y %2$s.</string>

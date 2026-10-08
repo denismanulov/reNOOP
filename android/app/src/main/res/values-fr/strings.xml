@@ -1257,7 +1257,10 @@
     <string name="sleep_menu_naps">Siestes</string>
     <string name="sleep_menu_log_sleep">Enregistrer l\'endormissement</string>
     <string name="sleep_menu_log_wake">Enregistrer le réveil</string>
-    <string name="sleep_wake_logged">Réveil enregistré à %1$s. Une fois la nuit synchronisée, elle se terminera à ce moment-là.</string>
+    <string name="sleep_wake_logged">Réveil signalé à %1$s. Synchronisation pour trouver l\'heure du réveil.</string>
+    <string name="summary_sleep_in_progress_title">Sommeil encore en cours</string>
+    <string name="summary_sleep_in_progress_body">Touchez quand vous êtes levé. reNOOP synchronise et trouve l\'heure du réveil.</string>
+    <string name="summary_sleep_in_progress_awake">Je suis réveillé</string>
     <string name="sleep_menu_more">Plus</string>
     <string name="sleep_deleted">Sommeil supprimé.</string>
     <string name="sleep_deleted_window">Sommeil supprimé. reNOOP ne détectera plus de sommeil entre %1$s et %2$s.</string>

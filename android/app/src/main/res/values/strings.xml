@@ -1287,7 +1287,10 @@
     <string name="sleep_menu_naps">Naps</string>
     <string name="sleep_menu_log_sleep">Log going to sleep</string>
     <string name="sleep_menu_log_wake">Log waking up</string>
-    <string name="sleep_wake_logged">Wake-up logged at %1$s. Once the night has synced, it will end there.</string>
+    <string name="sleep_wake_logged">Marked awake at %1$s. Syncing to find when you woke.</string>
+    <string name="summary_sleep_in_progress_title">Sleep still in progress</string>
+    <string name="summary_sleep_in_progress_body">Tap when you are up. reNOOP syncs and finds when you woke.</string>
+    <string name="summary_sleep_in_progress_awake">I\'m awake</string>
     <string name="sleep_menu_more">More</string>
     <string name="sleep_deleted">Sleep deleted.</string>
     <string name="sleep_deleted_window">Sleep deleted. reNOOP won\'t detect sleep between %1$s and %2$s again.</string>

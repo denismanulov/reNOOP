@@ -1228,7 +1228,10 @@
     <string name="sleep_menu_naps">Sonnellini</string>
     <string name="sleep_menu_log_sleep">Registra l\'addormentamento</string>
     <string name="sleep_menu_log_wake">Registra il risveglio</string>
-    <string name="sleep_wake_logged">Risveglio registrato alle %1$s. Quando la notte sarà sincronizzata, terminerà lì.</string>
+    <string name="sleep_wake_logged">Segnato sveglio alle %1$s. Sincronizzo per trovare quando ti sei svegliato.</string>
+    <string name="summary_sleep_in_progress_title">Sonno ancora in corso</string>
+    <string name="summary_sleep_in_progress_body">Tocca quando ti alzi. reNOOP sincronizza e trova quando ti sei svegliato.</string>
+    <string name="summary_sleep_in_progress_awake">Sono sveglio</string>
     <string name="sleep_menu_more">Altro</string>
     <string name="sleep_deleted">Sonno eliminato.</string>
     <string name="sleep_deleted_window">Sonno eliminato. reNOOP non rileverà più il sonno tra %1$s e %2$s.</string>

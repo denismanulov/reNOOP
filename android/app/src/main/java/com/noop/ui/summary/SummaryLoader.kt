@@ -77,6 +77,8 @@ internal data class SummarySleepNight(
     val wakeDayKey: String,
     /** When the night ended (unix seconds): the card's stamp. */
     val wakeTs: Long,
+    /** When the night's main block began (unix seconds). */
+    val bedTs: Long,
     val stages: Stages,
     /** The night's timestamped stage segments, for the compact chart; null when none were stored. */
     val segments: List<PersistedSegment>?,
@@ -281,6 +283,11 @@ internal object SummaryLoader {
         )
     }.getOrNull()
 
+    /** The newest heart-rate sample on record for the active strap (unix seconds), or null with none. */
+    suspend fun newestDataTs(vm: AppViewModel): Long? = withContext(Dispatchers.IO) {
+        runCatching { vm.repo.latestHrSampleTsUnion(vm.activeStrapId) }.getOrNull()
+    }
+
     // MARK: - The Sleep card's night
 
     private data class SleepMemo(val key: List<Any?>, val sleeps: List<SleepSession>, val habitual: Long?)
@@ -325,6 +332,7 @@ internal object SummaryLoader {
                 SummarySleepNight(
                     wakeDayKey = wakeDayKey,
                     wakeTs = night.heroWakeTs ?: night.session.endTs,
+                    bedTs = night.session.effectiveStartTs,
                     stages = display.stages,
                     segments = display.hypnogramSegments,
                     naps = night.napBlocks.map { SleepNightsLoader.nap(it) },
