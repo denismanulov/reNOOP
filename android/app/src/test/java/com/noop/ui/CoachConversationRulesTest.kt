@@ -12,7 +12,7 @@ import java.time.ZoneOffset
 
 /**
  * Pins the Messages-style Coach conversation rules ([CoachConversationRules], [CoachMessageMeta]):
- * stamps, bubble corners, which chips the composer offers (the brief only on an empty chat with data
+ * day chips, bubble corners, which chips the composer offers (the brief only on an empty chat with data
  * access, never sent by itself: CR-10), Try Again, the failed question, and dictation that keeps the
  * typed text (CR-12). Twins of the rules in Swift `CoachView` / `AICoachEngine`.
  */
@@ -29,21 +29,30 @@ class CoachConversationRulesTest {
     // MARK: stamps
 
     @Test
-    fun `the first message is stamped, a follow-up within the hour is not, one an hour later is`() {
-        val ids = listOf("a", "b", "c")
-        val times = mapOf("a" to ms(2026, 10, 1, 9), "b" to ms(2026, 10, 1, 9, 59), "c" to ms(2026, 10, 1, 10, 59))
-        assertEquals(times["a"], CoachConversationRules.stampBefore(0, ids, times))
-        assertNull(CoachConversationRules.stampBefore(1, ids, times))
-        assertEquals(times["c"], CoachConversationRules.stampBefore(2, ids, times))
+    fun `each local day gets one chip, on its first dated message`() {
+        val ids = listOf("a", "b", "c", "d")
+        val times = mapOf(
+            "a" to ms(2026, 10, 1, 9),
+            "b" to ms(2026, 10, 1, 23, 30),
+            "c" to ms(2026, 10, 2, 0, 5),
+            "d" to ms(2026, 10, 2, 18),
+        )
+        assertEquals(times["a"], CoachConversationRules.dayChipBefore(0, ids, times, utc))
+        assertNull(CoachConversationRules.dayChipBefore(1, ids, times, utc))
+        assertEquals(times["c"], CoachConversationRules.dayChipBefore(2, ids, times, utc))
+        assertNull(CoachConversationRules.dayChipBefore(3, ids, times, utc))
     }
 
     @Test
-    fun `a message without a recorded time gets no stamp, nor does the one after it`() {
-        val ids = listOf("old", "new")
-        val times = mapOf("new" to ms(2026, 10, 1, 12))
-        assertNull(CoachConversationRules.stampBefore(0, ids, times))
-        assertNull(CoachConversationRules.stampBefore(1, ids, times))
-        assertNull(CoachConversationRules.stampBefore(5, ids, times))
+    fun `a message without a recorded time gets no chip and does not make its neighbours repeat the day`() {
+        val ids = listOf("a", "old", "b", "next")
+        val times = mapOf("a" to ms(2026, 10, 1, 9), "b" to ms(2026, 10, 1, 12), "next" to ms(2026, 10, 2, 7))
+        assertNull(CoachConversationRules.dayChipBefore(1, ids, times, utc))
+        assertNull(CoachConversationRules.dayChipBefore(2, ids, times, utc))
+        assertEquals(times["next"], CoachConversationRules.dayChipBefore(3, ids, times, utc))
+        assertNull(CoachConversationRules.dayChipBefore(9, ids, times, utc))
+        // Undated messages ahead of the first dated one leave it the first of its day.
+        assertEquals(times["b"], CoachConversationRules.dayChipBefore(1, listOf("old", "b"), times, utc))
     }
 
     @Test

@@ -1745,9 +1745,7 @@
     <string name="picker_use">Usar “%1$s”</string>
     <string name="intervals_finish_question">Terminar esta sessão de intervalos?</string>
     <string name="coach_title">Treinador de IA</string>
-    <string name="coach_subtitle">%1$s · A IA pode cometer erros</string>
     <string name="coach_custom_server">Servidor próprio</string>
-    <string name="coach_your_server">O seu servidor</string>
     <string name="coach_empty_title">Treinador</string>
     <string name="coach_empty_message">Ligue o seu próprio fornecedor de IA.</string>
     <string name="coach_set_up">Configurar</string>
@@ -1758,6 +1756,15 @@
     <string name="coach_try_again">Tentar novamente</string>
     <string name="coach_update_key">Atualizar chave</string>
     <string name="coach_thinking">O treinador está a pensar</string>
+    <string name="coach_typing">a escrever…</string>
+    <string name="coach_phrase_thinking">A pensar…</string>
+    <string name="coach_phrase_pondering">A refletir…</string>
+    <string name="coach_phrase_mulling">A ponderar…</string>
+    <string name="coach_phrase_connecting">A ligar os pontos…</string>
+    <string name="coach_phrase_weighing">A pesar os prós e os contras…</string>
+    <string name="coach_phrase_wording">À procura das palavras…</string>
+    <string name="coach_greeting">O que quer saber?</string>
+    <string name="coach_jump_to_latest">Ir para as mais recentes</string>
     <string name="coach_you_said">Disseste: %1$s</string>
     <string name="coach_coach_said">Treinador disse: %1$s</string>
     <string name="coach_send">Enviar</string>

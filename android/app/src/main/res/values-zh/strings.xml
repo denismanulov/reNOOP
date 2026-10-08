@@ -1732,9 +1732,7 @@
     <string name="picker_use">使用“%1$s”</string>
     <string name="intervals_finish_question">结束这次间歇训练？</string>
     <string name="coach_title">AI 教练</string>
-    <string name="coach_subtitle">%1$s · AI 可能会出错</string>
     <string name="coach_custom_server">自定服务器</string>
-    <string name="coach_your_server">你的服务器</string>
     <string name="coach_empty_title">教练</string>
     <string name="coach_empty_message">连接你自己的 AI 服务提供商。</string>
     <string name="coach_set_up">设置</string>
@@ -1745,6 +1743,15 @@
     <string name="coach_try_again">重试</string>
     <string name="coach_update_key">更新密钥</string>
     <string name="coach_thinking">教练正在思考</string>
+    <string name="coach_typing">正在输入…</string>
+    <string name="coach_phrase_thinking">思考中…</string>
+    <string name="coach_phrase_pondering">琢磨中…</string>
+    <string name="coach_phrase_mulling">再想想…</string>
+    <string name="coach_phrase_connecting">梳理思路…</string>
+    <string name="coach_phrase_weighing">权衡中…</string>
+    <string name="coach_phrase_wording">组织语言…</string>
+    <string name="coach_greeting">想了解什么？</string>
+    <string name="coach_jump_to_latest">跳到最新消息</string>
     <string name="coach_you_said">你说：%1$s</string>
     <string name="coach_coach_said">教练说：%1$s</string>
     <string name="coach_send">发送</string>

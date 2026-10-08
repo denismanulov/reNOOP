@@ -10,7 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -33,12 +40,31 @@ import androidx.compose.ui.text.TextStyle
  * Text() that rendered `**bold**` literally. Styled from the Material type scale and colour scheme so it
  * matches the reply bubble it sits in.
  *
+ * Chat-sized type: the body is [body] (bodyMedium, the size of the question bubbles), and a heading is
+ * one step up from it at most. A reply that opens with `#` used to be set in titleLarge, which made the
+ * coach read as shouting next to the wearer's own messages.
+ *
+ * [tail] reserves room at the end of the last line for whatever the bubble lays over its bottom corner
+ * (the time). It is honoured only when [coachMarkdownTakesTail] says the reply ends in running text.
+ *
  * The inline parser (parseInline) is pure and unit-tested in CoachMarkdownTest; block layout is above.
  */
 @Composable
-fun CoachMarkdown(text: String, color: Color = MaterialTheme.colorScheme.onSurface) {
+fun CoachMarkdown(
+    text: String,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    body: TextStyle = MaterialTheme.typography.bodyMedium,
+    tail: TextUnit = TextUnit.Unspecified,
+) {
     Column {
         val lines = text.replace("\r\n", "\n").split("\n")
+        val tailLine = if (tail != TextUnit.Unspecified && coachMarkdownTakesTail(text)) lines.indexOfLast { it.isNotBlank() } else -1
+        val tailContent = remember(tail) {
+            if (tail == TextUnit.Unspecified) emptyMap()
+            else mapOf(TAIL_ID to InlineTextContent(Placeholder(tail, 1.sp, PlaceholderVerticalAlign.TextBottom)) {})
+        }
+        fun withTail(index: Int, content: AnnotatedString): AnnotatedString =
+            if (index != tailLine) content else buildAnnotatedString { append(content); appendInlineContent(TAIL_ID, " ") }
         var i = 0
         var firstBlock = true
         while (i < lines.size) {
@@ -55,27 +81,27 @@ fun CoachMarkdown(text: String, color: Color = MaterialTheme.colorScheme.onSurfa
             val raw = lines[i]
             val line = raw.trimEnd()
             when {
-                line.isBlank() -> Spacer(Modifier.height(6.dp))
+                line.isBlank() -> Spacer(Modifier.height(4.dp))
                 line.startsWith("### ") -> {
-                    if (!firstBlock) Spacer(Modifier.height(8.dp))
-                    HeadingText(line.removePrefix("### "), MaterialTheme.typography.titleSmall, color)
+                    if (!firstBlock) Spacer(Modifier.height(6.dp))
+                    HeadingText(line.removePrefix("### "), body, color)
                 }
                 line.startsWith("## ") -> {
-                    if (!firstBlock) Spacer(Modifier.height(10.dp))
-                    HeadingText(line.removePrefix("## "), MaterialTheme.typography.titleMedium, color)
+                    if (!firstBlock) Spacer(Modifier.height(6.dp))
+                    HeadingText(line.removePrefix("## "), MaterialTheme.typography.titleSmall, color)
                 }
                 line.startsWith("# ") -> {
-                    if (!firstBlock) Spacer(Modifier.height(10.dp))
-                    HeadingText(line.removePrefix("# "), MaterialTheme.typography.titleLarge, color)
+                    if (!firstBlock) Spacer(Modifier.height(8.dp))
+                    HeadingText(line.removePrefix("# "), MaterialTheme.typography.titleMedium, color)
                 }
                 line.startsWith("- ") || line.startsWith("* ") || line.startsWith("+ ") ->
-                    BulletItem("•", parseInline(line.drop(2), color), color)
+                    BulletItem("•", withTail(i, parseInline(line.drop(2), color)), color, body, tailContent)
                 NUMBERED.matchEntire(line) != null -> {
                     val m = NUMBERED.matchEntire(line)!!
-                    BulletItem(m.groupValues[1] + ".", parseInline(m.groupValues[2], color), color)
+                    BulletItem(m.groupValues[1] + ".", withTail(i, parseInline(m.groupValues[2], color)), color, body, tailContent)
                 }
                 else -> androidx.compose.material3.Text(
-                    parseInline(line, color), style = MaterialTheme.typography.bodyLarge, color = color,
+                    withTail(i, parseInline(line, color)), style = body, color = color, inlineContent = tailContent,
                 )
             }
             firstBlock = firstBlock && line.isBlank()
@@ -85,6 +111,40 @@ fun CoachMarkdown(text: String, color: Color = MaterialTheme.colorScheme.onSurfa
 }
 
 private val NUMBERED = Regex("""^(\d+)\.\s+(.*)$""")
+
+private const val TAIL_ID = "coachTail"
+
+/**
+ * A question bubble's text: verbatim, so a typed `*` or `#` never turns into formatting, with the same
+ * room at the end of its last line as [CoachMarkdown]'s `tail`.
+ */
+@Composable
+fun CoachPlainText(text: String, color: Color, style: TextStyle, tail: TextUnit = TextUnit.Unspecified) {
+    if (tail == TextUnit.Unspecified) {
+        androidx.compose.material3.Text(text, style = style, color = color)
+        return
+    }
+    val content = remember(tail) {
+        mapOf(TAIL_ID to InlineTextContent(Placeholder(tail, 1.sp, PlaceholderVerticalAlign.TextBottom)) {})
+    }
+    androidx.compose.material3.Text(
+        buildAnnotatedString { append(text); appendInlineContent(TAIL_ID, " ") },
+        style = style,
+        color = color,
+        inlineContent = content,
+    )
+}
+
+/**
+ * Whether a reply ends in running text (a paragraph or a list item), so the space [CoachMarkdown]'s
+ * `tail` reserves lands on its last line. A reply that ends in a heading or a table row does not: the
+ * bubble then sets the time on a line of its own. A table row always holds a `|`, so a last line with
+ * none cannot belong to a table.
+ */
+fun coachMarkdownTakesTail(text: String): Boolean {
+    val last = text.replace("\r\n", "\n").split("\n").lastOrNull { it.isNotBlank() }?.trimEnd() ?: return false
+    return !last.contains("|") && !last.startsWith("# ") && !last.startsWith("## ") && !last.startsWith("### ")
+}
 
 /** A single * or _ opens emphasis only at a word boundary with non-space content after, so "3*4" and a
  *  stray "*" stay literal (a simplified CommonMark left-flanking rule). */
@@ -101,14 +161,20 @@ private fun HeadingText(text: String, style: TextStyle, color: Color) {
 }
 
 @Composable
-private fun BulletItem(marker: String, content: AnnotatedString, color: Color) {
+private fun BulletItem(
+    marker: String,
+    content: AnnotatedString,
+    color: Color,
+    body: TextStyle,
+    inlineContent: Map<String, InlineTextContent>,
+) {
     Row(modifier = Modifier.padding(start = 2.dp)) {
         androidx.compose.material3.Text(
-            marker, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            marker, style = body, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(if (marker.length > 2) 22.dp else 14.dp),
         )
         Spacer(Modifier.width(2.dp))
-        androidx.compose.material3.Text(content, style = MaterialTheme.typography.bodyLarge, color = color)
+        androidx.compose.material3.Text(content, style = body, color = color, inlineContent = inlineContent)
     }
 }
 
@@ -217,7 +283,7 @@ private fun MarkdownTableRow(cells: List<String>, columns: Int, color: Color, he
         for (c in 0 until columns) {
             androidx.compose.material3.Text(
                 parseInline(cells.getOrElse(c) { "" }, color),
-                style = if (header) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold) else MaterialTheme.typography.bodyMedium,
+                style = if (header) MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold) else MaterialTheme.typography.bodySmall,
                 color = color,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 6.dp),
             )

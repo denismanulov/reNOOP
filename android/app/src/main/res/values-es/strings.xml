@@ -1752,9 +1752,7 @@
     <string name="picker_use">Usar “%1$s”</string>
     <string name="intervals_finish_question">¿Terminar esta sesión de intervalos?</string>
     <string name="coach_title">Entrenador de IA</string>
-    <string name="coach_subtitle">%1$s · La IA puede cometer errores</string>
     <string name="coach_custom_server">Servidor propio</string>
-    <string name="coach_your_server">Tu servidor</string>
     <string name="coach_empty_title">Entrenador</string>
     <string name="coach_empty_message">Conecta tu propio proveedor de IA.</string>
     <string name="coach_set_up">Configurar</string>
@@ -1765,6 +1763,15 @@
     <string name="coach_try_again">Reintentar</string>
     <string name="coach_update_key">Actualizar clave</string>
     <string name="coach_thinking">El Entrenador está pensando</string>
+    <string name="coach_typing">escribiendo…</string>
+    <string name="coach_phrase_thinking">Pensando…</string>
+    <string name="coach_phrase_pondering">Reflexionando…</string>
+    <string name="coach_phrase_mulling">Dándole vueltas…</string>
+    <string name="coach_phrase_connecting">Atando cabos…</string>
+    <string name="coach_phrase_weighing">Sopesando…</string>
+    <string name="coach_phrase_wording">Buscando las palabras…</string>
+    <string name="coach_greeting">¿Qué quieres saber?</string>
+    <string name="coach_jump_to_latest">Ir a lo más reciente</string>
     <string name="coach_you_said">Dijiste: %1$s</string>
     <string name="coach_coach_said">El Entrenador dijo: %1$s</string>
     <string name="coach_send">Enviar</string>
