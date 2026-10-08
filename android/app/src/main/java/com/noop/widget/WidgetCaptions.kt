@@ -1,5 +1,8 @@
 package com.noop.widget
 
+import com.noop.ui.EffortScale
+import com.noop.ui.UnitFormatter
+
 /**
  * What the widgets print and speak, kept pure so it is pinned by a JVM test.
  *
@@ -17,6 +20,20 @@ internal object WidgetCaptions {
 
     /** The figure inside a ring: the whole number, without a sign (the ring is the percent). */
     fun score(pct: Int?): String = pct?.toString() ?: DASH
+
+    /**
+     * The strain figure, on the scale the wearer chose in Settings.
+     *
+     * On the app's own 0 to 100 axis it is the whole number, as the other two rings print theirs. On
+     * WHOOP's 0 to 21 axis it is one decimal through [UnitFormatter.effortDisplay], the helper every
+     * strain read-out in the app goes through, so the widget cannot print a different number from the
+     * Summary. The ring's arc does not depend on the scale: 19 of 100 and 4.0 of 21 are the same arc.
+     */
+    fun effort(effortPct: Int?, effort: Double?, scale: EffortScale): String {
+        if (scale != EffortScale.WHOOP) return score(effortPct)
+        val stored = effort ?: effortPct?.toDouble() ?: return DASH
+        return UnitFormatter.effortDisplay(stored, scale)
+    }
 
     /** The heart-rate figure. */
     fun heartRate(bpm: Int?): String = bpm?.toString() ?: DASH

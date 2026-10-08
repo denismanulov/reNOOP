@@ -138,6 +138,7 @@ internal enum class WidgetRing(@LayoutRes val layout: Int, @IdRes val bar: Int) 
 /**
  * A score ring with its figure inside: the arc is [pct] of the circle over a full track, and an unscored
  * ring is the bare track around a dash, never an arc at zero. One TalkBack element, spoken as [spoken].
+ * [figure] is what is printed inside when that is not the whole percent (strain on the 0 to 21 scale).
  */
 @Composable
 internal fun WidgetScoreRing(
@@ -146,6 +147,7 @@ internal fun WidgetScoreRing(
     diameter: Dp,
     figureSize: TextUnit,
     spoken: String,
+    figure: String = WidgetCaptions.score(pct),
 ) {
     val context = LocalContext.current
     val views = RemoteViews(context.packageName, ring.layout).apply {
@@ -157,7 +159,7 @@ internal fun WidgetScoreRing(
     ) {
         AndroidRemoteViews(remoteViews = views, modifier = GlanceModifier.fillMaxSize())
         Text(
-            text = WidgetCaptions.score(pct),
+            text = figure,
             style = WidgetType.figure(
                 figureSize,
                 if (pct == null) WidgetColors.onSurfaceVariant else WidgetColors.onSurface,

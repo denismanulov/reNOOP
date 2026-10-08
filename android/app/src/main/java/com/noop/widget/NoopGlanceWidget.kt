@@ -28,6 +28,8 @@ import com.noop.R
 import com.noop.analytics.ClockFormat
 import com.noop.ui.AppLink
 import com.noop.ui.ClockPrefs
+import com.noop.ui.EffortScale
+import com.noop.ui.UnitPrefs
 import com.noop.ui.uiString
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,7 +78,10 @@ private fun WidgetContent(snap: WidgetSnapshot) {
         // The three scores in the Summary's order. Each cell is honest-null until that score exists.
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             ScoreCell(WidgetRing.Charge, uiString(R.string.metric_title_charge), snap.recoveryPct, GlanceModifier.defaultWeight())
-            ScoreCell(WidgetRing.Effort, uiString(R.string.metric_title_effort), snap.effortPct, GlanceModifier.defaultWeight())
+            ScoreCell(
+                WidgetRing.Effort, uiString(R.string.metric_title_effort), snap.effortPct, GlanceModifier.defaultWeight(),
+                figure = effortFigure(snap),
+            )
             ScoreCell(WidgetRing.Rest, uiString(R.string.metric_title_rest), snap.restPct, GlanceModifier.defaultWeight())
         }
         Spacer(GlanceModifier.defaultWeight())
@@ -84,17 +89,32 @@ private fun WidgetContent(snap: WidgetSnapshot) {
     }
 }
 
+/**
+ * The strain figure when it is NOT the whole percent, which is when the wearer reads strain on the 0 to
+ * 21 scale; null on the app's own 0 to 100 axis, where the cell prints the percent like its neighbours.
+ * Shared by the rings and the compact widget so the two cannot print different numbers.
+ */
+@Composable
+internal fun effortFigure(snap: WidgetSnapshot): String? {
+    val scale = UnitPrefs.effortScale(LocalContext.current)
+    return if (scale == EffortScale.WHOOP) WidgetCaptions.effort(snap.effortPct, snap.effort, scale) else null
+}
+
 /** One score: its ring with the figure inside, over its caption in the reader's language (WG-5). */
 @Composable
-private fun ScoreCell(ring: WidgetRing, label: String, pct: Int?, modifier: GlanceModifier) {
+private fun ScoreCell(ring: WidgetRing, label: String, pct: Int?, modifier: GlanceModifier, figure: String? = null) {
     // Built OUT here rather than inside a semantics lambda: #571 recorded that the i18n audit cannot see
     // copy assigned inside one.
     val noData = uiString(R.string.widget_no_data)
+    // A figure that is not the percent is spoken as itself: "Strain, 4.0", never "Strain, 19%".
     val spoken = WidgetCaptions.spoken(
-        label, pct?.let { uiString(R.string.l10n_today_screen_pct_ee63e247, it) }, noData,
+        label, pct?.let { figure ?: uiString(R.string.l10n_today_screen_pct_ee63e247, it) }, noData,
     )
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        WidgetScoreRing(ring, pct, diameter = 52.dp, figureSize = 16.sp, spoken = spoken)
+        WidgetScoreRing(
+            ring, pct, diameter = 52.dp, figureSize = 16.sp, spoken = spoken,
+            figure = figure ?: WidgetCaptions.score(pct),
+        )
         Spacer(GlanceModifier.height(2.dp))
         // Decorative to TalkBack in effect: the ring above already speaks "Charge, 68%".
         Text(text = label, style = WidgetType.captionStyle, maxLines = 1)

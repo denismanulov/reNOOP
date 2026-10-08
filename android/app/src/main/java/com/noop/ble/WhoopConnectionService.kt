@@ -87,6 +87,8 @@ internal data class NotifyDayState(
     val widgetRecovery: Int?,
     val widgetRest: Int?,
     val widgetEffort: Int?,
+    /** The same strain unrounded, for the widget's figure on the 0 to 21 scale. */
+    val widgetEffortStored: Double?,
     val illness: String?,
     val days: List<DailyMetric>,
 )
@@ -130,6 +132,7 @@ internal class NotifyDayStateCache(
             widgetRecovery = anchorRow?.recovery?.roundToInt(),
             widgetRest = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
             widgetEffort = anchorRow?.strain?.roundToInt(),
+            widgetEffortStored = anchorRow?.strain,
             illness = if (illnessEnabled) illnessEvaluator(days) else null,
             days = days,
         )
@@ -531,6 +534,7 @@ class WhoopConnectionService : Service() {
                             // strain. Widget-only carry, so it shows the same day as Today. (#516/#911)
                             restPct = dayState.widgetRest,
                             effortPct = dayState.widgetEffort,
+                            effort = dayState.widgetEffortStored,
                             heartRate = state.heartRate,
                             // The ACTIVE device's charge (#2075). This service is the widget's
                             // HEARTBEAT, so publishing the WHOOP's field here would have overwritten the

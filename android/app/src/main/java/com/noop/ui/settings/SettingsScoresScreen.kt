@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -36,6 +37,8 @@ import com.noop.ui.m3.ConfirmDialog
 import com.noop.ui.m3.ListGroup
 import com.noop.ui.m3.ListRow
 import com.noop.ui.m3.SwitchRow
+import com.noop.widget.WidgetSnapshotStore
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 // MARK: - Scores (twin of iOS ScoresSettingsPage)
@@ -50,6 +53,7 @@ private enum class ScoresDialog { EFFORT_SCALE, HRV_WINDOW, RESET }
 @Composable
 internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val profile = remember { ProfileStore.from(context) }
     var rev by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val tick = rev
@@ -185,6 +189,8 @@ internal fun SettingsScoresScreen(vm: AppViewModel, open: (String) -> Unit, onBa
                 dialog = null
                 effortScale = if (i == 0) EffortScale.HUNDRED else EffortScale.WHOOP
                 UnitPrefs.setEffortScale(context, effortScale)
+                // The home-screen widgets print strain on this scale too, and nothing else tells them.
+                scope.launch { WidgetSnapshotStore.redrawScores(context) }
             },
             onDismiss = { dialog = null },
         )
