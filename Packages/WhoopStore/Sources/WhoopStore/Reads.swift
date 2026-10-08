@@ -96,6 +96,24 @@ extension WhoopStore {
         }
     }
 
+    /// The nonzero WHOOP 4.0 v24 `aux_byte_86` readings in `[from, to]`, ascending by ts, codes
+    /// included; a zero byte is never stored. Empty for a 5/MG and for any window offloaded before the
+    /// byte was banked. Twin of Kotlin `WhoopRepository.v24AuxByte86Samples`.
+    public func v24AuxByte86Samples(deviceId: String, from: Int, to: Int,
+                                    limit: Int = 200_000) async throws -> [V24AuxByte86Sample] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT ts, payloadJSON FROM event
+                WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ?
+                ORDER BY ts ASC LIMIT ?
+                """, arguments: [deviceId, V24AuxByte86Mapping.eventKind, from, to, limit])
+                .map { row in
+                    let json: String = row["payloadJSON"]
+                    return try V24AuxByte86Mapping.sample(ts: row["ts"], payloadJSON: json)
+                }
+        }
+    }
+
     /// Cheap change-detector for the raw HR stream: `(count, maxTs)` over `[from, to]`, computed in
     /// SQLite over the `(deviceId, ts)` index WITHOUT materializing any rows (#836). Lets a caller decide
     /// "nothing was inserted since last time, skip the expensive re-read" for pennies, `COUNT(*)` moves on

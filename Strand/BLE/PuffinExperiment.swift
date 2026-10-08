@@ -59,12 +59,16 @@ enum PuffinExperiment {
     ///  - **WHOOP 5/MG**: the `spo2_candidate_82` V18Aux byte (70–100 range). An 8-night independent
     ///    validation tracked it at corr +0.99 against the WHOOP app, but two nights on the original #103
     ///    device moved OPPOSITE — device/firmware variance unresolved.
+    ///  - **WHOOP 4.0**: the strap's own result byte at `@86` of a 104-byte v24 record (`aux_byte_86`,
+    ///    70–100 range), banked as `V24_AUX_BYTE_86` events and averaged by
+    ///    `AnalyticsEngine.nightlyV24Spo2CandidateMean`. Not compared with a reference oximeter or with
+    ///    the WHOOP app's nightly figure.
     ///  - **Oura**: `min(sample, 100)` applied per-sample to the ring's own decoded `0x6F` SpO2, then
     ///    averaged (`AnalyticsEngine.nightlySpo2CeilingMean`) — the raw wire mean has a documented
     ///    positive bias (OURA_PROTOCOL.md §6.5.0), so ceiling@100 is queue 11a's starting transform,
     ///    round-matching the Oura app's own displayed SpO2 on 3/3 full-tier nights measured so far
     ///    (2026-08-22).
-    /// Neither candidate is a validated calibration. Per the derived-biosignal rule (CLAUDE.md), both ship
+    /// No candidate is a validated calibration. Per the derived-biosignal rule (CLAUDE.md), all ship
     /// behind this one default-off toggle, never as the default `spo2Pct` and never feeding a downstream
     /// gate.
     ///

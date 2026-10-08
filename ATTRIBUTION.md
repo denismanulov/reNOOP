@@ -47,6 +47,15 @@ This is long-standing practice, not a one-off. Worked examples already in the tr
   percentage, attributed as *"a decompile-sourced decode (gen5.rs `spo2_pct`), reimplemented here as a
   protocol fact with attribution"*. A guard test stops it ever writing `spo2Pct`, and it is still a
   candidate because the cross-device evidence is split.
+- **`aux_byte_86` / `spo2_candidate_86`** (`PostHooks.swift` / `HistoricalStreams.kt`) — WHOOP 4.0
+  byte `@86` of a 104-byte v24 record read as the strap's own SpO₂ result: `0` nothing computed,
+  `70..100` a percentage, anything else a status code. The offset and that vocabulary come from
+  *alex-holovach/life `docs/RESPIRATION-OXYGEN.md` (static analysis of strap firmware 41.17.4.0)*;
+  no code from that project is used. This source is a firmware analysis and not an app decompile, and
+  the same line applies. Corroborated on real hardware by the two overnight captures attached to
+  #1617: the byte is nonzero only in the records whose optical channel words at 80/82 read enabled
+  (28 of 28 and 8 of 8), where it reads codes and then 93..95. Still a candidate: nothing has been
+  compared against a reference oximeter or the WHOOP app's nightly figure.
 - **The R22 config opcodes** (`Whoop5Config.swift` / `.kt`) — `SET_FF_VALUE (0x78)` and the flag key
   names, corroborated against *Asherlc/dofek docs/whoop-ble-protocol.md (Android APK decompilation)*
   and validated byte-for-byte against a decrypted HCI capture.

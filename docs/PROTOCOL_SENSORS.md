@@ -145,6 +145,7 @@ in the complete WHOOP 4 frame; version is byte 5.
 | 76/78 | 2/u16 | LED-drive words | units and channel assignment unresolved |
 | 80 | 2/u16 | respiration-adjacent raw | not breaths/minute |
 | 82 | 2/u16 | signal-quality word | scale/polarity unresolved |
+| 86 | 1/u8 | strap-computed blood-oxygen result (`aux_byte_86`) | candidate; 104-byte record only; `0` none, `70..100` percent, other values status codes; not compared with a reference |
 | 92 | 4/u32 | cumulative firmware step count | capture-backed on one strap; present only in the 104-byte record; about 1.26 ticks per step on one wearer; rollover and reset unvalidated |
 
 One version-identified 41.17.6.0 offload contained 1,704
@@ -153,6 +154,16 @@ magnitude was physiologically plausible. This validates decoding for that captur
 not cloud equivalence, medical accuracy or universal v24 output behavior.
 Versions 12 and 24 share a retained layout map; that association is not a fresh
 v12 device validation.
+
+**Observed in device captures (two straps, the #1617 overnight logs, 522 records):** the byte at 86
+was zero in all 486 records where the words at 80 and 82 read `0x0C01` / `0x0C02`, and nonzero in all
+36 records where they read otherwise (`0x0B01` / `0x0562` on one strap, `0x0B51` / `0x0552` on the
+other). Within those runs it read `8`, `16`, `40`, `128` or `168` and then `93`, `94` or `95`. On a
+third strap the word at 80 left `0x0C01` for about 29 seconds roughly every 19 minutes, and over
+eight days never between 13:00 and 23:00 local.
+A third-party firmware analysis (see [`ATTRIBUTION.md`](../ATTRIBUTION.md)) describes 78/80/82 as
+optical channel configuration words and 86 as the oxygen result; the names "respiration-adjacent" and
+"signal-quality" above are retained decoder labels, not a claim about what those words measure.
 
 **Observed in device captures (one strap, 2026-10-03, 1,203 consecutive records):** the value at
 92 never decreased, stayed flat through 14.5 minutes seated despite arm motion, and rose only

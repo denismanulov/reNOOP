@@ -227,8 +227,8 @@ final class IntelligenceEngine: ObservableObject {
         let hrvDiag: String?
         /// #103/queue-11a: the nightly SpO₂ candidate mean for this day, computed off the main actor when
         /// the SpO₂ candidate display toggle is ON. A WHOOP owner gets the `spo2_candidate_82` V18Aux
-        /// byte mean (unchanged); an Oura owner gets the ring's ceiling@100 `0x6F` mean
-        /// (`AnalyticsEngine.nightlySpo2CeilingMean`, queue 11a). nil when the toggle is OFF or the
+        /// byte mean (unchanged), or on a WHOOP 4.0 the v24 `aux_byte_86` mean; an Oura owner gets the
+        /// ring's ceiling@100 `0x6F` mean (`AnalyticsEngine.nightlySpo2CeilingMean`, queue 11a). nil when the toggle is OFF or the
         /// night has no in-band reading for its owner's device. Written to metricSeries as
         /// "spo2_candidate" under the "-noop" device ID in pass 2 — same key for both devices, since the
         /// series is always read scoped to one device's own computed ID.
@@ -1798,8 +1798,9 @@ final class IntelligenceEngine: ObservableObject {
                 // (70–100) `spo2_candidate_82` V18Aux byte; an Oura owner averages the ring's own `0x6F`
                 // SpO2 (`spo2`, already fetched above for `nightlySpo2RawMeans`) through the ceiling@100
                 // transform — see `AnalyticsEngine.nightlySpo2CeilingMean`'s doc for why ceiling@100 is
-                // queue 11a's starting choice. nil on a WHOOP 4.0 (no v18 aux stream) with no candidate
-                // decode, an Oura night with no in-window plausible sample, or when the toggle is OFF.
+                // queue 11a's starting choice. A WHOOP 4.0 has no v18 aux stream and averages its v24
+                // `aux_byte_86` readings instead. nil on a night with no in-window in-band reading, or
+                // when the toggle is OFF.
                 // The mean is written to metricSeries as "spo2_candidate" in pass 2, never to `spo2Pct` —
                 // the guard test `testHistoricalV18OpticalFieldsAreNotNamedPhysiologically` enforces that
                 // boundary for the WHOOP path.
@@ -1822,6 +1823,16 @@ final class IntelligenceEngine: ObservableObject {
                             deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
                         if !auxSamples.isEmpty {
                             if let cand = AnalyticsEngine.nightlySpo2CandidateMean(res.sleepSessions, aux: auxSamples) {
+                                spo2CandidateMean = cand.mean
+                            }
+                        } else {
+                            // No v18 aux stream: a WHOOP 4.0. Its strap-computed byte (`aux_byte_86`)
+                            // rides the event table instead. Same destination and the same boundary as
+                            // the 5/MG candidate: the "spo2_candidate" series only, never `spo2Pct`.
+                            let v24Samples = (try? await store.v24AuxByte86Samples(
+                                deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
+                            if let cand = AnalyticsEngine.nightlyV24Spo2CandidateMean(
+                                res.sleepSessions, samples: v24Samples) {
                                 spo2CandidateMean = cand.mean
                             }
                         }

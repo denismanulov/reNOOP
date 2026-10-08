@@ -36,6 +36,8 @@ struct MetricDetailView: View {
     /// #1848: why the skin-temp series leads with what it does, when that needs saying.
     @State private var skinTempNote: String?
     @State private var refreshing = false
+    /// What an empty Blood Oxygen page adds to "No Data"; resolved with the series, from the registry.
+    @State private var spo2Empty: Spo2EmptyState = .standard
 
     @Environment(\.dynamicTypeSize) private var dts
     /// Dynamic Type multipliers for a figure's numbers and units: the hero follows the large title, a row the body.
@@ -315,6 +317,21 @@ struct MetricDetailView: View {
                     }
                 }
             }
+        } else if spo2Empty == .estimateOff {
+            // The strap has an estimate and its switch is off: waiting adds nothing, so name the switch.
+            SummaryCard {
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    Text("The blood oxygen estimate is turned off")
+                        .font(StrandFont.pro(17, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Your strap reports a blood oxygen estimate, but it is unverified and off by default. Turn on the strap estimate in Settings to see it, or import a WHOOP export in Data Sources for the calibrated value.")
+                        .font(StrandFont.pro(15))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -501,6 +518,10 @@ struct MetricDetailView: View {
         series = result.series
         sourceByDay = result.sourceByDay
         skinTempNote = result.skinTempNote
+        spo2Empty = metric.source == "my-whoop"
+            ? Spo2EmptyState.resolve(key: metric.key, family: repo.activeStrapFamily(),
+                                     candidateDisplayOn: PuffinExperiment.spo2CandidateDisplayEnabled)
+            : .standard
         loaded = true
     }
 }

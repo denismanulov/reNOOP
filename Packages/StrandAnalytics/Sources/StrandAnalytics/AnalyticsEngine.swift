@@ -1428,6 +1428,37 @@ public enum AnalyticsEngine {
         return (mean: Int((Double(sum) / Double(kept)).rounded()), samples: kept)
     }
 
+    /// WHOOP 4.0 twin of `nightlySpo2CandidateMean`: the nightly mean of the strap's own blood-oxygen
+    /// byte (v24 `aux_byte_86`) over the detected in-bed `sessions`, with the count it rests on, or nil
+    /// when no in-band reading fell inside any span.
+    ///
+    /// Same `70...100` gate and the same rounding as the v18 function, for the same reasons: every other
+    /// nonzero value of the byte is a status or error code, not a percentage. The strap only produces
+    /// readings in short windows roughly every 19 minutes of its own detected sleep, so a night rests on
+    /// a few hundred readings at most and the count matters as much here as it does there.
+    ///
+    /// Two known caveats the count does not show. The firmware analysis this offset comes from reports
+    /// that a reading of exactly 98 can also be a fallback for a missing optical baseline; it is kept in
+    /// the mean, as the v18 function keeps it. And readings inside one window are not independent (a
+    /// window is typically one value held for ~20 seconds), so a few late windows can pull the mean: on
+    /// the one night seen on a strap the mean read 93.5 against a median of 95. The mean is kept so the
+    /// two platforms agree; the raw bytes are stored, so another estimator can be recomputed later.
+    ///
+    /// DIAGNOSTIC ONLY. Nothing scores this and it never writes `spo2Pct`. Byte-parity twin of the
+    /// Kotlin `nightlyV24Spo2CandidateMean`.
+    public static func nightlyV24Spo2CandidateMean(_ sessions: [SleepSession],
+                                                   samples: [V24AuxByte86Sample]) -> (mean: Int, samples: Int)? {
+        guard !sessions.isEmpty, !samples.isEmpty else { return nil }
+        var sum = 0, kept = 0
+        for s in samples {
+            guard V24AuxByte86Mapping.percentRange.contains(s.byte) else { continue }
+            guard sessions.contains(where: { $0.start <= s.ts && s.ts <= $0.end }) else { continue }
+            sum += s.byte; kept += 1
+        }
+        guard kept > 0 else { return nil }
+        return (mean: Int((Double(sum) / Double(kept)).rounded()), samples: kept)
+    }
+
     /// The plausible range for a raw Oura `0x6F` SpO2 sample before the ceiling transform below.
     /// Excludes the mis-scaled `dc_raw`/perfusion-channel contamination (-1016 … 11,709,098,
     /// OURA_PROTOCOL.md §6.5.0.1) by three orders of magnitude, same bounds as

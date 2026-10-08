@@ -308,6 +308,13 @@ public func extractHistoricalStreams(_ parsed: [ParsedFrame],
             if let red = p["spo2_red"]?.intValue {
                 out.spo2.append(SpO2Sample(ts: ts, red: red, ir: p["spo2_ir"]?.intValue ?? 0))
             }
+            // The strap's own blood-oxygen byte (`aux_byte_86`), banked only when nonzero: a zero is
+            // "nothing computed this second" and is the state of almost every record. Gated on the
+            // layout explicitly rather than on the key being present, as the v18 aux block is.
+            if family == .whoop4, p["hist_version"]?.intValue == 24,
+               let byte = p[V24AuxByte86Mapping.decoderKey]?.intValue, byte != 0 {
+                out.events.append(V24AuxByte86Mapping.event(ts: ts, byte: byte))
+            }
             // The two AUXILIARY thermal channels (`temp_aux_1_raw@69` / `temp_aux_2_raw@71`, i16, °C =
             // value/10) ride the primary skin-temp row for the same second. Both were decoded and dropped
             // here until now. They are carried ONLY when the primary channel decoded, because that is the

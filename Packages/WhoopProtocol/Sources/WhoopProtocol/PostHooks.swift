@@ -428,6 +428,24 @@ func registerPostHooks() {
             fb.parsed["step_counter"] = .int(Int(count))
         }
 
+        // aux_byte_86: the strap's own blood-oxygen result byte. 0 = nothing computed, 70-100 = a
+        // percentage, any other nonzero value = a status/error code. Sourced from a third-party firmware
+        // analysis and reimplemented as a protocol fact (ATTRIBUTION.md); on the #1617 overnight captures
+        // it is nonzero only while the optical channel words at 80/82 read enabled. Read ONLY off a
+        // 104-byte record whose own version byte is 24: the offset was established on that exact frame,
+        // and in a shorter record it may fall on other bytes. An unvalidated candidate, like the v18
+        // `spo2_candidate_82`: never `spo2Pct`, never a score input. Mirrors Kotlin `decodeHistorical`.
+        if version == 24, frame.count == 104, let byte = u8(frame, 86, limit) {
+            fb.add(86, 1, V24AuxByte86Mapping.decoderKey, "status", value: .int(byte),
+                   note: "raw; strap-computed blood-oxygen result or a status code, see spo2_candidate_86")
+            fb.parsed[V24AuxByte86Mapping.decoderKey] = .int(byte)
+            if V24AuxByte86Mapping.percentRange.contains(byte) {
+                fb.add(86, 1, V24AuxByte86Mapping.candidateDecoderKey, "spo2", value: .int(byte),
+                       note: "in-band (70–100) @86 reading; candidate strap-computed SpO2 % — instrumentation only, not compared with a reference, not a shipped metric")
+                fb.parsed[V24AuxByte86Mapping.candidateDecoderKey] = .int(byte)
+            }
+        }
+
         // Validate the v24-layout guess for an unmapped version: gravity is the DSP-separated
         // orientation vector, so |gravity| ≈ 1 g on a real record regardless of motion. If the magnitude
         // isn't ~1 g (or HR is implausible), the layout doesn't fit this firmware — drop the decoded

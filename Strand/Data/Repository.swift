@@ -2047,6 +2047,16 @@ final class Repository: ObservableObject {
         return DeviceFamily.isWhoop5Registry(model: d?.model, brand: d?.brand)
     }
 
+    /// The ACTIVE device's WHOOP family from the registry, or nil for a positively non-WHOOP brand, a
+    /// device with no registry row, or no store. For copy that depends on what the strap can produce
+    /// (the Blood Oxygen empty state). nil is "not established", never a default generation.
+    func activeStrapFamily() -> DeviceFamily? {
+        guard let store else { return nil }
+        let devices = (try? DeviceRegistryStore(dbQueue: store.registryWriter).all()) ?? []
+        guard let d = devices.first(where: { $0.id == deviceId }) else { return nil }
+        return DeviceFamily.forRegistryDevice(model: d.model, brand: d.brand)
+    }
+
     /// The active device's registry display name (nickname, else "Brand Model") for a screen that names
     /// the source of what it plots — the Deep Timeline's source row. `nil` when the active id has no
     /// registry row (the pre-registry seeded strap), so the caller keeps its legacy "My WHOOP" copy.

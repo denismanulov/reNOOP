@@ -566,13 +566,12 @@ struct TestCentreView: View {
         Section {
             Toggle("Sleep staging (V2)", isOn: $experimentalSleepV2Enabled)
             Toggle("Motion-aware wake refinement", isOn: $motionAwareWakeEnabled)
-            // Split out of the old 5/MG card so an Oura-only install can reach it too.
-            if is5MG || model.repo.activeDeviceIsOura {
-                Toggle("Blood Oxygen: strap estimate (WHOOP 5/MG, Oura)", isOn: $spo2CandidateDisplayEnabled)
-                    .onChangeCompat(of: spo2CandidateDisplayEnabled) { _ in
-                        Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
-                    }
-            }
+            // Not gated on the strap, as on Android: a WHOOP 4.0 (v24 `aux_byte_86`), a 5/MG (v18 `@82`)
+            // and an Oura ring each have a candidate behind this one switch.
+            Toggle("Blood Oxygen: strap estimate", isOn: $spo2CandidateDisplayEnabled)
+                .onChangeCompat(of: spo2CandidateDisplayEnabled) { _ in
+                    Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
+                }
             Toggle("HR-from-PPG sub-lag interpolation (v26 gap-fill)", isOn: $ppgHrSubLagInterpEnabled)
             Toggle("HRV readiness (Plews/Altini)", isOn: $hrvReadinessEnabled)
             // The toggle's OWN effect, shown in place: when on, the live Plews/Altini reading. Nothing
