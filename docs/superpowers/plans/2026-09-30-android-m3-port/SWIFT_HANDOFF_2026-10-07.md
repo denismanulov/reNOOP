@@ -223,6 +223,28 @@ What follows and what does not:
 Nothing in the calibrator was changed. Before it is relied on, it needs brisk-walk recordings, and it
 would help if a refused burst said which criterion refused it.
 
+### End of sleep runs late when the wearer lies still after waking (2026-10-08)
+
+The same wearer reported waking at 08:15 on a night the app closed at 08:18:06. The 1 Hz record agrees
+with him: the arm is still with heart rate 54 until 08:14:30, moves from 08:15:00, heart rate reaches
+82 by 08:15:30, and from 08:17:30 to 08:19:00 he lies still again at about 65.
+
+Across his eight scored nights, taking "rise" as the first 30-second bin with arm movement after
+which heart rate stays more than 4 bpm above the sleeping level for five minutes:
+
+| Nights | App's end of sleep against that rise |
+|---|---|
+| 3 | within 30 seconds |
+| 1 | 3.0 minutes late |
+| 1 | 19.0 minutes late (rise 08:02, end 08:21, heart rate 61 asleep and 80 after) |
+| 3 | no rise found by this rule |
+
+The rule is mine and unvalidated, and five usable nights is a small sample. It is enough to say the
+end of sleep is usually right and that the misses have one shape: awake, then still again. The
+"motion-aware wake refinement" experiment does not address this. It was switched on, all nights were
+re-scored, and every session end stayed the same to the second; it only reclassifies wake segments
+inside a night. No code was changed.
+
 ### Other levels, for orientation only
 
 Same unpaired comparison, same wearer. HRV, sleep efficiency, deep-sleep share, daily Effort and daily
