@@ -3,8 +3,10 @@ import WhoopStore
 
 // MARK: - SleepMark (#461 Phase 1 — tap-to-mark "going to sleep" / "awake")
 //
-// A user-tapped sleep boundary, captured for the record only — it does NOT feed the sleep detector
-// (that stays the strap's job). Phase 1 is pure logging: every mark is persisted into the existing
+// A user-tapped sleep boundary, captured for the record — it does NOT feed the sleep detector (that
+// stays the strap's job). The one thing a mark can change: a WAKE mark tapped in the app is also kept
+// pending and may end the night it lands in at that instant (`WakeMarkTrim`, `WakeMarkStore`). A bedtime
+// mark and the strap double-tap only log. Phase 1 is pure logging: every mark is persisted into the existing
 // long-format `metricSeries` store under the key "sleep_mark" AND appended as a human-readable line
 // to the shareable strap log, so a mark shows up in a debug export.
 //
@@ -90,6 +92,13 @@ struct SleepMark: Equatable, Sendable {
         return type == .bedtime
             ? String(localized: "Logged bedtime at \(clock).")
             : String(localized: "Logged wake-up at \(clock).")
+    }
+
+    /// The line shown after a tapped WAKE mark, which unlike the other marks is also kept as a request
+    /// to end the night at this instant (`WakeMarkTrim`, `AppModel.logWakeNow`).
+    var wakeRequestConfirmation: String {
+        let clock = SleepMark.clockFormatter.string(from: date)
+        return String(localized: "Wake-up logged at \(clock). Once the night has synced, it will end there.")
     }
 
     // MARK: - Constants / formatters

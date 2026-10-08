@@ -233,6 +233,8 @@ final class AppModel: ObservableObject {
     @Published var bpm: Int?
     private var hrWindow: [(t: Date, v: Double)] = []
     private var hrCancellables = Set<AnyCancellable>()
+    /// True while a pending wake mark is being applied (`applyPendingWakeMark`).
+    private var applyingWakeMark = false
     /// A completed offload slice whose refresh was held because the auto-continue had already re-kicked the
     /// next slice of the same burst (see `requestPostOffloadRefresh`), and since when.
     private var postOffloadRefreshPending = false
@@ -364,6 +366,16 @@ final class AppModel: ObservableObject {
             self?.evaluateStrainTarget()
             // Keep the battery night-guard's learned bedtime warm off the same signal (throttled inside).
             self?.refreshHabitualMidsleep()
+        }.store(in: &hrCancellables)
+        // A pending "I'm awake" mark is applied once the night it belongs to is on record. The cached
+        // days change at the end of every scoring pass, which is when that can first be true. The short
+        // wait lets the same pass finish writing its sleep sessions.
+        repo.$days.dropFirst().sink { [weak self] _ in
+            guard WakeMarkStore.pending() != nil else { return }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await self?.applyPendingWakeMark()
+            }
         }.store(in: &hrCancellables)
         // Re-arm the strap's firmware alarm once the connection has SETTLED — not the instant it (re)bonds.
         // A smart-alarm time changed while the strap was away never reached it , the send is gated on bond
@@ -1955,6 +1967,35 @@ final class AppModel: ObservableObject {
             guard let self, let store = await self.repo.storeHandle() else { return }
             try? await store.upsertMetricSeries([mark.metricPoint], deviceId: self.repo.deviceId)
         }
+    }
+
+    /// The wearer tapped "I'm awake" (#461). Logged exactly as Phase 1 logged it, and now also kept as a
+    /// pending request to end the night at this instant: `applyPendingWakeMark` does that as soon as the
+    /// night is on record, which is usually after the sync this starts. Returns the mark for the
+    /// confirmation. "Log going to sleep" and the strap double-tap still only log.
+    @discardableResult
+    func logWakeNow() -> SleepMark {
+        let mark = SleepMark(type: .wake)
+        SleepMark.log(mark, repo: repo, live: live)
+        WakeMarkStore.setPending(Int(mark.tsMs / 1000))
+        // The night may already be on record up to this minute; if not, the sync brings it in and the
+        // pass after it applies the mark.
+        Task { await applyPendingWakeMark() }
+        ble.syncNow()
+        return mark
+    }
+
+    /// End the night a pending wake mark falls in at that mark, if such a night is on record yet, then
+    /// re-score so Rest and Charge honour the shorter night. One application at a time: the tap and the
+    /// end of a scoring pass can both ask.
+    func applyPendingWakeMark() async {
+        guard !applyingWakeMark else { return }
+        applyingWakeMark = true
+        defer { applyingWakeMark = false }
+        let trimmed = await PendingWakeMark.apply(repo: repo) { [live] line in live.append(log: line) }
+        guard trimmed else { return }
+        await intelligence.analyzeRecent()
+        await repo.refresh()
     }
 
     private func handleWristChange(_ worn: Bool) {

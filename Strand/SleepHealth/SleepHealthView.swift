@@ -16,6 +16,7 @@ struct SleepHealthView: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var intelligence: IntelligenceEngine
+    @EnvironmentObject private var app: AppModel
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
     @ScaledMetric(relativeTo: .body) private var chevronSize: CGFloat = 14
 
@@ -378,6 +379,12 @@ struct SleepHealthView: View {
     }
 
     private func logMark(_ type: SleepMarkType) {
+        if type == .wake {
+            // A wake mark is more than a log line: it asks for the night to end at this instant.
+            let mark = app.logWakeNow()
+            Confirmation.shared.show(mark.wakeRequestConfirmation, systemImage: "sun.max.fill")
+            return
+        }
         let mark = SleepMark(type: type)
         SleepMark.log(mark, repo: repo, live: live)
         Confirmation.shared.show(mark.confirmation, systemImage: type == .bedtime ? "moon.zzz.fill" : "sun.max.fill")
