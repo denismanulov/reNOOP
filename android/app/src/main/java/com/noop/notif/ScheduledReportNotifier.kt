@@ -89,12 +89,12 @@ object ScheduledReportPolicy {
      *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). */
     fun morningCopy(chargePct: Int?, restPct: Int?): Pair<String, String>? {
         val parts = ArrayList<String>(2)
-        chargePct?.let { parts.add("Charge $it") }
-        restPct?.let { parts.add("Rest $it") }
+        chargePct?.let { parts.add("Recovery $it") }
+        restPct?.let { parts.add("Sleep $it") }
         if (parts.isEmpty()) return null
         val title = "Good morning: last night's recap"
         val body = parts.joinToString(" · ") +
-            ". Recovery from your strap, scored after it synced this morning."
+            ". From your strap, scored after it synced this morning."
         return title to body
     }
 
@@ -110,7 +110,7 @@ object ScheduledReportPolicy {
     ): Pair<String, String> {
         val title = "Workout logged: $sportLabel"
         val pieces = ArrayList<String>(3)
-        pieces.add("Effort $effortDisplay/$effortMaxLabel")
+        pieces.add("Strain $effortDisplay/$effortMaxLabel")
         pieces.add(durationLabel)
         avgHr?.let { pieces.add("avg $it bpm") }
         val body = pieces.joinToString(" · ") + ". Summarised after your strap synced."

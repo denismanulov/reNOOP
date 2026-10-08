@@ -74,8 +74,8 @@ private enum class PrimerSection(
     ),
     SCORES(
         title = uiString(R.string.l10n_how_noop_works_screen_how_your_scores_work_21a0e2be),
-        body = "Charge, Effort and Rest are scored on your own device from your strap data. " +
-            "Charge needs about four nights of sleep to learn your baseline (that's \"Calibrating\", " +
+        body = "Recovery, Strain and Sleep are scored on your own device from your strap data. " +
+            "Recovery needs about four nights of sleep to learn your baseline (that's \"Calibrating\", " +
             "counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. " +
             "On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you " +
             "have worn it across a few nights. That's the strap's sync limit, not a fault. " +
@@ -84,13 +84,13 @@ private enum class PrimerSection(
     ),
     SCORE_RECIPE(
         title = uiString(R.string.l10n_how_noop_works_screen_how_your_scores_are_computed_1b2d6c30),
-        body = "Charge weighs five signals against your own baseline: your overnight HRV matters most, " +
+        body = "Recovery weighs five signals against your own baseline: your overnight HRV matters most, " +
             "then your resting heart rate, how well you slept, your breathing rate, and how far your skin " +
-            "temperature drifted from normal. Higher HRV and lower resting heart rate lift Charge; a big " +
+            "temperature drifted from normal. Higher HRV and lower resting heart rate lift Recovery; a big " +
             "skin-temperature drift in either direction lowers it. Each signal is measured as how far " +
             "tonight sits from your personal baseline, never an absolute target. If a signal is missing, " +
             "it's dropped and the rest are reweighted, so the number always reflects only what was " +
-            "actually measured. The \"What shaped it\" breakdown under the Charge ring shows each signal's " +
+            "actually measured. The \"What shaped it\" breakdown under the Recovery ring shows each signal's " +
             "point contribution.",
         icon = Icons.Filled.Calculate,
     ),

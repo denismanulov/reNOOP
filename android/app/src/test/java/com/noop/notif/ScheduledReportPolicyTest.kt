@@ -157,14 +157,14 @@ class ScheduledReportPolicyTest {
     @Test fun morningCopyShowsBothScores() {
         val (title, body) = ScheduledReportPolicy.morningCopy(chargePct = 72, restPct = 88)!!
         assertTrue(title.contains("recap"))
-        assertTrue(body.contains("Charge 72"))
-        assertTrue(body.contains("Rest 88"))
+        assertTrue(body.contains("Recovery 72"))
+        assertTrue(body.contains("Sleep 88"))
     }
 
     @Test fun morningCopyOmitsAbsentRestNeverShowsZero() {
         val (_, body) = ScheduledReportPolicy.morningCopy(chargePct = 60, restPct = null)!!
-        assertTrue(body.contains("Charge 60"))
-        assertFalse(body.contains("Rest"))
+        assertTrue(body.contains("Recovery 60"))
+        assertFalse(body.contains("Sleep"))
     }
 
     @Test fun morningCopyNullWhenNeitherPresent() {
@@ -179,7 +179,7 @@ class ScheduledReportPolicyTest {
             durationLabel = "42 min", avgHr = 148,
         )
         assertTrue(title.contains("Running"))
-        assertTrue(body.contains("Effort 14.2/21"))
+        assertTrue(body.contains("Strain 14.2/21"))
         assertTrue(body.contains("42 min"))
         assertTrue(body.contains("avg 148 bpm"))
     }
@@ -190,7 +190,7 @@ class ScheduledReportPolicyTest {
             durationLabel = "1 h", avgHr = null,
         )
         assertFalse(body.contains("bpm"))
-        assertTrue(body.contains("Effort 60/100"))
+        assertTrue(body.contains("Strain 60/100"))
     }
 
     // MARK: - durationLabel

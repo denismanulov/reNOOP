@@ -1392,7 +1392,8 @@ class AiCoach(
                 "0-100, effort 0-100, rest/sleep and its deep/REM/light breakdown, sleep " +
                 "efficiency, HRV, resting heart rate) and recent workouts. " +
                 "Charge is the daily recovery/readiness score; effort is the day's cardiovascular " +
-                "load. Coach using autoregulation: charge 67-100 = green light to build/push, " +
+                "load. The app shows these to the user as Recovery (charge), Strain (effort) and Sleep " +
+                "(rest): use those names when you answer. Coach using autoregulation: charge 67-100 = green light to build/push, " +
                 "higher effort is fine; 34-66 = maintain, quality over volume, keep it controlled; " +
                 "0-33 = active recovery only (Zone 2, mobility, extra sleep) and protect against " +
                 "accumulating effort debt. Optimise workouts with progressive overload, polarised ~80/20 " +

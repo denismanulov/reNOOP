@@ -835,7 +835,7 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
     SettingsSectionTC(
         icon = Icons.Filled.Info,
         title = uiString(R.string.l10n_test_centre_screen_diagnostic_tools_04ba4d3f),
-        blurb = "Your strap log, a Charge recalibrate, and the device environment. Nothing leaves the phone unless you share it.",
+        blurb = "Your strap log, a Recovery recalibrate, and the device environment. Nothing leaves the phone unless you share it.",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // Strap log, the same exportLogText share the Settings Diagnostics button uses.
@@ -1171,7 +1171,7 @@ private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
                 title = uiString(R.string.l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f),
                 description = "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: " +
                     "it shows whether your 7-night HRV baseline sits above, inside, or below your personal " +
-                    "normal band. It changes nothing else - the Charge ring is identical whether this is on or " +
+                    "normal band. It changes nothing else - the Recovery ring is identical whether this is on or " +
                     "off. This is rough / early testing, not yet validated against varying real data (n=1).",
                 checked = hrvReadiness,
                 onCheckedChange = { hrvReadiness = it; puffin.hrvReadiness = it },

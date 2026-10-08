@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">reNOOP</string>
-    <string name="widget_description">Today\'s Rest, Charge and Effort, with heart rate and strap battery at a glance.</string>
+    <string name="widget_description">Today\'s Sleep, Recovery and Strain, with heart rate and strap battery at a glance.</string>
     <string name="widget_hr_name">reNOOP Heart Rate</string>
     <string name="widget_hr_description">Heart rate with the last three hours as a trace.</string>
     <string name="widget_stress_name">reNOOP Stress</string>
     <string name="widget_stress_description">Today\'s stress as an hour-by-hour curve.</string>
     <string name="widget_compact_name">reNOOP Compact</string>
-    <string name="widget_compact_description">Compact Rest, Charge and Effort widget, with heart rate and strap battery.</string>
+    <string name="widget_compact_description">Compact Sleep, Recovery and Strain widget, with heart rate and strap battery.</string>
     <string name="widget_error">reNOOP widget couldn\'t draw — it will recover on the next update.</string>
 
     <!-- Navigation: bottom-bar tabs, the More page rows, and the top-bar screen titles. These are the
@@ -245,7 +245,7 @@
     <string name="l10n_notifications_settings_screen_voip_calls_96c5a102">VoIP calls</string>
     <string name="l10n_notifications_settings_screen_wrist_alerts_75581d51">Wrist alerts</string>
     <string name="l10n_notifications_settings_screen_wrist_delivery_needs_notification_access_so_2a14e784">Wrist delivery needs Notification Access so reNOOP can read which apps notify you. Nothing leaves this device. Your choices are saved now and apply automatically once access is granted.</string>
-    <string name="l10n_scoring_guide_screen_charge_effort_rest_f396a530">Charge · Effort · Rest</string>
+    <string name="l10n_scoring_guide_screen_charge_effort_rest_f396a530">Recovery · Strain · Sleep</string>
     <string name="l10n_scoring_guide_screen_close_bbfa773e">Close</string>
     <string name="l10n_scoring_guide_screen_got_it_5b8027fa">Got it</string>
     <string name="l10n_scoring_guide_screen_how_sure_is_noop_solid_building_c21d86d7">How sure is reNOOP?  ·  Solid · Building · Calibrating</string>
@@ -298,8 +298,8 @@
     <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">HRV readiness (experimental): %1$s</string>
     <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">HRV readiness (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Recalibrate</string>
-    <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Recalibrate Charge baseline</string>
-    <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Recalibrate your Charge baseline?</string>
+    <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Recalibrate Recovery baseline</string>
+    <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Recalibrate your Recovery baseline?</string>
     <string name="l10n_test_centre_screen_report_a_bug_with_my_log_5101ee49">Report a bug with my log</string>
     <string name="l10n_test_centre_screen_review_before_sharing_d7050383">Review before sharing</string>
     <string name="l10n_test_centre_screen_share_09ca55ca">Share</string>
@@ -307,7 +307,7 @@
     <string name="l10n_test_centre_screen_test_centre_37b36828">Test Centre</string>
     <string name="l10n_test_centre_screen_test_modes_e21f1d3c">Test modes</string>
     <string name="l10n_test_centre_screen_this_is_exactly_what_your_report_77278bdd">This is exactly what your report will contain. Nothing leaves this phone until you tap Share.</string>
-    <string name="l10n_test_centre_screen_this_restarts_the_roughly_4_night_33cce377">This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays.</string>
+    <string name="l10n_test_centre_screen_this_restarts_the_roughly_4_night_33cce377">This restarts the roughly 4-night build-up for Recovery and your HRV baseline. Your history stays.</string>
     <string name="l10n_whats_new_sheet_close_bbfa773e">Close</string>
     <string name="l10n_whats_new_sheet_got_it_5b8027fa">Got it</string>
     <string name="l10n_whats_new_sheet_noop_appchangelog_current_version_05dae27c">reNOOP %1$s</string>
@@ -320,7 +320,7 @@
     <string name="l10n_app_changelog_a_big_bug_fix_sweep_with_65335764">A big bug-fix sweep, with the Test Centre to back it up</string>
     <string name="l10n_app_changelog_a_big_one_smarter_sleep_naps_8d7745c6">A big one: smarter sleep, naps, more devices, and a load of fixes</string>
     <string name="l10n_app_changelog_a_bolder_today_screen_4efe8215">A bolder Today screen</string>
-    <string name="l10n_app_changelog_a_calmer_today_your_charge_explained_e4174303">A calmer Today, your Charge explained, and new HRV science under the hood</string>
+    <string name="l10n_app_changelog_a_calmer_today_your_charge_explained_e4174303">A calmer Today, your Recovery explained, and new HRV science under the hood</string>
     <string name="l10n_app_changelog_a_cleaner_home_refreshed_design_a_8c91c06b">A cleaner home - refreshed design, a new inbox, your photo</string>
     <string name="l10n_app_changelog_a_fresh_look_new_gold_on_6f379935">A fresh look - new gold-on-navy icon</string>
     <string name="l10n_app_changelog_a_quick_fix_9cd2b7de">A quick fix</string>
@@ -345,9 +345,9 @@
     <string name="l10n_app_changelog_android_the_widget_now_actually_updates_dc770011">Android: the widget now actually updates</string>
     <string name="l10n_app_changelog_android_today_clearer_empty_states_39ad5d2c">Android Today: clearer empty states</string>
     <string name="l10n_app_changelog_android_whoop_4_on_newer_firmware_383314db">Android: WHOOP 4 on newer firmware now records data</string>
-    <string name="l10n_app_changelog_apple_health_export_sleep_nights_recovered_1fc04ee2">Apple Health export, sleep nights recovered, and imported-ride Effort</string>
+    <string name="l10n_app_changelog_apple_health_export_sleep_nights_recovered_1fc04ee2">Apple Health export, sleep nights recovered, and imported-ride Strain</string>
     <string name="l10n_app_changelog_auto_sync_health_connect_android_698f0129">Auto-sync Health Connect (Android)</string>
-    <string name="l10n_app_changelog_background_gps_sleep_time_editing_log_7baa5d7a">Background GPS, sleep-time editing, log-ahead, and a sharper Rest tile</string>
+    <string name="l10n_app_changelog_background_gps_sleep_time_editing_log_7baa5d7a">Background GPS, sleep-time editing, log-ahead, and a sharper Sleep tile</string>
     <string name="l10n_app_changelog_backup_controls_and_a_lighter_app_a08f0fe4">Backup controls, and a lighter app</string>
     <string name="l10n_app_changelog_backup_restore_fixed_plus_appearance_controls_d0b9c0fe">Backup restore fixed, plus appearance controls</string>
     <string name="l10n_app_changelog_backup_restore_the_wrong_day_fix_ecbfd90d">Backup &amp; Restore, the wrong-day fix, and a smarter Test Centre</string>
@@ -362,10 +362,10 @@
     <string name="l10n_app_changelog_browse_past_nights_smarter_coach_workout_9fc9bfd2">Browse past nights, smarter Coach, workout times, battery &amp; more</string>
     <string name="l10n_app_changelog_browse_the_last_few_days_interactive_a13e7b2a">Browse the last few days, interactive charts, and a Vital Signs screen (Android)</string>
     <string name="l10n_app_changelog_bug_fix_sweep_steps_sleep_export_50c60c51">Bug-fix sweep: steps, sleep export, and a battery-saving reconnect fix</string>
-    <string name="l10n_app_changelog_bug_fixes_effort_the_widget_s_6b807b50">Bug fixes: Effort, the widget\'s day, and Oura reconnect</string>
+    <string name="l10n_app_changelog_bug_fixes_effort_the_widget_s_6b807b50">Bug fixes: Strain, the widget\'s day, and Oura reconnect</string>
     <string name="l10n_app_changelog_buzz_whoop_4_in_the_smart_4d17676a">Buzz WHOOP 4 in the Smart Alarm</string>
-    <string name="l10n_app_changelog_charge_effort_rest_noop_s_own_8c323656">Charge, Effort &amp; Rest - reNOOP\'s own scores, out of 100</string>
-    <string name="l10n_app_changelog_charge_shows_calibrating_instead_of_no_51a000e9">Charge shows "Calibrating" instead of "No data" for new straps</string>
+    <string name="l10n_app_changelog_charge_effort_rest_noop_s_own_8c323656">Recovery, Strain &amp; Sleep - reNOOP\'s own scores, out of 100</string>
+    <string name="l10n_app_changelog_charge_shows_calibrating_instead_of_no_51a000e9">Recovery shows "Calibrating" instead of "No data" for new straps</string>
     <string name="l10n_app_changelog_check_for_updates_736b9062">Check for updates</string>
     <string name="l10n_app_changelog_classic_chart_colours_a_throwback_toggle_e8150db5">Classic chart colours - a throwback toggle</string>
     <string name="l10n_app_changelog_cleaner_live_status_better_sync_diagnostics_00ad8d26">Cleaner Live status + better sync diagnostics</string>
@@ -391,8 +391,8 @@
     <string name="l10n_app_changelog_design_polish_cross_platform_parity_caa8e2c4">Design polish &amp; cross-platform parity</string>
     <string name="l10n_app_changelog_dynamic_island_toggle_now_actually_turns_df387ee6">Dynamic Island toggle now actually turns it off</string>
     <string name="l10n_app_changelog_editable_naps_a_richer_trends_report_471c1a69">Editable naps, a richer Trends report, and better debug export</string>
-    <string name="l10n_app_changelog_effort_explains_a_calm_day_zero_08bd9936">Effort explains a calm-day zero - and scores on the 5.0/MG</string>
-    <string name="l10n_app_changelog_effort_scale_fix_for_imported_data_aad0344d">Effort scale fix for imported data</string>
+    <string name="l10n_app_changelog_effort_explains_a_calm_day_zero_08bd9936">Strain explains a calm-day zero - and scores on the 5.0/MG</string>
+    <string name="l10n_app_changelog_effort_scale_fix_for_imported_data_aad0344d">Strain scale fix for imported data</string>
     <string name="l10n_app_changelog_estimated_steps_for_your_whoop_4_e961cade">Estimated steps for your WHOOP 4.0</string>
     <string name="l10n_app_changelog_everything_a_whole_new_look_hydration_0f648fc3">Everything: a whole new look, hydration, automatic workout detection, and smarter sleep</string>
     <string name="l10n_app_changelog_everything_stays_on_your_device_575125e9">Everything stays on your device</string>
@@ -458,7 +458,7 @@
     <string name="l10n_app_changelog_more_realistic_calories_import_chart_fixes_d3d56a9e">More realistic calories + import &amp; chart fixes</string>
     <string name="l10n_app_changelog_more_reliable_bluetooth_on_newer_android_c7e641dc">More reliable Bluetooth on newer Android phones</string>
     <string name="l10n_app_changelog_more_tab_icons_stop_flickering_colour_3de3de9f">More-tab icons stop flickering colour</string>
-    <string name="l10n_app_changelog_new_a_guide_to_how_your_7afbd7f4">New: a guide to how your Charge, Effort and Rest scores work</string>
+    <string name="l10n_app_changelog_new_a_guide_to_how_your_7afbd7f4">New: a guide to how your Recovery, Strain and Sleep scores work</string>
     <string name="l10n_app_changelog_new_first_run_onboarding_mac_android_243bc0ad">New first-run onboarding (Mac + Android)</string>
     <string name="l10n_app_changelog_new_use_an_apple_watch_with_4c2c29a6">New: use an Apple Watch with reNOOP</string>
     <string name="l10n_app_changelog_new_week_in_review_a_live_c1457e40">New: Week in review, a live body console, fresher charts and more</string>
@@ -497,7 +497,7 @@
     <string name="l10n_app_changelog_shortcuts_on_mac_recovery_in_the_dbcef46a">Shortcuts on Mac, recovery in the Android notification</string>
     <string name="l10n_app_changelog_skin_temperature_unblocked_on_mac_ios_9cb6276c">Skin temperature unblocked on Mac/iOS, plus export fixes</string>
     <string name="l10n_app_changelog_sleep_and_recovery_for_whoop_4_c8f44a56">Sleep and recovery for WHOOP 4.0 straps on the firmware we couldn\'t read</string>
-    <string name="l10n_app_changelog_sleep_charge_and_workouts_cleaned_up_e21a5381">Sleep, Charge and workouts, cleaned up</string>
+    <string name="l10n_app_changelog_sleep_charge_and_workouts_cleaned_up_e21a5381">Sleep, Recovery and workouts, cleaned up</string>
     <string name="l10n_app_changelog_sleep_debt_daytime_stress_a_recovery_a92853f3">Sleep-debt, daytime stress, a recovery forecast, and day-by-day navigation</string>
     <string name="l10n_app_changelog_sleep_figures_hr_zones_charging_calibration_b209b698">Sleep figures, HR zones, charging &amp; calibration - a big community-driven update</string>
     <string name="l10n_app_changelog_sleep_fix_for_whoop_4_0_c7a1b13d">Sleep fix for WHOOP 4.0 + accurate WHOOP 5/MG steps</string>
@@ -529,19 +529,19 @@
     <string name="l10n_app_changelog_sync_visibility_a_sharper_stress_timeline_37e1e6d6">Sync visibility + a sharper Stress timeline</string>
     <string name="l10n_app_changelog_the_archived_sleep_recovery_now_reaches_cf4bb3ef">The archived-sleep recovery now reaches Android too</string>
     <string name="l10n_app_changelog_the_everything_update_5e08d257">The everything update</string>
-    <string name="l10n_app_changelog_the_new_look_everywhere_plus_sleep_5793dddf">The new look everywhere - plus sleep, Effort &amp; Bluetooth fixes</string>
+    <string name="l10n_app_changelog_the_new_look_everywhere_plus_sleep_5793dddf">The new look everywhere - plus sleep, Strain &amp; Bluetooth fixes</string>
     <string name="l10n_app_changelog_the_new_today_screen_comes_to_69dfab3d">The new Today screen comes to Android</string>
     <string name="l10n_app_changelog_the_smoothness_release_faster_everywhere_plus_baf8a7fc">The smoothness release: faster everywhere, plus a sleep memory fix</string>
     <string name="l10n_app_changelog_the_test_centre_help_us_fix_af39aa17">The Test Centre: help us fix YOUR specific problem</string>
     <string name="l10n_app_changelog_tidier_today_gauges_5d1fe894">Tidier Today gauges</string>
     <string name="l10n_app_changelog_tidier_today_hero_strap_renaming_smarter_34493c9c">Tidier Today hero, strap renaming, smarter journal</string>
-    <string name="l10n_app_changelog_tidier_workout_names_correct_rest_duration_135cf67f">Tidier workout names, correct Rest duration</string>
+    <string name="l10n_app_changelog_tidier_workout_names_correct_rest_duration_135cf67f">Tidier workout names, correct Sleep duration</string>
     <string name="l10n_app_changelog_tidy_your_journal_remove_and_hide_aa1c0b94">Tidy your journal - remove and hide questions</string>
     <string name="l10n_app_changelog_times_follow_your_12_24_hour_9c552783">Times follow your 12-/24-hour setting</string>
     <string name="l10n_app_changelog_today_header_date_fix_west_of_e5e7422d">Today header date fix (west-of-UTC)</string>
     <string name="l10n_app_changelog_today_reflects_today_not_stale_imports_1a341a21">Today reflects today (not stale imports)</string>
-    <string name="l10n_app_changelog_today_s_effort_goes_live_plus_5f810b61">Today\'s Effort goes live - plus sleep &amp; alarm honesty</string>
-    <string name="l10n_app_changelog_today_s_effort_no_longer_drops_f49a3428">Today\'s Effort no longer drops to zero</string>
+    <string name="l10n_app_changelog_today_s_effort_goes_live_plus_5f810b61">Today\'s Strain goes live - plus sleep &amp; alarm honesty</string>
+    <string name="l10n_app_changelog_today_s_effort_no_longer_drops_f49a3428">Today\'s Strain no longer drops to zero</string>
     <string name="l10n_app_changelog_today_tiles_no_longer_cut_their_3c167cc1">Today tiles no longer cut their value to "10…"</string>
     <string name="l10n_app_changelog_today_tiles_no_longer_truncate_their_2959ce81">Today tiles no longer truncate their value (Android)</string>
     <string name="l10n_app_changelog_today_trends_stay_within_their_window_ba2e4c57">Today trends stay within their window (Mac)</string>
@@ -603,7 +603,7 @@
     <string name="l10n_settings_screen_continuous_hrv_capture_1f0805d8">Continuous HRV capture</string>
     <string name="l10n_settings_screen_couldn_t_check_try_again_b3c885d9">Couldn\'t check. Try again.</string>
     <string name="l10n_settings_screen_diagnostics_3af2279f">Diagnostics</string>
-    <string name="l10n_settings_screen_effort_scale_81afa9ef">Effort scale</string>
+    <string name="l10n_settings_screen_effort_scale_81afa9ef">Strain scale</string>
     <string name="l10n_settings_screen_height_3f608b49">Height</string>
     <string name="l10n_settings_screen_how_noop_works_3396b27a">How reNOOP works</string>
     <string name="l10n_settings_screen_hrv_window_e74320b8">HRV window</string>
@@ -685,7 +685,7 @@
     <string name="fgs_title_connected">Connected to your WHOOP</string>
     <string name="fgs_detail_streaming">Streaming in the background</string>
     <string name="fgs_detail_keeping_link">Keeping the link open</string>
-    <string name="fgs_detail_recovery">Charge %1$d%%</string>
+    <string name="fgs_detail_recovery">Recovery %1$d%%</string>
     <string name="fgs_detail_battery">Strap %1$d%%</string>
     <string name="fgs_action_disconnect">Disconnect</string>
     <string name="fgs_channel_name">Strap connection</string>
@@ -706,11 +706,11 @@
     <string name="coach_brief_unavailable_title">Morning Brief unavailable</string>
     <string name="coach_brief_unavailable_body">Couldn\'t generate today\'s brief. Open Coach to try again.</string>
     <string name="l10n_app_changelog_battery_saver_quiets_the_gauges_translated_bdbe8650">Battery saver quiets the gauges, translated Android notifications, and instant chart loads</string>
-    <string name="l10n_app_changelog_water_and_caffeine_from_apple_health_5123b6b0">Water and caffeine from Apple Health, a sharper Effort score, and an Oura resting-heart-rate fix</string>
+    <string name="l10n_app_changelog_water_and_caffeine_from_apple_health_5123b6b0">Water and caffeine from Apple Health, a sharper Strain score, and an Oura resting-heart-rate fix</string>
     <!-- First-run onboarding copy. Kept in resources so every visible setup string is localizable. -->
     <string name="onboarding_expectation_independent_body">reNOOP is a personal, open project - not the WHOOP app, and not affiliated with WHOOP. It reads a strap you own, on your own device. Treat it as a capable work-in-progress rather than a finished product.</string>
-    <string name="onboarding_expectation_whoop_support_body">WHOOP 4.0 is tested and works end to end. WHOOP 5.0/MG is newer: live heart rate works today, but deeper metrics (Charge, Effort, sleep) for 5/MG are still being figured out. reNOOP always tells you what\'s live versus still building.</string>
-    <string name="onboarding_expectation_scores_body">Live heart rate is instant. Charge, Effort and Rest sharpen as reNOOP learns your baseline over your first nights of wear. Want your history now? Import your WHOOP export in Data Sources and it backfills in about a minute.</string>
+    <string name="onboarding_expectation_whoop_support_body">WHOOP 4.0 is tested and works end to end. WHOOP 5.0/MG is newer: live heart rate works today, but deeper metrics (Recovery, Strain, sleep) for 5/MG are still being figured out. reNOOP always tells you what\'s live versus still building.</string>
+    <string name="onboarding_expectation_scores_body">Live heart rate is instant. Recovery, Strain and Sleep sharpen as reNOOP learns your baseline over your first nights of wear. Want your history now? Import your WHOOP export in Data Sources and it backfills in about a minute.</string>
     <string name="onboarding_expectation_local_body">No account, no cloud, no sync. reNOOP talks only to your strap and keeps everything local. Your data is yours alone.</string>
     <string name="onboarding_male">Male</string>
     <string name="onboarding_female">Female</string>
@@ -860,9 +860,9 @@
     <string name="sleep_carried_metric_caption">Carried · %1$s</string>
     <string name="today_not_connected">Not connected</string>
     <string name="today_card_skin_temp">Skin Temp</string>
-    <string name="today_metric_charge">Charge</string>
-    <string name="today_metric_effort">Effort</string>
-    <string name="today_metric_rest">Rest</string>
+    <string name="today_metric_charge">Recovery</string>
+    <string name="today_metric_effort">Strain</string>
+    <string name="today_metric_rest">Sleep</string>
     <string name="today_metric_hrv">HRV</string>
     <string name="today_metric_resting_hr">Resting HR</string>
     <string name="today_metric_blood_oxygen">Blood Oxygen</string>
@@ -878,28 +878,28 @@
     <string name="today_calibrating">Calibrating</string>
     <string name="scoring_guide_daily_scores">Your daily scores</string>
     <string name="scoring_guide_three_scores">The three scores</string>
-    <string name="scoring_guide_intro_body">reNOOP gives you three daily scores: Charge, Effort and Rest, each from 0 to 100. They are calculated on your device from strap signals and published sport science. They are independent approximations, not WHOOP’s private scores, so the direction may be similar while the numbers differ.</string>
-    <string name="scoring_guide_charge_headline">Charge: how recovered are you?</string>
-    <string name="scoring_guide_charge_body">Charge is led by HRV compared with your personal baseline, plus resting heart rate, last night’s Rest, breathing rate and skin temperature. Higher HRV means more Charge. reNOOP needs a few nights to learn your baseline; until then it shows “Calibrating”.</string>
+    <string name="scoring_guide_intro_body">reNOOP gives you three daily scores: Recovery, Strain and Sleep, each from 0 to 100. They are calculated on your device from strap signals and published sport science. They are independent approximations, not WHOOP’s private scores, so the direction may be similar while the numbers differ.</string>
+    <string name="scoring_guide_charge_headline">Recovery: how recovered are you?</string>
+    <string name="scoring_guide_charge_body">Recovery is led by HRV compared with your personal baseline, plus resting heart rate, last night’s Sleep score, breathing rate and skin temperature. Higher HRV means higher Recovery. reNOOP needs a few nights to learn your baseline; until then it shows “Calibrating”.</string>
     <string name="scoring_guide_charge_vs_whoop">The idea is similar to WHOOP’s Recovery %, but our weighting and baseline calculations are independent and openly documented.</string>
-    <string name="scoring_guide_effort_headline">Effort: how hard did your heart work?</string>
-    <string name="scoring_guide_effort_body">Effort measures cardiovascular load. Heart rate is converted into a training impulse using heart-rate-reserve zones, with harder zones weighted more heavily, then mapped to a logarithmic 0–100 scale. Steps and active energy provide a floor for long, low-cardio activity.</string>
+    <string name="scoring_guide_effort_headline">Strain: how hard did your heart work?</string>
+    <string name="scoring_guide_effort_body">Strain measures cardiovascular load. Heart rate is converted into a training impulse using heart-rate-reserve zones, with harder zones weighted more heavily, then mapped to a logarithmic 0–100 scale. Steps and active energy provide a floor for long, low-cardio activity.</string>
     <string name="scoring_guide_effort_vs_whoop">The idea is similar to WHOOP’s Day Strain (0–21), rescaled to 0–100. A 100 remains as rare as a 21.0.</string>
-    <string name="scoring_guide_rest_headline">Rest: how restorative was your sleep?</string>
-    <string name="scoring_guide_rest_body">Rest combines sleep duration versus your need, sleep efficiency, restorative deep and REM sleep, and the consistency of sleep and wake times.</string>
+    <string name="scoring_guide_rest_headline">Sleep: how restorative was your sleep?</string>
+    <string name="scoring_guide_rest_body">The Sleep score combines sleep duration versus your need, sleep efficiency, restorative deep and REM sleep, and the consistency of sleep and wake times.</string>
     <string name="scoring_guide_rest_vs_whoop">The idea is similar to WHOOP’s Sleep Performance %, but our calculation is independent.</string>
     <string name="scoring_guide_solid">Solid</string>
     <string name="scoring_guide_building">Building</string>
     <string name="scoring_guide_confidence_body">Each score shows its reliability. Calibrating means reNOOP is learning your baseline or needs more data. Building means enough data exists for a score, but it is still limited. Solid means all inputs are present. If reNOOP cannot calculate a score reliably, it shows no score instead of guessing.</string>
     <string name="trends_training_load">Training Load</string>
-    <string name="trends_tl_needs">Needs %1$d+ consecutive days of Effort to begin. %2$d so far.</string>
+    <string name="trends_tl_needs">Needs %1$d+ consecutive days of Strain to begin. %2$d so far.</string>
     <string name="sleep_delete_user_edited_body">Removes this sleep and recomputes the day without it. You can undo for a few seconds after.</string>
     <string name="sleep_delete_recorded_body">Removes this recorded sleep and recomputes the day without it. reNOOP won\'t re-detect sleep in this window. You can undo for a few seconds after.</string>
     <string name="l10n_app_changelog_training_load_a_vo_max_without_f9205a67">Training load, a VO₂max without a tape measure, and far less battery spent re-scoring</string>
     <string name="workout_action_pause">Pause</string>
     <string name="workout_action_resume">Resume</string>
     <string name="workout_action_paused">Paused</string>
-    <string name="l10n_app_changelog_an_effort_scale_you_choose_a_a7c2478d">An Effort scale you choose, a ring that gets to sleep, and far fewer wasted re-scores</string>
+    <string name="l10n_app_changelog_an_effort_scale_you_choose_a_a7c2478d">A Strain scale you choose, a ring that gets to sleep, and far fewer wasted re-scores</string>
     <string name="l10n_health_screen_this_vital_needs_at_least_two_0e41b8b0">This vital needs at least two historical readings before reNOOP can chart it.</string>
     <string name="l10n_health_screen_the_blood_oxygen_estimate_is_turned_4c403ab2">The blood oxygen estimate is turned off</string>
     <string name="l10n_health_screen_your_strap_reports_a_blood_oxygen_349fe34a">Your strap reports a blood oxygen estimate, but it is unverified and off by default. Turn on the strap estimate in Settings to see it, or import a WHOOP export in Data Sources for the calibrated value.</string>
@@ -1080,13 +1080,13 @@
     <string name="metric_title_vo2max_est">VO₂ Max (estimated)</string>
     <string name="metric_title_vitality">Vitality</string>
     <string name="metric_title_body_age">Body Age</string>
-    <string name="metric_title_charge">Charge</string>
+    <string name="metric_title_charge">Recovery</string>
     <string name="metric_title_hrv">Heart Rate Variability</string>
     <string name="metric_title_rhr">Resting Heart Rate</string>
     <string name="metric_title_resp_rate">Respiratory Rate</string>
     <string name="metric_title_spo2">Blood Oxygen</string>
     <string name="metric_title_skin_temp">Skin Temperature</string>
-    <string name="metric_title_rest">Rest</string>
+    <string name="metric_title_rest">Sleep</string>
     <string name="metric_title_asleep">Asleep Time</string>
     <string name="metric_title_sleep_consistency">Sleep Consistency</string>
     <string name="metric_title_sleep_efficiency">Sleep Efficiency</string>
@@ -1095,7 +1095,7 @@
     <string name="metric_title_light">Light Sleep</string>
     <string name="metric_title_sleep_need">Sleep Need</string>
     <string name="metric_title_sleep_debt">Sleep Debt</string>
-    <string name="metric_title_effort">Effort</string>
+    <string name="metric_title_effort">Strain</string>
     <string name="metric_title_steps">Steps</string>
     <string name="metric_title_steps_est">Steps (estimated)</string>
     <string name="metric_title_active_energy">Active Energy</string>
@@ -1244,7 +1244,7 @@
     <string name="summary_your_normal">Your Normal</string>
     <string name="summary_last_7_days">Last 7 Days</string>
     <string name="summary_last_28_days">Last 28 Days</string>
-    <string name="summary_effort_last_7_days">Effort, last 7 days</string>
+    <string name="summary_effort_last_7_days">Strain, last 7 days</string>
     <string name="summary_updated">Updated %1$s</string>
     <string name="summary_just_now">just now</string>
     <string name="summary_syncing">Syncing…</string>
@@ -1261,7 +1261,7 @@
     <string name="summary_hl_load_down">You trained less in the last 7 days than over the last 28 — there\'s room to build.</string>
     <string name="summary_hl_load_fast">Your training load is building fast — watch for fatigue.</string>
     <string name="summary_hl_load_steady">Your training load over the last 7 days is in line with the last 28.</string>
-    <string name="summary_hl_monotony">Your Effort has been much the same every day — mix hard and easy days.</string>
+    <string name="summary_hl_monotony">Your Strain has been much the same every day — mix hard and easy days.</string>
     <string name="summary_hl_normal">%1$s is in your normal range.</string>
     <string name="summary_hl_respiratory_rate">Respiratory rate</string>
     <string name="summary_hl_training_load">Training load</string>
@@ -1427,7 +1427,7 @@
     <string name="settings_built_on">Built on</string>
     <string name="settings_change_folder">Change folder</string>
     <string name="settings_change_photo">Change photo</string>
-    <string name="settings_charge">Charge</string>
+    <string name="settings_charge">Recovery</string>
     <string name="settings_check_name">Check name</string>
     <string name="settings_choose_folder">Choose folder</string>
     <string name="settings_choose_photo">Choose photo</string>
@@ -1446,7 +1446,7 @@
     <string name="settings_developer_on">Developer settings on</string>
     <string name="settings_developer_summary">Test Centre, diagnostics</string>
     <string name="settings_devices">Devices</string>
-    <string name="settings_effort">Effort</string>
+    <string name="settings_effort">Strain</string>
     <string name="settings_every">Every</string>
     <string name="settings_experiments">Experiments</string>
     <string name="settings_exponential_scale">Exponential scale</string>
@@ -1515,7 +1515,7 @@
     <string name="settings_rescoring">Re-scoring recent nights</string>
     <string name="settings_reset_baseline">Reset baseline</string>
     <string name="settings_reset_baseline_message">It rebuilds over about 4 nights. History stays.</string>
-    <string name="settings_reset_baseline_title">Reset your Charge baseline?</string>
+    <string name="settings_reset_baseline_title">Reset your Recovery baseline?</string>
     <string name="settings_respect_quiet_hours">Respect quiet hours</string>
     <string name="settings_restore_confirm_from_date">Replace all current data with the backup from %1$s? This cannot be undone.</string>
     <string name="settings_restore_confirm_named">Replace all current data with the backup %1$s? This cannot be undone.</string>
@@ -1524,7 +1524,7 @@
     <string name="settings_restored_restarting">Restored. Restarting reNOOP…</string>
     <string name="settings_save">Save</string>
     <string name="settings_scores">Scores</string>
-    <string name="settings_scores_summary">Effort scale, steps, Charge</string>
+    <string name="settings_scores_summary">Strain scale, steps, Recovery</string>
     <string name="settings_sex_female">Female</string>
     <string name="settings_sex_male">Male</string>
     <string name="settings_sex_other">Other</string>
@@ -1533,7 +1533,7 @@
     <string name="settings_spo2_strap_estimate">Blood Oxygen: strap estimate</string>
     <string name="settings_steps">Steps</string>
     <string name="settings_steps_auto_confidence">Auto · %1$s confidence</string>
-    <string name="settings_strain_target">Effort target</string>
+    <string name="settings_strain_target">Strain target</string>
     <string name="settings_strap_battery">Strap battery</string>
     <string name="settings_strap_connected_battery">Connected · %1$d%%</string>
     <string name="settings_strap_searching">Searching…</string>
@@ -1690,7 +1690,7 @@
     <string name="workouts_avg_hr">Avg. Heart Rate</string>
     <string name="workouts_max_hr">Max. Heart Rate</string>
     <string name="workouts_steps">Steps</string>
-    <string name="workouts_effort">Effort</string>
+    <string name="workouts_effort">Strain</string>
     <string name="workouts_load_light">Light</string>
     <string name="workouts_load_moderate">Moderate</string>
     <string name="workouts_load_strenuous">Strenuous</string>
@@ -1719,7 +1719,7 @@
     <string name="workouts_live_heart_rate">Heart rate</string>
     <string name="workouts_live_avg_hr">AVERAGE\nHEART RATE</string>
     <string name="workouts_live_avg_pace">AVERAGE\nPACE</string>
-    <string name="workouts_live_effort">EFFORT</string>
+    <string name="workouts_live_effort">STRAIN</string>
     <string name="workouts_live_speed">SPEED</string>
     <string name="workouts_live_cadence">CADENCE</string>
     <string name="workouts_live_power">POWER</string>
@@ -1768,7 +1768,7 @@
     <string name="manual_err_dist_mi">Distance must be 0–621 mi.</string>
     <string name="manual_err_dist_km">Distance must be 0–1,000 km.</string>
     <string name="manual_err_check">Check the values and try again.</string>
-    <string name="manual_hr_note">Effort and heart-rate zones stay as captured; only the average you typed changes.</string>
+    <string name="manual_hr_note">Strain and heart-rate zones stay as captured; only the average you typed changes.</string>
     <string name="manual_discard_title">Discard your changes?</string>
     <string name="manual_discard">Discard Changes</string>
     <string name="manual_keep">Keep Editing</string>
@@ -1831,7 +1831,7 @@
     <string name="coach_settings_connect">Connect</string>
     <string name="coach_settings_use_my_data">Use My Data</string>
     <string name="coach_settings_patterns">Patterns and Lab Results</string>
-    <string name="coach_settings_data_footer">%1$s receives Charge, sleep, HRV and workouts with sport, duration, distance and heart rate when you ask.</string>
+    <string name="coach_settings_data_footer">%1$s receives Recovery, sleep, HRV and workouts with sport, duration, distance and heart rate when you ask.</string>
     <string name="coach_settings_instructions">Instructions</string>
     <string name="coach_settings_default">Default</string>
     <string name="coach_settings_custom">Custom</string>
@@ -1927,7 +1927,7 @@
     <string name="devices_reads_live_hr">Live heart rate</string>
     <string name="devices_reads_hrv">HRV (rMSSD)</string>
     <string name="devices_reads_sleep">Sleep staging</string>
-    <string name="devices_reads_recovery">Charge &amp; Effort</string>
+    <string name="devices_reads_recovery">Recovery &amp; Strain</string>
     <string name="devices_reads_resp">Respiratory rate</string>
     <string name="devices_reads_stress">Stress (on-device)</string>
     <string name="devices_reads_workouts">Workout detection</string>
@@ -2148,10 +2148,10 @@
     <string name="wmy_dose_caffeine_lower">Next-day %1$s is usually lower after late caffeine.</string>
     <string name="wmy_dose_caffeine_higher">Next-day %1$s is usually higher after late caffeine.</string>
     <string name="wmy_dose_timing_note">Dose here is timing: later in the day counts as more.</string>
-    <string name="wmy_rel_rest_charge">Rest ↔ Charge</string>
-    <string name="wmy_rel_hrv_charge">HRV ↔ Charge</string>
-    <string name="wmy_rel_rhr_charge">Resting HR ↔ Charge</string>
-    <string name="wmy_rel_charge_lag">Charge → Next-day charge</string>
+    <string name="wmy_rel_rest_charge">Sleep ↔ Recovery</string>
+    <string name="wmy_rel_hrv_charge">HRV ↔ Recovery</string>
+    <string name="wmy_rel_rhr_charge">Resting HR ↔ Recovery</string>
+    <string name="wmy_rel_charge_lag">Recovery → Next-day recovery</string>
     <string name="wmy_mood_better">Days with higher %1$s tend to be your better-mood days.</string>
     <string name="wmy_mood_lower">Days with higher %1$s tend to be your lower-mood days.</string>
     <string name="wmy_mood_recovery">recovery</string>
