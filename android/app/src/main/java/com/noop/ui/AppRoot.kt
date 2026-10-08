@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
@@ -45,6 +46,14 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.noop.R
 import com.noop.push.SelfHostedPushScreen
+import com.noop.ui.friends.FriendPageScreen
+import com.noop.ui.friends.FriendsActions
+import com.noop.ui.friends.FriendsAddScreen
+import com.noop.ui.friends.FriendsListScreen
+import com.noop.ui.friends.FriendsProfileScreen
+import com.noop.ui.friends.FriendsSignedIn
+import com.noop.ui.friends.FriendsTabScreen
+import com.noop.ui.friends.FriendsViewModel
 import com.noop.ui.metric.ALL_METRICS_ROUTE
 import com.noop.ui.metric.AllMetricsScreen
 import com.noop.ui.metric.MetricAllDataScreen
@@ -77,8 +86,8 @@ import com.noop.ui.workouts.workoutKey
 
 // MARK: - Navigation model
 //
-// Twin of the iOS RootTabView: a Material 3 NavigationBar with the four tabs of [MainTab] (Summary, Sleep,
-// Workouts, Browse) over ONE NavHost. Each tab keeps its own back stack: selecting a tab pops the whole
+// Twin of the iOS RootTabView: a Material 3 NavigationBar with the five tabs of [MainTab] (Summary, Sleep,
+// Workouts, the fork's Friends, Browse) over ONE NavHost. Each tab keeps its own back stack: selecting a tab pops the whole
 // visible stack with its state saved and restores the selected tab's saved stack, so a tab comes back
 // exactly as it was left. Re-selecting the active tab pops it to its root, or scrolls a root that is
 // already showing back to the top. Screens outside the three main tabs are Browse rows and push inside
@@ -88,11 +97,18 @@ import com.noop.ui.workouts.workoutKey
 
 /** A NavHost destination, by the stable route string it is registered under. */
 internal enum class Destination(val route: String) {
-    // The four tab roots.
+    // The five tab roots.
     Today("today"),
     Sleep("sleep"),
     Workouts("workouts"),
+    Friends("friends"),
     Browse("browse"),
+
+    // The Friends tab's pages: everyone at a glance, one friend (by nickname), adding a friend, my profile.
+    FriendsList("friends_list"),
+    FriendPage("friend/{nick}"),
+    FriendsAdd("friends_add"),
+    FriendsProfile("friends_profile"),
 
     // Browse rows.
     AllMetrics(ALL_METRICS_ROUTE),
@@ -166,6 +182,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     val scrollTop = remember { mutableStateListOf(*Array(MainTab.entries.size) { 0 }) }
 
     val context = LocalContext.current
+    // The Friends tab's screens share one view model, owned by the activity like [viewModel] but created
+    // only when a Friends screen is first shown, so an install that never opens the tab never builds it.
+    val friendsOwner = checkNotNull(LocalViewModelStoreOwner.current)
     // The recording screen (a workout or the interval timer), drawn full screen over every tab and put away
     // to the mini-player above the navigation bar (iOS NowRunning). Guarded on a running workout so it never
     // opens empty.
@@ -245,7 +264,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             // away it docks as the mini-player above the bar.
             Column {
             NowRunningBar(viewModel)
-            // Four labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
+            // Five labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
             // "Workouts" lost their last letter); TalkBack still reads each name in full (CR-1).
             CappedFontScale(max = 1.3f) {
                 NavigationBar {
@@ -320,8 +339,51 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     ),
                 )
             }
+            tabRoot(MainTab.Friends, scrollTop) {
+                FriendsTabScreen(
+                    appVm = viewModel,
+                    vm = viewModel<FriendsViewModel>(friendsOwner),
+                    actions = FriendsActions(
+                        openList = { nav.push(Destination.FriendsList.route) },
+                        openFriend = { nav.push(friendRoute(it)) },
+                        openAdd = { nav.push(Destination.FriendsAdd.route) },
+                        openProfile = { nav.push(Destination.FriendsProfile.route) },
+                    ),
+                )
+            }
             tabRoot(MainTab.Browse, scrollTop) {
                 BrowseScreen(onOpen = { route -> nav.push(route) })
+            }
+
+            // --- The Friends tab's pages. Each leaves for the tab's root if the session ends under it. ---
+            composable(Destination.FriendsList.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsListScreen(viewModel, friendsVm, onBack = { nav.popBackStack() }, openFriend = { nav.push(friendRoute(it)) })
+                }
+            }
+            composable(Destination.FriendPage.route, arguments = listOf(navArgument("nick") { type = NavType.StringType })) { entry ->
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendPageScreen(viewModel, friendsVm, nick = entry.arguments?.getString("nick").orEmpty(), onBack = { nav.popBackStack() })
+                }
+            }
+            composable(Destination.FriendsAdd.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsAddScreen(friendsVm, onBack = { nav.popBackStack() }, openFriend = { nav.push(friendRoute(it)) })
+                }
+            }
+            composable(Destination.FriendsProfile.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsProfileScreen(
+                        friendsVm,
+                        onBack = { nav.popBackStack() },
+                        openAdd = { nav.push(Destination.FriendsAdd.route) },
+                        openFriend = { nav.push(friendRoute(it)) },
+                    )
+                }
             }
 
             // --- Browse rows ---
@@ -485,6 +547,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     }
 }
 
+/** The page of one friend on the Friends tab, by nickname. */
+private fun friendRoute(nick: String): String = "friend/${android.net.Uri.encode(nick)}"
+
 /** The page of one workout on the Workouts tab. */
 private fun workoutRoute(row: com.noop.data.WorkoutRow): String = "workout/${android.net.Uri.encode(workoutKey(row))}"
 
@@ -507,7 +572,7 @@ private fun androidx.navigation.NavGraphBuilder.tabRoot(
 /**
  * Selects [tab]: everything above the graph is popped with its state saved (the tab being left, root
  * included), then [tab]'s saved stack is restored, or its root pushed the first time. Popping to the
- * graph rather than to the start destination treats all four tabs alike, so the Summary's pushed screens
+ * graph rather than to the start destination treats all five tabs alike, so the Summary's pushed screens
  * survive a trip to another tab as reliably as any other tab's do.
  */
 private fun NavHostController.selectTab(tab: MainTab) {

@@ -6,9 +6,11 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.automirrored.outlined.DirectionsRun
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,11 +21,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.noop.R
 
-// MARK: - The four primary tabs (twin of the iOS RootTabView tab set)
+// MARK: - The five primary tabs (the iOS RootTabView tab set, plus the fork's Friends)
 //
-// Summary, Sleep, Workouts, Browse, in the bar's order. Settings is not a tab: it is pushed from the
-// Summary's profile avatar. Everything outside the three main tabs is a row in Browse. Each tab keeps its
-// own back stack inside the one NavHost (AppRoot saves and restores it on every tab switch).
+// Summary, Sleep, Workouts, Friends, Browse, in the bar's order. Friends is a reNOOP fork feature with no
+// iOS twin (friends-server/README.md). Settings is not a tab: it is pushed from the Summary's profile
+// avatar. Everything outside the main tabs is a row in Browse. Each tab keeps its own back stack inside the
+// one NavHost (AppRoot saves and restores it on every tab switch).
 
 /** One primary tab: the route of its root screen, its label, and its selected / unselected icons. */
 internal enum class MainTab(
@@ -40,6 +43,7 @@ internal enum class MainTab(
         Icons.AutoMirrored.Filled.DirectionsRun,
         Icons.AutoMirrored.Outlined.DirectionsRun,
     ),
+    Friends(Destination.Friends.route, R.string.nav_friends, Icons.Filled.Group, Icons.Outlined.Group),
     Browse(Destination.Browse.route, R.string.nav_browse, Icons.Filled.Search, Icons.Outlined.Search);
 
     companion object {

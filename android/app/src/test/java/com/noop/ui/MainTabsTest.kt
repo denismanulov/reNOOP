@@ -6,16 +6,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The four primary tabs (iOS RootTabView: Summary, Sleep, Workouts, Browse). AppRoot derives the selected
+ * The five primary tabs (iOS RootTabView's Summary, Sleep, Workouts and Browse, with the fork's Friends
+ * between Workouts and Browse). AppRoot derives the selected
  * tab from which tab ROOT is on the back stack, so the roots must be distinct routes that no pushed
  * screen shares; this pins that and the bar's order.
  */
 class MainTabsTest {
 
     @Test
-    fun theBarCarriesTheFourIosTabsInOrder() {
+    fun theBarCarriesTheFiveTabsInOrder() {
         assertEquals(
-            listOf(MainTab.Summary, MainTab.Sleep, MainTab.Workouts, MainTab.Browse),
+            listOf(MainTab.Summary, MainTab.Sleep, MainTab.Workouts, MainTab.Friends, MainTab.Browse),
             MainTab.entries.toList(),
         )
     }
@@ -25,6 +26,7 @@ class MainTabsTest {
         assertEquals(Destination.Today.route, MainTab.Summary.route)
         assertEquals(Destination.Sleep.route, MainTab.Sleep.route)
         assertEquals(Destination.Workouts.route, MainTab.Workouts.route)
+        assertEquals(Destination.Friends.route, MainTab.Friends.route)
         assertEquals(Destination.Browse.route, MainTab.Browse.route)
         assertEquals(MainTab.entries.size, MainTab.entries.map { it.route }.distinct().size)
     }
