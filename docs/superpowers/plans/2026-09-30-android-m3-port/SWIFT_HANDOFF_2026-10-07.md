@@ -5,6 +5,9 @@ found and built on Android first, and the Swift app has no twin yet. This page i
 or agent) brings it to `Packages/` and `Strand/`. It also records findings from the same day that
 changed no code but concern logic both platforms share.
 
+Later changes that also started on Android are listed in [`SWIFT_WORKLIST.md`](SWIFT_WORKLIST.md),
+which is the index to start from; this page stays the specification for its task 1.
+
 Read [`AGENTS.md`](../../../../AGENTS.md) first for the parity contract, and
 [`docs/VALIDATION_PROTOCOL.md`](../../../VALIDATION_PROTOCOL.md) before claiming any accuracy.
 
