@@ -123,5 +123,7 @@ FRIENDS_DB=/var/lib/renoop-friends/friends.db python3 server.py
 `/var/lib/renoop-friends`, and `Caddyfile.example` puts HTTPS in front. Passwords travel in the
 request body, so the service must never be reachable over plain HTTP from outside.
 
-Back up with `sqlite3 /var/lib/renoop-friends/friends.db ".backup '/root/friends-backup.db'"`; the
-file is safe to copy while the server runs only through that command.
+`backup.py` with `renoop-friends-backup.service` and `.timer` writes a consistent copy to
+`/var/backups/renoop-friends` every night and keeps the newest seven. Those copies sit on the same
+disk, so they cover a damaged or emptied database, not a lost server. Never copy the live file by
+hand while the server runs: it is only consistent through SQLite's backup call.
