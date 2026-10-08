@@ -132,3 +132,24 @@ columns are no longer read or written with anything but an empty value.
 
 Back up with `sqlite3 /var/lib/renoop-friends/friends.db ".backup '/root/friends-backup.db'"`; the
 file is safe to copy while the server runs only through that command.
+
+## How a phone fills a day
+
+Two friends on different platforms read each other's figures side by side, so a day is built one way.
+The reference is `FriendsDayBuilder` in `Packages/StrandAnalytics` (Swift); a second client matches it.
+
+- **A section whose switch is off is not built**, so it is not sent. The server dropping it is the
+  second line, not the first.
+- `recovery` and `sleepScore`: the app's 0 to 100 score, rounded to a whole number. A value outside
+  0 to 100 is left out. `strain`: the stored 0 to 100 value, rounded to one decimal.
+- `sleep`: the night that ended on that local day. Each of `remMin`, `lightMin`, `deepMin` and
+  `awakeMin` is the stage total rounded to a whole minute, and `asleepMin` is the sum of the three
+  rounded sleeping stages, so the parts add up to the total. A night with no time asleep is left out.
+- `workouts`: those that started on that local day, oldest first, the latest 20 when there are more.
+  `durationS` is the recorded duration, else end minus start. A figure outside the server's range is
+  left out of that workout, not clamped.
+- `hr.series`: the mean of each 300-second bin on the Unix clock (`ts // 300 * 300`), rounded half up,
+  stamped at the bin's start, oldest first, at most the newest 300 bins. Samples outside 20 to 250 bpm
+  are not readings. `lastBpm` and `lastTs` are the newest usable sample.
+- A day with nothing in it is not uploaded, and a day whose content has not changed is not sent again.
+- Today and yesterday are sent after each scoring pass and when the Friends tab opens.

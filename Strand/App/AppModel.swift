@@ -367,6 +367,12 @@ final class AppModel: ObservableObject {
             // Keep the battery night-guard's learned bedtime warm off the same signal (throttled inside).
             self?.refreshHabitualMidsleep()
         }.store(in: &hrCancellables)
+        // Friends (fork feature): after a scoring pass, send today's summary to the friends server. A
+        // no-op until the wearer has created an account there.
+        repo.$days.dropFirst().sink { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in FriendsStore.shared.daysChanged(repo: self.repo) }
+        }.store(in: &hrCancellables)
         // A pending "I'm awake" mark is applied once the night it belongs to is on record. The cached
         // days change at the end of every scoring pass, which is when that can first be true. The short
         // wait lets the same pass finish writing its sleep sessions.

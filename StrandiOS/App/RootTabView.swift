@@ -237,6 +237,10 @@ struct RootTabView: View {
     private var sleepRoot: some View {
         tabRoot(SleepHealthView(), path: $tabPaths[2], scrollSignal: scrollTop[2], showsNavigationBar: true)
     }
+    /// Tag 3 was the retired Coach tab; Friends takes its place in the bar, as Fitness has Sharing.
+    private var friendsRoot: some View {
+        tabRoot(FriendsView(), path: $tabPaths[3], scrollSignal: scrollTop[3], showsNavigationBar: true)
+    }
     private var browseRoot: some View { browseTab(path: $tabPaths[4], scrollSignal: scrollTop[4]) }
 
     /// iOS 18+ declares tabs with `Tab`, which is what lets Browse take the search role (its own glass
@@ -248,6 +252,7 @@ struct RootTabView: View {
                 Tab("Summary", systemImage: "heart.text.square", value: 0) { summaryRoot }
                 Tab("Sleep", systemImage: "bed.double", value: 2) { sleepRoot }
                 Tab("Workouts", systemImage: "figure.run", value: 1) { workoutsRoot }
+                Tab("Friends", systemImage: "person.2.fill", value: 3) { friendsRoot }
                 Tab("Browse", systemImage: "magnifyingglass", value: 4, role: .search) { browseRoot }
             }
         } else {
@@ -255,6 +260,7 @@ struct RootTabView: View {
                 summaryRoot.tabItem { Label("Summary", systemImage: "heart.text.square") }.tag(0)
                 sleepRoot.tabItem { Label("Sleep", systemImage: "bed.double") }.tag(2)
                 workoutsRoot.tabItem { Label("Workouts", systemImage: "figure.run") }.tag(1)
+                friendsRoot.tabItem { Label("Friends", systemImage: "person.2.fill") }.tag(3)
                 browseRoot.tabItem { Label("Browse", systemImage: "magnifyingglass") }.tag(4)
             }
         }
