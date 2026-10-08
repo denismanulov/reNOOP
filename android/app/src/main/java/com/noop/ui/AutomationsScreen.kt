@@ -8,6 +8,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +51,9 @@ fun AutomationsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val enabled by viewModel.napDetectionEnabled.collectAsStateWithLifecycle()
     // The queue is written from the BLE layer and is not a flow: read it on entry and after each action.
-    var pending by remember { mutableStateOf(viewModel.pendingNaps()) }
+    // Empty until that read returns, because the read also drops what overlaps recorded sleep.
+    var pending by remember { mutableStateOf(emptyList<NapCandidate>()) }
+    LaunchedEffect(Unit) { pending = viewModel.pendingNaps() }
     val is24h = ClockPrefs.uses24Hour(context)
 
     SettingsPage(title = stringResource(R.string.nav_automations), onBack = onBack) {
@@ -63,7 +66,7 @@ fun AutomationsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                         checked = enabled,
                         onCheckedChange = {
                             viewModel.setNapDetectionEnabled(it)
-                            if (it) pending = viewModel.pendingNaps()
+                            if (it) scope.launch { pending = viewModel.pendingNaps() }
                         },
                     )
                 }

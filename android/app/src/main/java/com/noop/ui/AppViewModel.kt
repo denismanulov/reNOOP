@@ -1897,9 +1897,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         com.noop.analytics.NapPrefs.setEnabled(appContext, enabled)
     }
 
-    /** The detected naps awaiting review (newest first). Read on demand by the Automations review card. */
-    fun pendingNaps(): List<com.noop.analytics.NapCandidate> =
-        com.noop.data.NapStore.pending(appContext)
+    /**
+     * The detected naps awaiting review (newest first), read on demand by the Automations review card.
+     * A candidate that overlaps a recorded sleep session is dropped from the queue first: detection runs
+     * on every offload, during the night as well, and the night's session is often not on record until
+     * the morning, so this is where a stretch of the night queued as a "nap" is caught.
+     */
+    suspend fun pendingNaps(): List<com.noop.analytics.NapCandidate> {
+        val queued = com.noop.data.NapStore.pending(appContext)
+        if (queued.isEmpty()) return queued
+        // Sessions are read by START time, so reach back a day to see one that began before the queue.
+        val from = queued.minOf { it.start } - 86_400L
+        val to = queued.maxOf { it.end }
+        val sleep = runCatching { repository.sleepSessionsMerged(deviceId, from, to) }
+            .getOrDefault(emptyList())
+            .map { it.startTs to it.endTs }
+        return com.noop.data.NapStore.dropOverlappingSleep(appContext, sleep)
+    }
 
     /** Accept a detected nap: persist it as a manual nap session (the SAME #508 overlap-guarded path) and
      *  drop it from the review queue. Returns the still-pending list for the UI to re-render. */

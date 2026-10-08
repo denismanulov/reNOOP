@@ -4936,7 +4936,16 @@ class WhoopBleClient(
                 if (decision.verdict == NapVerdict.NAP && decision.candidate != null &&
                     decision.candidate.end > highWater
                 ) {
-                    val queued = NapStore.enqueue(context, decision.candidate, nowSec)
+                    // A stretch that is already sleep on record is not a nap to review. This hook runs
+                    // on every offload, at night too, and a night is made of quiet stretches of nap
+                    // length. Sessions are read by START time, so reach back a day. The night's session
+                    // is often not written yet at this point; the review screen applies the same rule
+                    // when it is read, which is where those are caught.
+                    val sleep = runCatching {
+                        repository.sleepSessionsMerged(deviceId, decision.candidate.start - 86_400L, decision.candidate.end)
+                    }.getOrDefault(emptyList()).map { it.startTs to it.endTs }
+                    val queued = NapStore.outsideSleep(listOf(decision.candidate), sleep).isNotEmpty() &&
+                        NapStore.enqueue(context, decision.candidate, nowSec)
                     // Advance the mark past this nap's window so the same window isn't re-judged on the next
                     // overlapping offload — whether or not it newly queued (a dup the user already saw or
                     // dismissed is still "past"). NapStore's own dedup is the belt to this braces.
