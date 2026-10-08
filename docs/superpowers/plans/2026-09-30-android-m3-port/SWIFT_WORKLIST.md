@@ -17,7 +17,7 @@ twin. This page is the ordered list of that work for whoever (person or agent) b
   is shown to track a varying input.
 - Each section says what was seen on a device. Most of this was built on one day and has **not** been
   exercised on a strap. Do not describe the Swift twin as verified on the strength of the Android one.
-- Tasks 1 to 4 need no decision and can be done in order. Tasks 5 to 7 start with a decision that
+- Tasks 1 to 4 need no decision and can be done in order. Tasks 5 to 8 start with a decision that
   belongs to the Swift app's owner; the section says what the decision is.
 
 | # | Task | Android commits | Decision needed first | Seen on a device (Android) |
@@ -29,6 +29,7 @@ twin. This page is the ordered list of that work for whoever (person or agent) b
 | 5 | Score names: Recovery / Strain / Sleep | `48db24f7`, `bc67ceee` | yes: rename on iOS or not | English and Russian, on one phone |
 | 6 | Friends tab client | `45dfa0db`, `990ef2e8` (server only) | yes: the design is not final | server only; no client exists on either platform |
 | 7 | Sleep tab rethought around answers | `3545cfa9`, `a91adcda`, `4f6c2764` | yes: follow it on iOS or keep the Health layout | daily use, one phone |
+| 8 | Coach conversation redrawn, and Coach as a tab | `f20adffb`, `12e1abbf` | yes: follow it on iOS or keep the Messages layout | the conversation on one phone; the tab compiled and unit-tested only |
 
 Nothing to do on Swift: `36af70f2` (the short-nap review list). Nap detection and its review queue
 (`NapDetector`, `NapStore`) exist only on Android.
@@ -226,6 +227,40 @@ is a parity obligation.
 What Android built is described in this folder's [`README.md`](README.md), "Sleep tab rework
 (2026-10-07)": the tab, one sleep's page, Sleep History, and the hand-drawn Material 3 Expressive
 pieces. The last of those is Android-only styling; the structure is what would carry over.
+
+## 8. Coach conversation redrawn, and Coach as a tab
+
+No suggested subject: whether iOS follows is the decision.
+
+The wearer found the Messages-style conversation heavy: replies set in a larger type than his own
+messages, with headings larger still, no motion, and a header line naming "Your server" and the
+general caution about AI. Android now draws it as a messenger chat (`f20adffb`): both sides in one
+chat-sized type, the clock time in each bubble's bottom corner and one chip per day in place of the
+hourly stamp, a floating header and entry row drawn as glass over the transcript, and, while a reply
+is on its way, the Coach's mark turning beside a verb that changes every few seconds in place of the
+three dots. The header's status line reads "typing…" for that time and otherwise names the model.
+The verbs describe thinking and claim no step the app cannot show is happening.
+
+Coach is also a tab of its own on Android, between Workouts and Browse, shown while the AI Coach
+switch is on (`12e1abbf`); its Browse row and search hit are gone and the Coach widget's link shows
+the tab.
+
+What would carry over if iOS follows: the chat-sized type for replies (the complaint was about size,
+and `CoachView` sets replies the same way), the per-bubble time with a day chip (`dayChipBefore`
+replaces `stampBefore` in `CoachConversationRules`), the changing verb, and the status line. Glass is
+native on iOS 26. The tab is a placement choice for the iOS owner.
+
+| English | Russian |
+|---|---|
+| typing… | печатает… |
+| Thinking… | Думаю… |
+| Pondering… | Размышляю… |
+| Mulling it over… | Обдумываю… |
+| Connecting the dots… | Сопоставляю… |
+| Weighing it up… | Взвешиваю… |
+| Finding the words… | Подбираю слова… |
+| What would you like to know? | Что хотите узнать? |
+| Jump to latest | К последним сообщениям |
 
 ## Findings that changed no code
 
