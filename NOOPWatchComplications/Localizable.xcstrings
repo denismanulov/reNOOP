@@ -204,7 +204,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "es": {
@@ -234,7 +234,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд"
+            "value": "Восстановление"
           }
         },
         "zh-Hans": {
@@ -268,7 +268,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge %lld out of 100"
+            "value": "Recovery %lld out of 100"
           }
         },
         "pt-PT": {
@@ -280,7 +280,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд %lld из 100"
+            "value": "Восстановление %lld из 100"
           }
         },
         "es": {
@@ -307,16 +307,16 @@
             "value": "Energia %lld na 100"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld，满分 100"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld，满分 100"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld，滿分 100"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld，滿分 100"
           }
         }
       }
@@ -332,7 +332,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge %lld · %lld bpm%@"
+            "value": "Recovery %lld · %lld bpm%@"
           }
         },
         "pt-PT": {
@@ -344,7 +344,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд %lld · %lld уд/мин%@"
+            "value": "Восстановление %lld · %lld уд/мин%@"
           }
         },
         "es": {
@@ -371,16 +371,16 @@
             "value": "Energia %lld · %lld bpm%@"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld · %lld bpm%@"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld · %lld bpm%@"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld · %lld bpm%@"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld · %lld bpm%@"
           }
         }
       }
@@ -396,7 +396,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge %lld%@"
+            "value": "Recovery %lld%@"
           }
         },
         "pt-PT": {
@@ -408,7 +408,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд %lld%@"
+            "value": "Восстановление %lld%@"
           }
         },
         "es": {
@@ -435,16 +435,16 @@
             "value": "Energia %lld%@"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld%@"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld%@"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 %lld%@"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 %lld%@"
           }
         }
       }
@@ -460,7 +460,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge calibrating"
+            "value": "Recovery calibrating"
           }
         },
         "pt-PT": {
@@ -472,7 +472,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд калибруется"
+            "value": "Восстановление калибруется"
           }
         },
         "es": {
@@ -499,16 +499,16 @@
             "value": "Kalibracja Energia"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量校准中"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量校准中"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量校準中"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量校準中"
           }
         }
       }
@@ -524,7 +524,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge calibrating, needs more data"
+            "value": "Recovery calibrating, needs more data"
           }
         },
         "pt-PT": {
@@ -536,7 +536,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд калибруется, нужно больше данных"
+            "value": "Восстановление калибруется, нужно больше данных"
           }
         },
         "es": {
@@ -563,16 +563,16 @@
             "value": "Kalibracja Energia, wymaga więcej danych"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量校准中，需要更多数据"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量校准中，需要更多数据"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量校準中，需要更多資料"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量校準中，需要更多資料"
           }
         }
       }
@@ -588,7 +588,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge out of date, last synced %@. Open reNOOP on iPhone."
+            "value": "Recovery out of date, last synced %@. Open reNOOP on iPhone."
           }
         },
         "pt-PT": {
@@ -600,7 +600,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд устарел, последняя синхронизация %@. Откройте reNOOP на iPhone."
+            "value": "Восстановление устарело, последняя синхронизация %@. Откройте reNOOP на iPhone."
           }
         },
         "es": {
@@ -627,16 +627,16 @@
             "value": "Energia nieaktualny, ostatnia synchronizacja %@. Otwórz reNOOP na iPhonie."
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量数据已过期，上次同步 %@。请在 iPhone 上打开 reNOOP。"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量数据已过期，上次同步 %@。请在 iPhone 上打开 reNOOP。"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量資料已過期，上次同步 %@。請在 iPhone 上開啟 reNOOP。"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量資料已過期，上次同步 %@。請在 iPhone 上開啟 reNOOP。"
           }
         }
       }
@@ -652,7 +652,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge stale · %@"
+            "value": "Recovery stale · %@"
           }
         },
         "pt-PT": {
@@ -664,7 +664,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд устарел · %@"
+            "value": "Восстановление устарело · %@"
           }
         },
         "es": {
@@ -691,16 +691,16 @@
             "value": "Energia nieaktualne · %@"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量已过期 · %@"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量已过期 · %@"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量已過期 · %@"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量已過期 · %@"
           }
         }
       }
@@ -716,7 +716,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge unavailable"
+            "value": "Recovery unavailable"
           }
         },
         "pt-PT": {
@@ -728,7 +728,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд недоступен"
+            "value": "Восстановление недоступно"
           }
         },
         "es": {
@@ -755,16 +755,16 @@
             "value": "Energia niedostępny"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量不可用"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量不可用"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量不可用"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量不可用"
           }
         }
       }
@@ -780,7 +780,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge · %@"
+            "value": "Recovery · %@"
           }
         },
         "pt-PT": {
@@ -792,7 +792,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд · %@"
+            "value": "Восстановление · %@"
           }
         },
         "es": {
@@ -819,16 +819,16 @@
             "value": "Energia · %@"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 · %@"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 · %@"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 · %@"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 · %@"
           }
         }
       }
@@ -844,7 +844,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge · cal"
+            "value": "Recovery · cal"
           }
         },
         "pt-PT": {
@@ -856,7 +856,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд · кал"
+            "value": "Восстановление · кал"
           }
         },
         "es": {
@@ -883,16 +883,16 @@
             "value": "Energia · kal"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 · 校准"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 · 校准"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 · 校準"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 · 校準"
           }
         }
       }
@@ -908,7 +908,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge –"
+            "value": "Recovery –"
           }
         },
         "pt-PT": {
@@ -920,7 +920,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд –"
+            "value": "Восстановление –"
           }
         },
         "es": {
@@ -947,16 +947,16 @@
             "value": "Energia –"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 –"
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 –"
           }
         },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "能量 –"
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能量 –"
           }
         }
       }
@@ -972,7 +972,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Effort"
+            "value": "Strain"
           }
         },
         "es": {
@@ -1002,7 +1002,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Усилие"
+            "value": "Нагрузка"
           }
         },
         "zh-Hans": {
@@ -1036,7 +1036,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "reNOOP Charge"
+            "value": "reNOOP Recovery"
           }
         },
         "es": {
@@ -1060,7 +1060,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "reNOOP Заряд"
+            "value": "reNOOP Восстановление"
           }
         },
         "zh-Hans": {
@@ -1484,7 +1484,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rest"
+            "value": "Sleep"
           }
         },
         "es": {
@@ -1514,7 +1514,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отдых"
+            "value": "Сон"
           }
         },
         "zh-Hans": {
@@ -1548,7 +1548,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your Charge (recovery) on the watch face, with Effort and Rest in the rectangular card."
+            "value": "Your Recovery on the watch face, with Strain and Sleep in the rectangular card."
           }
         },
         "es": {
@@ -1572,7 +1572,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ваш заряд (восстановление) на циферблате, с показателями «Усилие» и «Отдых» в прямоугольной карточке."
+            "value": "Ваше Восстановление на циферблате, с показателями «Нагрузка» и «Сон» в прямоугольной карточке."
           }
         },
         "zh-Hans": {

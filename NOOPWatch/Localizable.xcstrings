@@ -844,7 +844,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "es": {
@@ -874,7 +874,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заряд"
+            "value": "Восстановление"
           }
         },
         "zh-Hans": {
@@ -1100,7 +1100,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Effort"
+            "value": "Strain"
           }
         },
         "es": {
@@ -1130,7 +1130,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Усилие"
+            "value": "Нагрузка"
           }
         },
         "zh-Hans": {
@@ -2124,7 +2124,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rest"
+            "value": "Sleep"
           }
         },
         "es": {
@@ -2154,7 +2154,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отдых"
+            "value": "Сон"
           }
         },
         "zh-Hans": {

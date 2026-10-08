@@ -108,7 +108,8 @@ struct IntervalTimerView: View {
                   minus: { runner.workSeconds = max(Self.minPhase, runner.workSeconds - 5) },
                   plus: { runner.workSeconds = min(Self.maxPhase, runner.workSeconds + 5) },
                   wheel: .work)
-            block("Rest", symbol: "chevron.down.2", tint: StrandPalette.activityStandText,
+            // Its own key: "Rest" alone is the Sleep score's key, shown under another name.
+            block("interval.rest", symbol: "chevron.down.2", tint: StrandPalette.activityStandText,
                   value: IntervalTimerRunner.clock(runner.restSeconds),
                   minus: { runner.restSeconds = max(Self.minPhase, runner.restSeconds - 5) },
                   plus: { runner.restSeconds = min(Self.maxPhase, runner.restSeconds + 5) },
@@ -414,7 +415,7 @@ final class IntervalTimerRunner: ObservableObject {
         var label: String {
             switch self {
             case .work: return String(localized: "Work")
-            case .rest: return String(localized: "Rest")
+            case .rest: return String(localized: "interval.rest", defaultValue: "Rest")
             case .done: return String(localized: "Done")
             }
         }

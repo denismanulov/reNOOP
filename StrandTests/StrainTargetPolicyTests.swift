@@ -45,7 +45,8 @@ final class StrainTargetPolicyTests: XCTestCase {
     func testCopyUsesNoopWordingAndTheTarget() {
         let copy = Policy.copy(target: 14)
         // NOOP's own copy — must NOT reproduce WHOOP's decompiled strings.
-        XCTAssertTrue(copy.title.contains("Effort Target Reached"))
+        // The score is shown as "Strain" (the key is still "Effort Target Reached").
+        XCTAssertTrue(copy.title.contains("Strain Target Reached"))
         XCTAssertFalse(copy.title.contains("Target Strain Reached"))
         XCTAssertTrue(copy.body.contains("14"))
         XCTAssertFalse(copy.body.contains("for this activity"))

@@ -91,7 +91,7 @@ struct NOOPWidgetView: View {
 
     private var inlineText: String {
         var parts: [String] = []
-        if let r = snap.recovery { parts.append("Charge \(r)%") }
+        if let r = snap.recovery { parts.append(String(localized: "Charge \(String(r))%")) }
         if let b = bpm { parts.append("\(b) bpm") }
         return parts.isEmpty ? "reNOOP" : parts.joined(separator: " · ")
     }

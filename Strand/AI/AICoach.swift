@@ -316,6 +316,8 @@ final class AICoachEngine: ObservableObject {
     recent workouts. Charge is the daily recovery/readiness score, effort is the daily cardiovascular \
     load score, and rest is the nightly sleep-quality score. A dash in the data means that value was \
     NOT MEASURED that day — say so rather than treating it as a zero. \
+    The app shows these to the user as Recovery (charge), Strain (effort) and Sleep (rest): use those \
+    names when you answer. \
     Coach using autoregulation:
     • Readiness → prescription: charge 67-100 = green light to build/push, higher effort is fine; \
     34-66 = maintain, quality over volume, keep it controlled; 0-33 = active recovery only \
