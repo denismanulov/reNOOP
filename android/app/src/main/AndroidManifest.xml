@@ -7,6 +7,8 @@
       locally (Room). INTERNET supports only explicit opt-ins: the bring-your-own-key
       AI Coach and Experimental one-way push to a user-owned endpoint. No account,
       NOOP server, telemetry, or network dependency is introduced by this permission.
+      reNOOP fork: the Friends tab also uses it, and only after the wearer signs in to a
+      friends server there (friends-server/README.md); signed out, that tab sends nothing.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 

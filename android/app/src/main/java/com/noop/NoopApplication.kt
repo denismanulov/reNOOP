@@ -136,6 +136,9 @@ class NoopApplication : Application() {
             deviceId = startupId,
             successfulOffloadSink = {
                 SelfHostedPushScheduler.enqueueAfterSuccessfulOffload(applicationContext)
+                // Friends tab (fork feature): queue today's and yesterday's summary for the wearer's
+                // friends. Enqueue only, and a no-op unless an account is signed in on that tab.
+                com.noop.friends.FriendsUploadScheduler.enqueueAfterSuccessfulOffload(applicationContext)
             },
             appOnScreen = { AppOnScreen.isOnScreen },
         ).apply {

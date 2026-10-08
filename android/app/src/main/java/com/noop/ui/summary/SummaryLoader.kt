@@ -60,6 +60,11 @@ data class SummarySnapshot(
     val effort: Double? = null,
     /** Sleep performance, 0–100. */
     val rest: Double? = null,
+    /**
+     * The picked day's OWN sleep performance: [rest] without today's carry of the last scored night. The
+     * Friends upload reads this one, since a day sent to a friend carries no "from last night" label.
+     */
+    val restOfDay: Double? = null,
     val metrics: SummaryMetricInputs? = null,
     /** The trailing week one slot per day (null where a day has none), oldest first, by series key. */
     val dailySeries: Map<String, List<Double?>> = emptyMap(),
@@ -106,9 +111,24 @@ internal object SummaryLoader {
         activeDayCycle: ActiveDayCycle?,
         spo2CandidateByDay: Map<String, Double>,
         today: AppToday,
+    ): SummarySnapshot = load(vm.repo, vm.activeStrapId, context, offset, days, todayRow, activeDayCycle, spo2CandidateByDay, today)
+
+    /**
+     * [load] without a view model: the same reads over [repo] for the active strap [active]. The Friends
+     * upload runs in the background with no screen alive, and calls this so the figures a friend sees are
+     * the Summary's own, resolved by the Summary's own code.
+     */
+    suspend fun load(
+        repo: WhoopRepository,
+        active: String,
+        context: Context,
+        offset: Int,
+        days: List<DailyMetric>,
+        todayRow: DailyMetric?,
+        activeDayCycle: ActiveDayCycle?,
+        spo2CandidateByDay: Map<String, Double>,
+        today: AppToday,
     ): SummarySnapshot = withContext(Dispatchers.IO) {
-        val repo = vm.repo
-        val active = vm.activeStrapId
         val isToday = offset == 0
         val logical = today.minusDays(offset)
         val dayKey = logical.toString()
@@ -132,7 +152,7 @@ internal object SummaryLoader {
         val charge = ChargeDisplay.resolve(day?.recovery, prior, calNights, carryToday)
 
         // Effort: today scores the in-progress window live; the stored row is the floor.
-        val live = if (isToday) liveTodayStrain(vm, context, day, logical, mode, activeDayCycle) else null
+        val live = if (isToday) liveTodayStrain(repo, active, context, day, logical, mode, activeDayCycle) else null
         val effort = StrainScorer.effectiveEffort(live, day?.strain)
 
         suspend fun resolved(key: String): Map<String, Double> = runCatching {
@@ -228,6 +248,7 @@ internal object SummaryLoader {
             charge = charge,
             effort = effort,
             rest = rest,
+            restOfDay = restByDay[dayKey],
             metrics = inputs,
             dailySeries = dailySeries,
             weekKeys = weekKeys,
@@ -256,7 +277,8 @@ internal object SummaryLoader {
      * Null below the scorer's minimum readings, so the stored row stands rather than a made-up value.
      */
     private suspend fun liveTodayStrain(
-        vm: AppViewModel,
+        repo: WhoopRepository,
+        active: String,
         context: Context,
         day: DailyMetric?,
         logical: LocalDate,
@@ -270,7 +292,7 @@ internal object SummaryLoader {
             confirmedOrSyntheticOnset = cycle?.onsetTs,
             calendarStart = logical.atStartOfDay(zone).toEpochSecond(),
         )
-        val hr = vm.repo.hrSamplesUnion(vm.activeStrapId, start, now, limit = 200_000)
+        val hr = repo.hrSamplesUnion(active, start, now, limit = 200_000)
         val profile = ProfileStore.from(context)
         val maxHr = profile.hrMaxOverride.takeIf { it > 0 }?.toDouble()
             ?: if (profile.age > 0) StrainScorer.tanakaHRmax(profile.age.toDouble()) else null
@@ -301,21 +323,29 @@ internal object SummaryLoader {
      * that day. The session read is reused while the day history is unchanged.
      */
     suspend fun sleepNight(vm: AppViewModel, days: List<DailyMetric>, wakeDayKey: String): SummarySleepNight? =
+        sleepNight(vm.repo, vm.activeStrapId, days, wakeDayKey)
+
+    /** [sleepNight] without a view model, for the Friends upload (see the [load] overload above). */
+    suspend fun sleepNight(
+        repo: WhoopRepository,
+        active: String,
+        days: List<DailyMetric>,
+        wakeDayKey: String,
+    ): SummarySleepNight? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val active = vm.activeStrapId
                 val memoKey = listOf(active, days.size, days.lastOrNull())
                 val memo = sleepMemo?.takeIf { it.key == memoKey } ?: run {
                     val now = System.currentTimeMillis() / 1000L
-                    val imported = vm.repo.sleepSessionsUnion(active, 0L, now)
-                    val computed = vm.repo.computedSleepSessionsUnion(active, 0L, now)
+                    val imported = repo.sleepSessionsUnion(active, 0L, now)
+                    val computed = repo.computedSleepSessionsUnion(active, 0L, now)
                     fun localEndDay(ts: Long): String {
                         val offsetSec = (java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000).toLong()
                         return AnalyticsEngine.dayString(ts, offsetSec)
                     }
                     val sleeps = WhoopRepository.mergeSleepRichness(imported, computed) { localEndDay(it.endTs) }
                         .sortedBy { it.effectiveStartTs }
-                    SleepMemo(memoKey, sleeps, runCatching { vm.repo.habitualMidsleepSec(active) }.getOrNull())
+                    SleepMemo(memoKey, sleeps, runCatching { repo.habitualMidsleepSec(active) }.getOrNull())
                         .also { sleepMemo = it }
                 }
                 val navDays = memo.sleeps.groupBy { localDayString(it.endTs) }
