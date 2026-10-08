@@ -4,8 +4,9 @@ import WhoopProtocol
 
 /// `SleepStageFeatures` feeds a model trained on other hardware, so what these pin is PORTABILITY: the
 /// features must not move when the things that differ between a dataset's device and a strap move — the
-/// accelerometer's scale, the heart-rate cadence, the wearer's resting pulse, the clock, the order rows
-/// arrive in. They say nothing about whether a feature separates sleep stages; `Tools/SleepML` measures that.
+/// heart-rate cadence, the wearer's resting pulse, the sensor's noise floor, the clock, the order rows
+/// arrive in. Motion is the deliberate exception to "relative": it is measured in g, and that is pinned
+/// too. They say nothing about whether a feature separates sleep stages; `Tools/SleepML` measures that.
 final class SleepStageFeaturesTests: XCTestCase {
 
     // MARK: - fixtures
@@ -111,11 +112,40 @@ final class SleepStageFeaturesTests: XCTestCase {
 
     // MARK: - portability
 
-    func testMotionFeaturesIgnoreTheAccelerometerScale() {
+    /// The sensor's noise at rest differs threefold between devices and must not read as movement:
+    /// with the same movements, a still wrist five times noisier gives the same movement features.
+    func testMotionFeaturesIgnoreTheSensorsNoiseFloor() {
+        func night(noise: Double) -> [GravitySample] {
+            var rng = SplitMix(seed: 7)
+            return ((start - 2400)..<(start + duration + 2400)).map { t in
+                let k = t - start
+                let side = (Double(k) / 1380).rounded(.down).truncatingRemainder(dividingBy: 2) == 0 ? 1.0 : -1.0
+                let burst = (k % 420) < 6 ? (k % 2 == 0 ? 0.2 : -0.2) : 0.0    // far above the threshold
+                func n() -> Double { (rng.unit() - 0.5) * noise }
+                return GravitySample(ts: t, x: 0.3 * side + burst + n(), y: 0.1 + n(), z: 0.94 + n())
+            }
+        }
+        let quiet = SleepStageFeatures.rows(start: start, end: start + duration, grav: night(noise: 0.0008),
+                                            hr: heartRate(), rr: [])
+        let noisy = SleepStageFeatures.rows(start: start, end: start + duration, grav: night(noise: 0.004),
+                                            hr: heartRate(), rr: [])
+        for name in ["move_share", "move_prev_5m", "move_next_30m", "still_minutes", "still_ahead_minutes"] {
+            for (a, b) in zip(column(quiet, name), column(noisy, name)) {
+                XCTAssertEqual(a ?? -1, b ?? -1, accuracy: 1e-9, name)
+            }
+        }
+        XCTAssertTrue(column(quiet, "move_share").contains { ($0 ?? 0) > 0 })
+    }
+
+    /// Motion is in g: a stream that is not (here, one scaled as if decoded in another unit) reads as a
+    /// different night, which is why a source must be brought to g before it gets here.
+    func testMotionIsMeasuredInG() {
         let a = SleepStageFeatures.rows(start: start, end: start + duration, grav: gravity(), hr: heartRate(), rr: [])
         let b = SleepStageFeatures.rows(start: start, end: start + duration, grav: gravity(scale: 3.7),
                                         hr: heartRate(), rr: [])
-        assertSame(a, b, accuracy: 1e-6)
+        let ja = column(a, "jerk_mean").compactMap { $0 }, jb = column(b, "jerk_mean").compactMap { $0 }
+        XCTAssertEqual(ja.count, jb.count)
+        for (x, y) in zip(ja, jb) { XCTAssertEqual(y - x, log10(3.7), accuracy: 1e-6) }
     }
 
     func testHeartRateFeaturesIgnoreTheRestingLevel() {
@@ -124,7 +154,7 @@ final class SleepStageFeaturesTests: XCTestCase {
                                         hr: heartRate(offset: 17), rr: [])
         // A rank moves by a place or two where two bin means that tied exactly no longer do in floating
         // point; everything else is the same number.
-        let ranks: Set<String> = ["hr_rank", "hr_sd_11m_rank"]
+        let ranks: Set<String> = ["hr_rank", "hr_sd_11m_rank", "hr_range_rank"]
         assertSame(a, b, accuracy: 1e-9, skip: ranks)
         for name in ranks {
             for (x, y) in zip(column(a, name), column(b, name)) {
@@ -189,8 +219,83 @@ final class SleepStageFeaturesTests: XCTestCase {
         XCTAssertLessThanOrEqual(still[0], 1.5, "the window opens right after the movement")
         XCTAssertGreaterThan(still[0], 0)
         for i in 1..<still.count { XCTAssertEqual(still[i] - still[i - 1], 0.5, accuracy: 1e-9) }
-        let moved = column(rows, "move_frac").enumerated().filter { $0.element != 0 }
+        let moved = column(rows, "move_share").enumerated().filter { $0.element != 0 }
         XCTAssertTrue(moved.isEmpty, "epochs with movement: \(moved.prefix(5))")
+    }
+}
+
+/// `SleepStageDecoder`: the model's probabilities go through V2's own smoothing, nothing else.
+final class SleepStageDecoderTests: XCTestCase {
+
+    private func sure(_ stage: String, _ p: Double = 0.94) -> [Double] {
+        SleepStageDecoder.stages.map { $0 == stage ? p : (1 - p) / 3 }
+    }
+
+    func testConfidentEpochsComeBackUnchanged() {
+        let truth = Array(repeating: "light", count: 20) + Array(repeating: "deep", count: 30)
+            + Array(repeating: "light", count: 10) + Array(repeating: "rem", count: 25)
+            + Array(repeating: "wake", count: 8) + Array(repeating: "light", count: 12)
+        XCTAssertEqual(SleepStageDecoder.decode(truth.map { sure($0) }), truth)
+    }
+
+    func testALoneWeakEpochIsSmoothedAway() {
+        var probs = Array(repeating: sure("light"), count: 40)
+        probs[20] = [0.2, 0.35, 0.45, 0.0]                // deep by a nose, for one epoch
+        XCTAssertEqual(SleepStageDecoder.decode(probs), Array(repeating: "light", count: 40))
+    }
+
+    func testMissingValueStandsInForEveryUnmeasuredFeature() {
+        let row = SleepStageFeatures.Row(start: 0, values: [1.5, nil, -2])
+        XCTAssertEqual(SleepStageFeatures.modelInput(row), [1.5, SleepStageFeatures.missing, -2])
+    }
+
+    /// A short awakening the model is fairly sure of: charged for wake's rarity twice it is smoothed
+    /// away, charged once it survives.
+    func testDividingByThePriorKeepsAShortAwakening() {
+        let prior = [0.05, 0.56, 0.19, 0.20]
+        var probs = Array(repeating: sure("light", 0.85), count: 60)
+        for i in 30..<33 { probs[i] = [0.55, 0.35, 0.02, 0.08] }
+        XCTAssertFalse(SleepStageDecoder.decode(probs).contains("wake"))
+        let kept = SleepStageDecoder.decode(probs, prior: prior)
+        XCTAssertEqual(Array(kept[30..<33]), ["wake", "wake", "wake"])
+        XCTAssertEqual(kept.filter { $0 == "wake" }.count, 3)
+    }
+
+    /// At full smoothing the decoder IS V2's Viterbi: same emissions in, same path out, for any prior weight.
+    func testFullSmoothingWalksThePathV2sViterbiWalks() {
+        var rng = SplitMix(seed: 11)
+        let probs: [[Double]] = (0..<400).map { i in
+            let lean = [(i / 37) % 4, (i / 11) % 4]
+            let p = (0..<4).map { k in 0.05 + rng.unit() * 0.3 + (lean.contains(k) ? 0.6 : 0) }
+            let total = p.reduce(0, +)
+            return p.map { $0 / total }
+        }
+        let prior = [0.05, 0.56, 0.19, 0.20]
+        for weight in [0.0, 0.4, 1.0] {
+            let p0 = prior.map { pow($0, weight) }
+            let emissions = probs.map { p -> [String: Double] in
+                ["awake": log(p[0] / p0[0]), "light": log(p[1] / p0[1]), "deep": log(p[2] / p0[2]), "rem": log(p[3] / p0[3])]
+            }
+            XCTAssertEqual(SleepStageDecoder.decode(probs, prior: prior, weight: weight),
+                           SleepStagerV2.viterbi(emissions).map { $0 == "awake" ? "wake" : $0 }, "weight \(weight)")
+        }
+    }
+
+    /// With no smoothing every epoch stands alone: the path is each row's own best stage.
+    func testNoSmoothingIsEachEpochOnItsOwn() {
+        var rng = SplitMix(seed: 5)
+        let probs: [[Double]] = (0..<200).map { _ in
+            let p = (0..<4).map { _ in 0.01 + rng.unit() }
+            let total = p.reduce(0, +)
+            return p.map { $0 / total }
+        }
+        let alone = probs.map { row in SleepStageDecoder.stages[row.indices.max { row[$0] < row[$1] }!] }
+        XCTAssertEqual(SleepStageDecoder.decode(probs, smoothing: 0), alone)
+        XCTAssertNotEqual(SleepStageDecoder.decode(probs, smoothing: 1), alone)
+    }
+
+    func testAnEmptyNightDecodesToNothing() {
+        XCTAssertTrue(SleepStageDecoder.decode([]).isEmpty)
     }
 }
 

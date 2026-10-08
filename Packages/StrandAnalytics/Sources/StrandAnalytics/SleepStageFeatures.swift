@@ -10,16 +10,26 @@ import WhoopProtocol
 // output over the open datasets, and inference in the app calls the same function. Nothing is
 // reimplemented in the training script.
 //
-// Three properties every feature is held to, because the training data comes from other hardware:
+// What every feature is held to, because the training data comes from other hardware:
 //
 //  1. ONE INPUT SHAPE. Per-second mean acceleration in g, heart rate, beat intervals where they exist:
 //     what a WHOOP strap gives, and what every dataset is reduced to.
 //  2. ONE HEART-RATE CADENCE. An Apple Watch reports heart rate about every 5 s, an Empatica E4 and a
 //     strap every second. Every heart-rate feature is computed from 10 s bin means, so a source's own
 //     cadence does not leak into a variability feature.
-//  3. NIGHT-RELATIVE SCALES. Heart rate enters as a z-score or rank within the night; motion as a
-//     multiple of the night's own quiescent jerk floor, the same floor `SleepStagerV2` thresholds on. A
-//     different accelerometer, fit or resting pulse moves the scale, not the feature.
+//  3. HEART RATE IS NIGHT-RELATIVE: a z-score or a rank within the night, so a resting pulse of 46 and
+//     one of 66 read alike.
+//  4. MOTION IS ABSOLUTE, IN g, and this is a measured choice, not a default. Two alternatives were tried
+//     on 122 PSG nights and on a wearer's strap:
+//       - Multiples of the night's quiescent jerk floor, as `SleepStagerV2` thresholds. That floor is the
+//         SENSOR's noise, not the sleeper's stillness: 0.00118 g on an Apple Watch, 0.00176 g on an
+//         Empatica E4, 0.00075 g on a WHOOP 4.0. The same wrist movement is a different multiple on each.
+//       - Ranks within the night, which no sensor can move. They also erase how MUCH the night moved, and
+//         that is the wake signal: PSG nights whose wrist moves in over 3 % of seconds are 15.5 % wake
+//         against 2-5 % otherwise, and a rank-fed model missed 8.8 points of it (wake F1 0.40 against 0.55).
+//     A change of mean acceleration from one second to the next is a physical quantity, comparable
+//     wherever the stream really is in g. A source whose gravity decode is not in g must be rescaled
+//     before it reaches this function.
 //
 // Beat-interval features are optional: nil for a source without intervals, and nil for an epoch whose
 // window holds too few beats. Whether the model may lean on them is a training decision, not made here.
@@ -30,14 +40,15 @@ import WhoopProtocol
 
 public enum SleepStageFeatures {
 
-    /// Column names, in the order of `Row.values`. Append only: a trained model binds to these by name.
+    /// Column names, in the order of `Row.values`. A trained model binds to these by name, so a name is
+    /// never reused for a different quantity.
     public static let names: [String] = [
         "minutes", "fraction", "minutes_left",
-        "move_frac", "jerk_max_log", "jerk_mean_log",
+        "move_share", "jerk_max", "jerk_mean",
         "move_prev_5m", "move_next_5m", "move_prev_30m", "move_next_30m",
         "still_minutes", "still_ahead_minutes", "tilt_change", "posture_minutes",
         "hr_z", "hr_rank", "hr_sd_5m_z", "hr_sd_11m_rank", "hr_slope_5m",
-        "hr_step_prev", "hr_step_next", "hr_range_90s", "hr_z_30m",
+        "hr_step_prev", "hr_step_next", "hr_range_rank", "hr_z_30m",
         "rr_rmssd_5m_z", "rr_sdnn_5m_z", "rr_resp_reg_z",
     ]
 
@@ -50,10 +61,24 @@ public enum SleepStageFeatures {
     /// Seconds of stream read outside the window, either side.
     public static let reach = 1800
 
+    /// What the model is given where a feature could not be measured: an ordinary number far outside every
+    /// feature's range, so "not measured" is a value a tree can split on, identical in training and in
+    /// the app. Create ML's boosted trees do accept a missing value in training, but the Core ML model
+    /// they export does not reproduce what they learned for it (given NaN it answered as for a large
+    /// value, wrong on every probe row: measured before this was written), so nothing here relies on it.
+    public static let missing = -999.0
+
+    /// A row as the model takes it: one number per name.
+    public static func modelInput(_ row: Row) -> [Double] { row.values.map { $0 ?? missing } }
+
     static let hrBin = 10                 // seconds per heart-rate bin
     static let capMinutes = 120.0         // ceiling of the "minutes since / until" features
     static let postureDegrees = 20.0      // an epoch-to-epoch tilt above this is a change of posture
     static let minBeats = 60              // beats a 5-min window needs before its interval statistics count
+    /// A change of the per-second mean acceleration above this, in g, is movement. About 3 degrees of
+    /// wrist rotation in a second, and 28 to 67 times the three sensors' noise floors.
+    static let moveG = 0.05
+    static let jerkFloorG = 1e-5          // below every sensor's resolution; keeps the logarithm finite
 
     /// Features for every 30 s epoch of the wall-clock grid covering `[start, end)`: the grid
     /// `SleepStagerV2` stages on. Streams may be unsorted and may run far outside the window.
@@ -86,18 +111,11 @@ public enum SleepStageFeatures {
                 jerk[t] = (dx * dx + dy * dy + dz * dz).squareRoot()
             }
         }
-        // The night's quiescent jerk floor: the median per-second jerk over the window, as in V2.
-        let winLo = start - lo, winHi = min(nSec, end - lo)
-        var pool: [Double] = []
-        pool.reserveCapacity(max(0, winHi - winLo))
-        for t in max(0, winLo)..<winHi where !jerk[t].isNaN { pool.append(jerk[t]) }
-        let floor = max(median(pool) ?? 0, 1e-6)
-        let moveThr = floor * SleepStagerV2.jerkFloorMoveMult
 
         // ── per-epoch motion over the padded range ────────────────────────────────────────────────
-        var moveFrac = [Double?](repeating: nil, count: nEp)
-        var jerkMax = [Double?](repeating: nil, count: nEp)
-        var jerkMean = [Double?](repeating: nil, count: nEp)
+        var moveShare = [Double?](repeating: nil, count: nEp)     // share of seconds above `moveG`
+        var jerkMax = [Double?](repeating: nil, count: nEp)       // log10 of the peak jerk, g
+        var jerkMean = [Double?](repeating: nil, count: nEp)      // log10 of the mean jerk, g
         var dir = [(Double, Double, Double)?](repeating: nil, count: nEp)   // mean gravity direction
         for i in 0..<nEp {
             var n = 0, moves = 0, sum = 0.0, mx = 0.0
@@ -107,12 +125,12 @@ public enum SleepStageFeatures {
                 let j = jerk[t]
                 if j.isNaN { continue }
                 n += 1; sum += j; mx = max(mx, j)
-                if j > moveThr { moves += 1 }
+                if j > moveG { moves += 1 }
             }
             if n > 0 {
-                moveFrac[i] = Double(moves) / Double(n)
-                jerkMax[i] = log10(mx / floor + 1)
-                jerkMean[i] = log10(sum / Double(n) / floor + 1)
+                moveShare[i] = Double(moves) / Double(n)
+                jerkMax[i] = log10(max(mx, jerkFloorG))
+                jerkMean[i] = log10(max(sum / Double(n), jerkFloorG))
             }
             if gcount > 0 {
                 let norm = (sx * sx + sy * sy + sz * sz).squareRoot()
@@ -223,6 +241,14 @@ public enum SleepStageFeatures {
                 }
             }
         }
+        var rawRange = [Double?](repeating: nil, count: nWin)     // heart-rate range over 90 s, bpm
+        for k in 0..<nWin {
+            let near = bins((w0 + k) * 30 - 30, (w0 + k) * 30 + 60).map { $0.1 }
+            if near.count >= 3 { rawRange[k] = near.max()! - near.min()! }
+        }
+        // A rank, not night-SD units: how wide a 90 s swing reads depends on how hard the device smooths
+        // its heart rate (the same statistic is 0.9, 0.3 and 0.7 night-SDs on three devices).
+        let rkRange = rank(rawRange)
         let winHR = (0..<nWin).map { epochHR[w0 + $0] }
         let (hrMean, hrSD) = meanSD(winHR)
         let zSD5 = zscore(rawHRsd5), rkSD11 = rank(rawHRsd11), rkHR = rank(winHR)
@@ -263,15 +289,15 @@ public enum SleepStageFeatures {
             v.append(centre / span)
             v.append((span - centre) / 60)
 
-            v.append(moveFrac[i])
+            v.append(moveShare[i])
             v.append(jerkMax[i])
             v.append(jerkMean[i])
-            v.append(meanOver(moveFrac, i - 10, i))
-            v.append(meanOver(moveFrac, i + 1, i + 11))
-            v.append(meanOver(moveFrac, i - 60, i))
-            v.append(meanOver(moveFrac, i + 1, i + 61))
-            v.append(minutesTo(i, step: -1) { moveFrac[$0].map { $0 > 0 } })
-            v.append(minutesTo(i, step: 1) { moveFrac[$0].map { $0 > 0 } })
+            v.append(meanOver(moveShare, i - 10, i))
+            v.append(meanOver(moveShare, i + 1, i + 11))
+            v.append(meanOver(moveShare, i - 60, i))
+            v.append(meanOver(moveShare, i + 1, i + 61))
+            v.append(minutesTo(i, step: -1) { moveShare[$0].map { $0 > 0 } })
+            v.append(minutesTo(i, step: 1) { moveShare[$0].map { $0 > 0 } })
             v.append(tilt[i])
             v.append(minutesTo(i, step: -1) { tilt[$0].map { $0 > postureDegrees } })
 
@@ -283,8 +309,7 @@ public enum SleepStageFeatures {
             let before = meanBpm(i * 30 - 300, i * 30), after = meanBpm(i * 30 + 30, i * 30 + 330)
             v.append(epochHR[i].flatMap { h in before.map { (h - $0) / hrSD } })
             v.append(epochHR[i].flatMap { h in after.map { ($0 - h) / hrSD } })
-            let near = bins(i * 30 - 30, i * 30 + 60).map { $0.1 }
-            v.append(near.count < 3 ? nil : (near.max()! - near.min()!) / hrSD)
+            v.append(rkRange[k])
             var zs = 0.0, zn = 0
             for j in max(0, i - 30)...min(nEp - 1, i + 30) { if let z = hrZ(j) { zs += z; zn += 1 } }
             v.append(zn == 0 ? nil : zs / Double(zn))
@@ -321,14 +346,82 @@ public enum SleepStageFeatures {
     }
 
     /// Rank within the night as a fraction in (0, 1]: the share of present values at or below this one.
+    /// Values are compared to nine decimals: a statistic of whole-bpm samples ties often, and two values
+    /// that are the same number must not be ranked apart by the last bit of how each was summed.
     static func rank(_ v: [Double?]) -> [Double?] {
-        let s = v.compactMap { $0 }.sorted()
+        func key(_ x: Double) -> Double { (x * 1e9).rounded() }
+        let s = v.compactMap { $0.map(key) }.sorted()
         if s.isEmpty { return v.map { _ in nil } }
         return v.map { x in
-            guard let x = x else { return nil }
+            guard let x = x.map(key) else { return nil }
             var lo = 0, hi = s.count
             while lo < hi { let m = (lo + hi) / 2; if s[m] <= x { lo = m + 1 } else { hi = m } }
             return Double(lo) / Double(s.count)
         }
+    }
+}
+
+// MARK: - Decoding
+
+/// From per-epoch class probabilities to a hypnogram. The learned model replaces `SleepStagerV2`'s hand-set
+/// EMISSIONS; the smoothing stays the one V2 uses, a Viterbi path under its sticky transition matrix, so a
+/// model's one-epoch flicker is ironed out the way the recipe's is.
+///
+/// Two settings travel with a model (in its metadata) and are fit, on people held out of its training,
+/// each to the one thing it controls:
+///
+///  * `weight`, how much of the class prior is divided out, to each stage's SHARE of the night. A
+///    classifier's output is P(stage | epoch), which already contains how common the stage is; the
+///    transition matrix contains that too (a rare stage is rarely entered). At weight 0 rarity is charged
+///    twice and light swallows the night (+11 points over PSG on 122 nights); at weight 1, the textbook
+///    hidden-Markov emission, this matrix overshoots the other way (-13 points).
+///  * `smoothing`, how hard the matrix is applied, to how FRAGMENTED the night is. At 1, V2's matrix in
+///    full, a model that is honestly unsure about a 30 s awakening loses it: a median of 1 wake bout a
+///    night against 8 in the PSG, 21 stage changes against 50. At 0 every epoch stands alone and there are
+///    105. The matrix is raised to this power.
+public enum SleepStageDecoder {
+
+    /// The model's classes, in the order of a probability row.
+    public static let stages = ["wake", "light", "deep", "rem"]
+
+    /// A probability this small or smaller is treated as this small: a class the model rules out stays
+    /// reachable through a run of epochs that all point to it, as in V2's own lattice.
+    static let floor = 1e-6
+
+    /// The most likely stage path. `probabilities[i]` is epoch i's probabilities in `stages` order; rows
+    /// follow one another on the 30 s grid. `prior` is each stage's share of the epochs the model was
+    /// trained on, in the same order. With `smoothing` 1 this is `SleepStagerV2.viterbi` exactly, ties
+    /// included: the lattice below walks V2's stages in V2's order under V2's matrix and floor.
+    public static func decode(_ probabilities: [[Double]], prior: [Double]? = nil, weight: Double = 1,
+                              smoothing: Double = 1) -> [String] {
+        if probabilities.isEmpty { return [] }
+        let order = SleepStagerV2.stageNames                       // V2's order decides ties
+        let column = order.map { stages.firstIndex(of: $0 == "awake" ? "wake" : $0)! }
+        let p0 = (prior ?? [1, 1, 1, 1]).map { pow($0, weight) }
+        let k = order.count
+        let logT = order.map { from in
+            order.map { smoothing * log(max(SleepStagerV2.transition[from]![$0]!, 1e-9)) }
+        }
+        func emission(_ p: [Double]) -> [Double] { column.map { log(max(p[$0], floor) / p0[$0]) } }
+        var score = emission(probabilities[0])                     // uniform start
+        var back: [[Int]] = []
+        back.reserveCapacity(probabilities.count)
+        for t in 1..<probabilities.count {
+            let e = emission(probabilities[t])
+            var next = [Double](repeating: 0, count: k), from = [Int](repeating: 0, count: k)
+            for j in 0..<k {
+                var best = 0, bestScore = score[0] + logT[0][j]
+                for i in 1..<k where score[i] + logT[i][j] > bestScore { best = i; bestScore = score[i] + logT[i][j] }
+                next[j] = bestScore + e[j]
+                from[j] = best
+            }
+            score = next
+            back.append(from)
+        }
+        var last = 0
+        for j in 1..<k where score[j] > score[last] { last = j }
+        var path = [last]
+        for from in back.reversed() { last = from[last]; path.append(last) }
+        return path.reversed().map { stages[column[$0]] }
     }
 }
