@@ -1831,6 +1831,7 @@
     <string name="coach_settings_api_key">API Key</string>
     <string name="coach_settings_api_key_optional">API Key (optional)</string>
     <string name="coach_settings_save_key">Save Key</string>
+    <string name="coach_settings_key_saved">A key is saved. Enter a new one to replace it.</string>
     <string name="coach_settings_refresh_models">Refresh Models</string>
     <string name="coach_settings_connect">Connect</string>
     <string name="coach_settings_use_my_data">Use My Data</string>

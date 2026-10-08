@@ -251,6 +251,9 @@ private fun ConnectionSection(vm: CoachViewModel, configured: Boolean, onConnect
                     label = stringResource(if (isCustom) R.string.coach_settings_api_key_optional else R.string.coach_settings_api_key),
                     value = keyDraft,
                     onValueChange = { keyDraft = it },
+                    // The field empties on save (the stored key is never shown again), so without this
+                    // line a saved key and no key look the same.
+                    supporting = if (hasKey && keyDraft.isEmpty()) stringResource(R.string.coach_settings_key_saved) else null,
                     password = true,
                     onDone = ::commit,
                 )
@@ -576,6 +579,7 @@ private fun FieldRow(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String? = null,
+    supporting: String? = null,
     password: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
     onDone: (() -> Unit)? = null,
@@ -591,6 +595,7 @@ private fun FieldRow(
             onValueChange = onValueChange,
             label = { Text(label) },
             placeholder = placeholder?.let { { Text(it) } },
+            supportingText = supporting?.let { { Text(it) } },
             singleLine = true,
             visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             keyboardOptions = KeyboardOptions(

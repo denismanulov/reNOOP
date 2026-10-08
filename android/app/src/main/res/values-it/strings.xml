@@ -1772,6 +1772,7 @@
     <string name="coach_settings_api_key">Chiave API</string>
     <string name="coach_settings_api_key_optional">Chiave API (facoltativa)</string>
     <string name="coach_settings_save_key">Salva chiave</string>
+    <string name="coach_settings_key_saved">Una chiave è salvata. Inseriscine una nuova per sostituirla.</string>
     <string name="coach_settings_refresh_models">Aggiorna modelli</string>
     <string name="coach_settings_connect">Collega</string>
     <string name="coach_settings_use_my_data">Usa i miei dati</string>

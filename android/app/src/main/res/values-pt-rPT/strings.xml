@@ -1795,6 +1795,7 @@
     <string name="coach_settings_api_key">Chave de API</string>
     <string name="coach_settings_api_key_optional">Chave de API (opcional)</string>
     <string name="coach_settings_save_key">Guardar chave</string>
+    <string name="coach_settings_key_saved">Há uma chave guardada. Introduza uma nova para a substituir.</string>
     <string name="coach_settings_refresh_models">Atualizar modelos</string>
     <string name="coach_settings_connect">Ligar</string>
     <string name="coach_settings_use_my_data">Usar os meus dados</string>

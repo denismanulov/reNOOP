@@ -1802,6 +1802,7 @@
     <string name="coach_settings_api_key">Klucz API</string>
     <string name="coach_settings_api_key_optional">Klucz API (opcjonalnie)</string>
     <string name="coach_settings_save_key">Zapisz klucz</string>
+    <string name="coach_settings_key_saved">Klucz jest zapisany. Wpisz nowy, aby go zastąpić.</string>
     <string name="coach_settings_refresh_models">Odśwież modele</string>
     <string name="coach_settings_connect">Łączyć</string>
     <string name="coach_settings_use_my_data">Używaj moich danych</string>

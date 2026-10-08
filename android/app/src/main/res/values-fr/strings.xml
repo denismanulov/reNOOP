@@ -1801,6 +1801,7 @@
     <string name="coach_settings_api_key">Clé d’API</string>
     <string name="coach_settings_api_key_optional">Clé d’API (facultatif)</string>
     <string name="coach_settings_save_key">Enregistrer la clé</string>
+    <string name="coach_settings_key_saved">Une clé est enregistrée. Saisissez-en une nouvelle pour la remplacer.</string>
     <string name="coach_settings_refresh_models">Actualiser les modèles</string>
     <string name="coach_settings_connect">Connecter</string>
     <string name="coach_settings_use_my_data">Utiliser mes données</string>

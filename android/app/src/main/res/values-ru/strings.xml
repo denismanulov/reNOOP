@@ -1781,6 +1781,7 @@
     <string name="coach_settings_api_key">Ключ API</string>
     <string name="coach_settings_api_key_optional">Ключ API (необязательно)</string>
     <string name="coach_settings_save_key">Сохранить ключ</string>
+    <string name="coach_settings_key_saved">Ключ сохранён. Введите новый, чтобы заменить его.</string>
     <string name="coach_settings_refresh_models">Обновить модели</string>
     <string name="coach_settings_connect">Подключить</string>
     <string name="coach_settings_use_my_data">Использовать мои данные</string>

@@ -1816,6 +1816,7 @@
     <string name="coach_settings_api_key">API-Schlüssel</string>
     <string name="coach_settings_api_key_optional">API-Schlüssel (optional)</string>
     <string name="coach_settings_save_key">Schlüssel sichern</string>
+    <string name="coach_settings_key_saved">Ein Schlüssel ist gesichert. Neuen eingeben, um ihn zu ersetzen.</string>
     <string name="coach_settings_refresh_models">Modelle aktualisieren</string>
     <string name="coach_settings_connect">Verbinden</string>
     <string name="coach_settings_use_my_data">Meine Daten verwenden</string>
