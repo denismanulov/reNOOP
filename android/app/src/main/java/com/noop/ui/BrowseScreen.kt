@@ -51,6 +51,7 @@ import com.noop.ui.m3.Health
 import com.noop.ui.m3.ListGroup
 import com.noop.ui.m3.ListRow
 import com.noop.ui.m3.M3Dimens
+import com.noop.ui.m3.PushedTopBar
 import com.noop.ui.m3.RowIcon
 import com.noop.ui.m3.SectionHeader
 import com.noop.ui.m3.color
@@ -154,15 +155,14 @@ internal fun browseSearch(
     )
 }
 
-/** The Browse tab root. [onOpen] pushes a route inside the Browse tab. */
+/** The Browse page, pushed from Settings. [onOpen] pushes a route on top of it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen(onOpen: (String) -> Unit) {
+fun BrowseScreen(onOpen: (String) -> Unit, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
-    OnScrollToTop { listState.animateScrollToItem(0) }
 
     val titles = BrowseDestination.entries.associateWith { stringResource(it.titleRes) }
     val titleOf: (BrowseDestination) -> String = { titles.getValue(it) }
@@ -177,13 +177,14 @@ fun BrowseScreen(onOpen: (String) -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        PushedTopBar(title = stringResource(R.string.nav_browse), onBack = onBack)
         // The results replace the list below the field (iOS `.searchable`); it never opens a panel of its own.
         SearchField(
             query = query,
             onQueryChange = { query = it },
             placeholder = stringResource(R.string.browse_search_placeholder),
             clearLabel = stringResource(R.string.l10n_workouts_screen_clear_search_67300d0f),
-            modifier = Modifier.padding(start = M3Dimens.screenPadding, end = M3Dimens.screenPadding, top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = M3Dimens.screenPadding, end = M3Dimens.screenPadding, top = 8.dp, bottom = 8.dp),
             onSearch = { focusManager.clearFocus() },
         )
 

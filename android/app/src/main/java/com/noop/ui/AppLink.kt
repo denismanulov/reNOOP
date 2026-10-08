@@ -75,7 +75,7 @@ internal sealed interface AppLinkTarget {
          */
         fun of(link: AppLink, workoutActive: Boolean, coachEnabled: Boolean): AppLinkTarget? = when (link) {
             AppLink.Today -> TabRoot(MainTab.Summary)
-            AppLink.HeartRate -> Screen(MainTab.Browse, Destination.Live.route)
+            AppLink.HeartRate -> Screen(MainTab.Summary, Destination.Live.route)
             // The strap's own Day Stress (0-3), the curve the widget draws.
             AppLink.Stress -> Metric(MainTab.Summary, "stress", WhoopRepository.WHOOP_SOURCE)
             AppLink.Coach -> if (coachEnabled) TabRoot(MainTab.Coach) else null

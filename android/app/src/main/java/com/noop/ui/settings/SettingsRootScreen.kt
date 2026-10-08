@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Speed
@@ -106,6 +107,16 @@ internal fun SettingsRootScreen(vm: AppViewModel, open: (String) -> Unit, onBack
                         subtitle = status,
                         onClick = { open(Destination.Devices.route) },
                     )
+                }
+            }
+        }
+        item {
+            // Browse left the bottom bar when Coach and Friends took a place there (a sixth tab would not
+            // fit); every screen and metric outside the tabs is found from here.
+            ListGroup {
+                item { shape ->
+                    IconRow(shape, Icons.Filled.Search, tones.grey, stringResource(R.string.nav_browse),
+                        stringResource(R.string.settings_browse_summary)) { open(Destination.Browse.route) }
                 }
             }
         }

@@ -61,7 +61,7 @@ class AppLinkTest {
 
     @Test
     fun theHeartRateWidgetOpensTheHeartRatePage() {
-        assertEquals(AppLinkTarget.Screen(MainTab.Browse, Destination.Live.route), target(AppLink.HeartRate))
+        assertEquals(AppLinkTarget.Screen(MainTab.Summary, Destination.Live.route), target(AppLink.HeartRate))
     }
 
     @Test

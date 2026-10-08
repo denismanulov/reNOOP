@@ -1216,6 +1216,7 @@
     <string name="browse_no_results_hint">Проверьте написание или попробуйте другой запрос.</string>
     <string name="workouts_more_options">Другие действия</string>
     <string name="settings_group_app">Приложение</string>
+    <string name="settings_browse_summary">Все разделы и показатели</string>
     <string name="settings_group_data">Данные</string>
     <string name="metric_title_avg_hr">Средний пульс</string>
     <string name="metric_title_max_hr">Максимальный пульс</string>

@@ -1271,6 +1271,7 @@
     <string name="browse_no_results_hint">Überprüfe die Schreibweise oder starte eine neue Suche.</string>
     <string name="workouts_more_options">Weitere Optionen</string>
     <string name="settings_group_app">App</string>
+    <string name="settings_browse_summary">Alle Bereiche und Messwerte</string>
     <string name="settings_group_data">Daten</string>
     <string name="metric_title_avg_hr">Durchschnittliche Herzfrequenz</string>
     <string name="metric_title_max_hr">Maximale Herzfrequenz</string>

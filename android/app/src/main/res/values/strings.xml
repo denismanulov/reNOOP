@@ -1286,6 +1286,7 @@
     <string name="browse_no_results_hint">Check the spelling or try a new search.</string>
     <string name="workouts_more_options">More options</string>
     <string name="settings_group_app">App</string>
+    <string name="settings_browse_summary">All screens and metrics</string>
     <string name="settings_group_data">Data</string>
     <string name="metric_title_avg_hr">Average Heart Rate</string>
     <string name="metric_title_max_hr">Max Heart Rate</string>

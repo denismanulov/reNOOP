@@ -87,7 +87,7 @@ import com.noop.ui.workouts.workoutKey
 // MARK: - Navigation model
 //
 // Twin of the iOS RootTabView: a Material 3 NavigationBar with the tabs of [MainTab] (Summary, Sleep,
-// Workouts, Coach, the fork's Friends, Browse) over ONE NavHost. Each tab keeps its own back stack: selecting a tab pops the whole
+// Workouts, Coach, the fork's Friends) over ONE NavHost. Each tab keeps its own back stack: selecting a tab pops the whole
 // visible stack with its state saved and restores the selected tab's saved stack, so a tab comes back
 // exactly as it was left. Re-selecting the active tab pops it to its root, or scrolls a root that is
 // already showing back to the top. Screens outside the three main tabs are Browse rows and push inside
@@ -264,7 +264,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             // away it docks as the mini-player above the bar.
             Column {
             NowRunningBar(viewModel)
-            // Up to six labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
+            // Up to five labels share the bar's width, so they stop growing at 1.3x (at 2x "Summary" and
             // "Workouts" lost their last letter); TalkBack still reads each name in full (CR-1).
             CappedFontScale(max = 1.3f) {
                 NavigationBar {
@@ -351,8 +351,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     ),
                 )
             }
-            tabRoot(MainTab.Browse, scrollTop) {
-                BrowseScreen(onOpen = { route -> nav.push(route) })
+            // Browse is pushed from the top of Settings; its rows push onto whichever tab it was opened in.
+            composable(Destination.Browse.route) {
+                BrowseScreen(onOpen = { route -> nav.push(route) }, onBack = { nav.popBackStack() })
             }
 
             // --- The Friends tab's pages. Each leaves for the tab's root if the session ends under it. ---
@@ -438,7 +439,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                 com.noop.ui.live.HeartRateScreen(
                     vm = viewModel,
                     onBack = { nav.popBackStack() },
-                    onOpenDevices = { nav.openInTab(MainTab.Browse, Destination.Devices.route) },
+                    onOpenDevices = { nav.push(Destination.Devices.route) },
                     onOpenActiveWorkout = { NowRunning.expand(NowRunning.Kind.Workout) },
                 )
             }
@@ -446,7 +447,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                 com.noop.ui.mind.MindfulnessScreen(
                     vm = viewModel,
                     onBack = { nav.popBackStack() },
-                    onOpenDevices = { nav.openInTab(MainTab.Browse, Destination.Devices.route) },
+                    onOpenDevices = { nav.push(Destination.Devices.route) },
                 )
             }
 

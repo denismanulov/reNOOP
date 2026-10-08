@@ -8,12 +8,10 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -25,9 +23,11 @@ import com.noop.R
 
 // MARK: - The primary tabs (the iOS RootTabView tab set, plus Android's Coach and the fork's Friends)
 //
-// Summary, Sleep, Workouts, Coach, Friends, Browse, in the bar's order. Settings is not a tab: it is
-// pushed from the Summary's profile avatar. Everything outside the main tabs is a row in Browse. Each tab
-// keeps its own back stack inside the one NavHost (AppRoot saves and restores it on every tab switch).
+// Summary, Sleep, Workouts, Coach, Friends, in the bar's order. Settings is not a tab: it is pushed from
+// the Summary's profile avatar. Browse is not a tab either on this fork: with Coach and Friends in the bar
+// it would be a sixth, so it is a row at the top of Settings, and everything outside the main tabs is a
+// row in Browse. Each tab keeps its own back stack inside the one NavHost (AppRoot saves and restores it
+// on every tab switch).
 //
 // Coach is a tab of its own on Android (iOS lists it in Browse): a conversation is somewhere the wearer
 // returns to, and two taps deep it read as a setting. The tab follows the AI Coach master switch.
@@ -50,8 +50,7 @@ internal enum class MainTab(
         Icons.AutoMirrored.Outlined.DirectionsRun,
     ),
     Coach(Destination.Coach.route, R.string.nav_coach, Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
-    Friends(Destination.Friends.route, R.string.nav_friends, Icons.Filled.Group, Icons.Outlined.Group),
-    Browse(Destination.Browse.route, R.string.nav_browse, Icons.Filled.Search, Icons.Outlined.Search);
+    Friends(Destination.Friends.route, R.string.nav_friends, Icons.Filled.Group, Icons.Outlined.Group);
 
     companion object {
         /** The tabs the bar shows: all of them, less Coach while the AI Coach switch is off. */
