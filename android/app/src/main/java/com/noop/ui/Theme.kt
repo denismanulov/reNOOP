@@ -13,7 +13,20 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import android.app.Activity
+import android.content.Context
+import android.os.Build
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import com.noop.ui.m3.DarkHealthColors
+import com.noop.ui.m3.DarkTonalIcons
+import com.noop.ui.m3.LightHealthColors
+import com.noop.ui.m3.LightTonalIcons
+import com.noop.ui.m3.LocalHealthColors
+import com.noop.ui.m3.LocalTonalIcons
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,12 +59,15 @@ object Palette {
     // The active scheme's tokens — snapshot state, so a flip re-resolves every read below (in
     // composables AND Canvas DrawScopes) with no call-site changes. Set by NoopTheme.
     internal var active by mutableStateOf(DarkTokens)
+    // The active tokens are bridged from the Material You scheme (see NoopTheme), so they are never the
+    // LightTokens instance itself: lightness is its own snapshot flag, set alongside [active].
+    internal var activeIsLight by mutableStateOf(false)
     /** True when the light scheme is active (surface code uses this for the per-scheme idiom). */
-    val isLight: Boolean get() = active === LightTokens
+    val isLight: Boolean get() = activeIsLight
 
-    // Chart style — when CLASSIC, the DATA accessors below return the throwback red→green ramps
-    // (light/dark tuned). Reads ChartStylePrefs.style (snapshot state) so a flip re-colours live.
-    val isClassic: Boolean get() = ChartStylePrefs.style == ChartStyle.CLASSIC
+    // Chart style — the in-app "Classic" chart colours went with the in-app Appearance controls (the app
+    // follows the system and Material You now), so a stored CLASSIC no longer re-colours anything.
+    val isClassic: Boolean get() = false
     private val classic: ClassicRamp get() = if (isLight) ClassicLight else ClassicDark
 
     // Surfaces.
@@ -79,25 +95,12 @@ object Palette {
     // Glow.
     val glowAmbient get() = active.glowAmbient
 
-    // Accent — user-selectable chrome anchor (mint default / WHOOP blue / custom). Chrome ONLY; the
-    // recovery/strain/sleep DATA worlds are never themed by this. Reads AccentPrefs snapshot state so a
-    // change is live. Twin of macOS StrandPalette.accent* branching on AccentColor.
-    val accent get() = when (AccentPrefs.color) {
-        AccentColor.MINT -> active.accent
-        AccentColor.WHOOP_BLUE -> if (isLight) Color(0xFF234F9E) else Color(0xFF60A0E0)
-        AccentColor.CUSTOM -> AccentColor.parseHex(AccentPrefs.customHex, active.accent)
-    }
-    val accentHover get() = when (AccentPrefs.color) {
-        AccentColor.MINT -> active.accentHover
-        AccentColor.WHOOP_BLUE -> if (isLight) Color(0xFF3A6FC0) else Color(0xFF8FBEEC)
-        AccentColor.CUSTOM -> AccentColor.lighten(AccentPrefs.customHex)
-    }
-    val accentMuted get() = when (AccentPrefs.color) {
-        AccentColor.MINT -> active.accentMuted
-        AccentColor.WHOOP_BLUE -> (if (isLight) Color(0xFF234F9E) else Color(0xFF60A0E0)).copy(alpha = 0.18f)
-        AccentColor.CUSTOM -> AccentColor.parseHex(AccentPrefs.customHex, active.accent).copy(alpha = 0.18f)
-    }
-    val focusRing get() = if (AccentPrefs.color == AccentColor.MINT) active.focusRing else accent
+    // Accent — the chrome anchor, bridged from the Material You scheme. The in-app accent picker (mint /
+    // WHOOP blue / custom) went with the Appearance controls, so a stored choice no longer applies.
+    val accent get() = active.accent
+    val accentHover get() = active.accentHover
+    val accentMuted get() = active.accentMuted
+    val focusRing get() = active.focusRing
     const val disabledOpacity = 0.45f
 
     // Recovery / Charge gradient.
@@ -518,72 +521,121 @@ object NoopType {
     const val overlineTracking = 1.4f
 }
 
-// MARK: - Material3 bridge
+// MARK: - Material You
+//
+// The redesign follows Denis's iOS rule — look like the platform's own apps — which on Android means the
+// Material You scheme: wallpaper-derived on Android 12+ (dynamic colour), the reNOOP mint seed below that.
+// The scheme owns every surface, text and control colour. Data hues (rings, stages, categories) stay
+// fixed in `m3/HealthColors.kt`. Screens not yet rebuilt still read `Palette.*`; [bridgeTokens] points
+// their surface/text/accent tokens at the scheme so they sit in the same Material surfaces meanwhile.
 
-/** Build the Material3 colour scheme from a token set. Dark/light differ only in the builder used
- *  (which sets sensible defaults for the slots we don't override); the NOOP surfaces are all driven
- *  by `Palette.*` directly, so this only feeds Material components (text fields, switches, etc.). */
-private fun noopColorScheme(t: PaletteTokens, dark: Boolean): ColorScheme {
-    val base = if (dark) darkColorScheme() else lightColorScheme()
-    return base.copy(
-        primary = t.accent,
-        onPrimary = if (dark) t.surfaceBase else t.goldDeepText,
-        primaryContainer = t.accentMuted,
-        onPrimaryContainer = if (dark) t.accentHover else t.accent,
-        secondary = t.metricPurple,
-        onSecondary = if (dark) t.surfaceBase else Color(0xFFFFFFFF),
-        background = t.surfaceBase,
-        onBackground = t.textPrimary,
-        surface = t.surfaceRaised,
-        onSurface = t.textPrimary,
-        surfaceVariant = t.surfaceOverlay,
-        onSurfaceVariant = t.textSecondary,
-        outline = t.hairline,
-        outlineVariant = t.hairlineStrong,
-        error = t.statusCritical,
-        onError = if (dark) t.surfaceBase else Color(0xFFFFFFFF),
-    )
-}
-
-private val NoopMaterialTypography = Typography(
-    displayLarge = NoopType.display(72f),
-    titleLarge = NoopType.title1,
-    titleMedium = NoopType.title2,
-    titleSmall = NoopType.headline,
-    bodyLarge = NoopType.body,
-    bodyMedium = NoopType.subhead,
-    bodySmall = NoopType.caption,
-    labelLarge = NoopType.headline,
-    labelMedium = NoopType.caption,
-    labelSmall = NoopType.overline,
+/** The reNOOP mint seed scheme (Material TonalSpot from #03E095), for Android 8–11. */
+private val ReNoopLightScheme = lightColorScheme(
+    primary = Color(0xFF006C4C), onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF89F8C7), onPrimaryContainer = Color(0xFF002114),
+    secondary = Color(0xFF4D6357), onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCFE9D9), onSecondaryContainer = Color(0xFF0A1F16),
+    tertiary = Color(0xFF3D6373), onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFC1E8FB), onTertiaryContainer = Color(0xFF001F29),
+    error = Color(0xFFBA1A1A), onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6), onErrorContainer = Color(0xFF410002),
+    background = Color(0xFFF5FBF5), onBackground = Color(0xFF171D1A),
+    surface = Color(0xFFF5FBF5), onSurface = Color(0xFF171D1A),
+    surfaceVariant = Color(0xFFDBE5DD), onSurfaceVariant = Color(0xFF404943),
+    outline = Color(0xFF707973), outlineVariant = Color(0xFFBFC9C1),
+    inverseSurface = Color(0xFF2C322E), inverseOnSurface = Color(0xFFECF2EC),
+    inversePrimary = Color(0xFF6CDBAC),
+    surfaceBright = Color(0xFFF5FBF5), surfaceDim = Color(0xFFD5DBD6),
+    surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFEFF5EF),
+    surfaceContainer = Color(0xFFE9EFE9), surfaceContainerHigh = Color(0xFFE4EAE3),
+    surfaceContainerHighest = Color(0xFFDEE4DE),
 )
 
-private val NoopShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(Metrics.cardRadius),
-    large = RoundedCornerShape(20.dp),
+private val ReNoopDarkScheme = darkColorScheme(
+    primary = Color(0xFF6CDBAC), onPrimary = Color(0xFF003826),
+    primaryContainer = Color(0xFF005139), onPrimaryContainer = Color(0xFF89F8C7),
+    secondary = Color(0xFFB3CCBE), onSecondary = Color(0xFF1F352A),
+    secondaryContainer = Color(0xFF354B40), onSecondaryContainer = Color(0xFFCFE9D9),
+    tertiary = Color(0xFFA5CCDF), onTertiary = Color(0xFF073543),
+    tertiaryContainer = Color(0xFF244C5B), onTertiaryContainer = Color(0xFFC1E8FB),
+    error = Color(0xFFFFB4AB), onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A), onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF0F1511), onBackground = Color(0xFFDEE4DE),
+    surface = Color(0xFF0F1511), onSurface = Color(0xFFDEE4DE),
+    surfaceVariant = Color(0xFF404943), onSurfaceVariant = Color(0xFFBFC9C1),
+    outline = Color(0xFF89938C), outlineVariant = Color(0xFF404943),
+    inverseSurface = Color(0xFFDEE4DE), inverseOnSurface = Color(0xFF2C322E),
+    inversePrimary = Color(0xFF006C4C),
+    surfaceBright = Color(0xFF353B37), surfaceDim = Color(0xFF0F1511),
+    surfaceContainerLowest = Color(0xFF0A0F0C), surfaceContainerLow = Color(0xFF171D1A),
+    surfaceContainer = Color(0xFF1B211E), surfaceContainerHigh = Color(0xFF252B28),
+    surfaceContainerHighest = Color(0xFF303632),
+)
+
+/** Material You on Android 12+, else the reNOOP seed scheme. */
+internal fun reNoopColorScheme(context: Context, dark: Boolean): ColorScheme =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        if (dark) ReNoopDarkScheme else ReNoopLightScheme
+    }
+
+/**
+ * Point the legacy `Palette` chrome tokens at the Material scheme, keeping every DATA token (recovery,
+ * strain, sleep stages, zones…) as it was, so a not-yet-rebuilt screen draws on Material surfaces with
+ * Material text colours and the wallpaper accent, and its charts still mean what they meant.
+ */
+internal fun bridgeTokens(base: PaletteTokens, cs: ColorScheme): PaletteTokens = base.copy(
+    surfaceBase = cs.surface,
+    surfaceRaised = cs.surfaceContainerLow,
+    surfaceOverlay = cs.surfaceContainerHigh,
+    surfaceInset = cs.surfaceContainer,
+    hairline = cs.outlineVariant,
+    hairlineStrong = cs.outline,
+    textPrimary = cs.onSurface,
+    textSecondary = cs.onSurfaceVariant,
+    textTertiary = cs.onSurfaceVariant.copy(alpha = 0.8f),
+    glowAmbient = Color.Transparent,
+    accent = cs.primary,
+    accentHover = cs.primary,
+    accentMuted = cs.primaryContainer,
+    focusRing = cs.primary,
+    scenicCenter = cs.surface,
+    scenicEdge = cs.surface,
+    scenicStar = Color.Transparent,
+    cardFillTop = cs.surfaceContainerLow,
+    cardFillBottom = cs.surfaceContainerLow,
+    heroFill = cs.surfaceContainerLow,
+    heroBorder = Color.Transparent,
+)
+
+/** The Material 3 type scale on the device's own font (Google Sans on Pixel, the OEM face elsewhere). */
+private val ReNoopTypography = Typography()
+
+private val ReNoopShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
     extraLarge = RoundedCornerShape(28.dp),
 )
 
 /**
- * NoopTheme — instrument-grade, now System / Light / Dark. The chosen mode (default System) drives
- * both `Palette.active` (so every `Palette.*` read re-resolves) and the Material scheme. The write to
- * `Palette.active` is guarded + idempotent, and happens before children compose, so there's no flash
- * and no recomposition loop (NoopTheme itself never reads `active`).
+ * NoopTheme — Material You. Light/dark follows the system, as on iOS: the in-app Appearance controls are
+ * gone and a stored theme mode is ignored. Publishes the scheme to `MaterialTheme`, the
+ * fixed data hues to [LocalHealthColors] / [LocalTonalIcons], and the bridged tokens to `Palette.active`
+ * (guarded + idempotent, written before children compose, so there is no flash and no loop).
  */
 @Composable
 fun NoopTheme(content: @Composable () -> Unit) {
-    val dark = when (AppearancePrefs.mode) {
-        AppearanceMode.LIGHT -> false
-        AppearanceMode.DARK -> true
-        AppearanceMode.SYSTEM -> isSystemInDarkTheme()
-    }
-    val tokens = if (dark) DarkTokens else LightTokens
-    if (Palette.active !== tokens) Palette.active = tokens
+    val dark = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val scheme = remember(dark, context) { reNoopColorScheme(context, dark) }
+    val tokens = remember(scheme, dark) { bridgeTokens(if (dark) DarkTokens else LightTokens, scheme) }
+    if (Palette.active != tokens) Palette.active = tokens
+    if (Palette.activeIsLight == dark) Palette.activeIsLight = !dark
 
-    // Status-/nav-bar icon appearance: light icons on the dark theme, dark icons on the warm-paper
-    // light theme (otherwise the icons are invisible). Edge-to-edge keeps the bars transparent.
+    // Status-/nav-bar icon appearance follows the scheme; edge-to-edge keeps the bars transparent.
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -595,10 +647,15 @@ fun NoopTheme(content: @Composable () -> Unit) {
         }
     }
 
-    MaterialTheme(
-        colorScheme = noopColorScheme(tokens, dark),
-        typography = NoopMaterialTypography,
-        shapes = NoopShapes,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalHealthColors provides if (dark) DarkHealthColors else LightHealthColors,
+        LocalTonalIcons provides if (dark) DarkTonalIcons else LightTonalIcons,
+    ) {
+        MaterialTheme(
+            colorScheme = scheme,
+            typography = ReNoopTypography,
+            shapes = ReNoopShapes,
+            content = content,
+        )
+    }
 }

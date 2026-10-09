@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The effort ring of the home-screen widgets (drawable/widget_ring_effort). Progress is set 0..100
+     through RemoteViews; decorative, the Glance cell around it carries the spoken label.
+     saveEnabled is off, and each ring has its own id, on purpose: a ProgressBar saves its progress with
+     the view state, and the launcher restores that state by id when it rebuilds its views (a theme
+     change, a rotation). With one shared id and saving on, all three rings came back showing the last
+     ring's score. -->
+<ProgressBar xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_ring_effort"
+    style="?android:attr/progressBarStyleHorizontal"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:importantForAccessibility="no"
+    android:indeterminate="false"
+    android:max="100"
+    android:maxHeight="1000dp"
+    android:minHeight="0dp"
+    android:mirrorForRtl="false"
+    android:progress="0"
+    android:progressDrawable="@drawable/widget_ring_effort"
+    android:saveEnabled="false" />

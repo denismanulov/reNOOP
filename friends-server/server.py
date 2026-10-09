@@ -53,9 +53,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     nick TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
-    -- Unused since accounts lost their passwords; kept so a database made before that still opens.
-    pw_salt BLOB NOT NULL DEFAULT x'',
-    pw_hash BLOB NOT NULL DEFAULT x'',
+    pw_salt BLOB NOT NULL,
+    pw_hash BLOB NOT NULL,
     share_scores INTEGER NOT NULL DEFAULT 1,
     share_sleep INTEGER NOT NULL DEFAULT 1,
     share_workouts INTEGER NOT NULL DEFAULT 1,
@@ -248,6 +247,12 @@ def clean_name(value):
     return name
 
 
+def clean_password(value):
+    if not isinstance(value, str) or not 8 <= len(value) <= 128:
+        raise ApiError(400, "bad_password", "Password: 8 to 128 characters.")
+    return value
+
+
 def sniff_image(data):
     if data[:3] == b"\xff\xd8\xff":
         return "image/jpeg"
@@ -269,6 +274,8 @@ class App:
         self.trust_proxy = trust_proxy
         self.limiter = RateLimiter()
         self._local = threading.local()
+        # scrypt at these parameters holds 16 MiB per call; two at a time keeps a small box calm.
+        self._scrypt_gate = threading.BoundedSemaphore(2)
         with self.db() as db:
             db.executescript(SCHEMA)
 
@@ -288,6 +295,10 @@ class App:
         if conn is not None:
             conn.close()
             self._local.conn = None
+
+    def hash_password(self, password, salt):
+        with self._scrypt_gate:
+            return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
 
     # --- sessions ---
 
@@ -375,23 +386,25 @@ def h_info(app, req):
 
 def h_register(app, req):
     app.limiter.check(("register", req.ip), 5, 3600)
-    body = req.json(("nick", "name", "invite"))
+    body = req.json(("nick", "name", "password", "invite"))
     nick = clean_nick(body.get("nick"))
-    # Sign-up asks for a nickname only; the display name starts as the nickname. There is no
-    # password: the token this returns is the account's one credential, and the phone keeps it.
+    # Sign-up asks for a nickname and a password only; the display name starts as the nickname.
     name = clean_name(body["name"]) if body.get("name") is not None else nick
+    password = clean_password(body.get("password"))
     if app.invite_code is not None:
         invite = body.get("invite")
         if not isinstance(invite, str) or not hmac.compare_digest(invite.encode(), app.invite_code.encode()):
             raise ApiError(403, "bad_invite", "Wrong invite code.")
+    salt = secrets.token_bytes(16)
+    pw_hash = app.hash_password(password, salt)
     db = app.db()
     with db:
         if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= app.max_users:
             raise ApiError(403, "server_full", "This server is not taking new accounts.")
         try:
             cur = db.execute(
-                "INSERT INTO users(nick, name, pw_salt, pw_hash, created_at) VALUES (?, ?, x'', x'', ?)",
-                (nick, name, int(time.time())),
+                "INSERT INTO users(nick, name, pw_salt, pw_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                (nick, name, salt, pw_hash, int(time.time())),
             )
         except sqlite3.IntegrityError:
             raise ApiError(409, "nick_taken", "This nickname is taken.")
@@ -401,11 +414,31 @@ def h_register(app, req):
 
 
 def h_nick_free(app, req):
-    """Lets the sign-up form say whether a nickname is free before it is sent."""
+    """Lets the sign-up form say whether a nickname is free before a password is typed."""
     app.limiter.check(("nickfree", req.ip), 30, 60)
     nick = clean_nick(req.match.group(1))
     taken = app.db().execute("SELECT 1 FROM users WHERE nick = ?", (nick,)).fetchone() is not None
     return {"nick": nick, "free": not taken}
+
+
+def h_login(app, req):
+    app.limiter.check(("login-ip", req.ip), 20, 600)
+    body = req.json(("nick", "password"))
+    nick = clean_nick(body.get("nick"))
+    password = body.get("password")
+    if not isinstance(password, str) or len(password) > 128:
+        raise ApiError(401, "bad_credentials", "Wrong nickname or password.")
+    app.limiter.check(("login-nick", nick), 10, 600)
+    db = app.db()
+    user = db.execute("SELECT * FROM users WHERE nick = ?", (nick,)).fetchone()
+    # A missing account costs the same hash as a wrong password, so timing does not list nicknames.
+    salt = user["pw_salt"] if user else b"\0" * 16
+    candidate = app.hash_password(password, salt)
+    if user is None or not hmac.compare_digest(candidate, user["pw_hash"]):
+        raise ApiError(401, "bad_credentials", "Wrong nickname or password.")
+    with db:
+        token = app.new_session(db, user["id"])
+    return {"token": token, "me": own_profile(user)}
 
 
 def h_logout(app, req):
@@ -446,8 +479,33 @@ def h_me_patch(app, req):
     return own_profile(user)
 
 
+def h_password(app, req):
+    app.limiter.check(("password", req.user["id"]), 5, 600)
+    body = req.json(("old", "new"))
+    old = body.get("old")
+    new = clean_password(body.get("new"))
+    if not isinstance(old, str) or len(old) > 128 or not hmac.compare_digest(
+        app.hash_password(old, req.user["pw_salt"]), req.user["pw_hash"]
+    ):
+        raise ApiError(401, "bad_credentials", "Wrong current password.")
+    salt = secrets.token_bytes(16)
+    pw_hash = app.hash_password(new, salt)
+    db = app.db()
+    with db:
+        db.execute("UPDATE users SET pw_salt = ?, pw_hash = ? WHERE id = ?", (salt, pw_hash, req.user["id"]))
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (req.user["id"],))
+        token = app.new_session(db, req.user["id"])
+    return {"token": token}
+
+
 def h_delete_account(app, req):
-    """The session is the proof: whoever holds the token owns the account, and there is nothing else to ask."""
+    app.limiter.check(("password", req.user["id"]), 5, 600)
+    body = req.json(("password",))
+    password = body.get("password")
+    if not isinstance(password, str) or len(password) > 128 or not hmac.compare_digest(
+        app.hash_password(password, req.user["pw_salt"]), req.user["pw_hash"]
+    ):
+        raise ApiError(401, "bad_credentials", "Wrong password.")
     db = app.db()
     with db:
         db.execute("DELETE FROM users WHERE id = ?", (req.user["id"],))
@@ -675,10 +733,12 @@ ROUTES = [
     ("GET", r"/v1/info", h_info, False, 0),
     ("POST", r"/v1/register", h_register, False, MAX_JSON_BYTES),
     ("GET", r"/v1/nicks/([^/]{1,40})", h_nick_free, False, 0),
+    ("POST", r"/v1/login", h_login, False, MAX_JSON_BYTES),
     ("DELETE", r"/v1/session", h_logout, True, 0),
     ("GET", r"/v1/me", h_me, True, 0),
     ("PATCH", r"/v1/me", h_me_patch, True, MAX_JSON_BYTES),
-    ("POST", r"/v1/me/delete", h_delete_account, True, 0),
+    ("POST", r"/v1/me/password", h_password, True, MAX_JSON_BYTES),
+    ("POST", r"/v1/me/delete", h_delete_account, True, MAX_JSON_BYTES),
     ("PUT", r"/v1/me/avatar", h_avatar_put, True, MAX_AVATAR_BYTES),
     ("DELETE", r"/v1/me/avatar", h_avatar_delete, True, 0),
     ("PUT", r"/v1/me/days/(\d{4}-\d{2}-\d{2})", h_day_put, True, MAX_JSON_BYTES),

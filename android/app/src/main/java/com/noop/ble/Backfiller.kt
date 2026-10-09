@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.noop.data.DynAccelDiag
 import com.noop.data.InsertCounts
+import com.noop.data.LiveStoreReplacement
 import com.noop.data.StreamBatch
 import com.noop.data.WhoopRepository
 import com.noop.protocol.BadClockDiagnostics
@@ -130,6 +131,14 @@ class Backfiller(
     private val ppgHrSubLagInterp: () -> Boolean = { false },
     /** Live UI/export observation of the historical record layout (`hist_version`). */
     private val firmwareLayout: (Int) -> Unit = {},
+    /**
+     * Whether a restore has replaced the database under this process ([LiveStoreReplacement]). A seam so
+     * the held-ack path is testable without latching the test JVM for good. Twin of the Swift
+     * `Backfiller.storeReplaced`.
+     */
+    private val storeReplaced: () -> Boolean = { LiveStoreReplacement.happened },
+    /** Monotonic clock for [sessionChunkTiming], in nanoseconds. A seam so the split is testable. */
+    private val nanoTime: () -> Long = System::nanoTime,
 ) {
 
     /**
@@ -211,7 +220,8 @@ class Backfiller(
     var continuedAfterRows = false
         private set
     /** #57: set true the moment ANY chunk's persist (decoded rows / reject archive / trim cursor) fails
-     *  this session. While set, [finishChunk] must NOT ack — not even a subsequent EMPTY/metadata END, which
+     *  this session, and by [holdForReplacedStore] once a restore has replaced the database. While set,
+     *  [finishChunk] must NOT ack — not even a subsequent EMPTY/metadata END, which
      *  skips the insert and would otherwise advance the strap's trim PAST the held records-carrying chunks,
      *  freeing history we never stored (the closed-DB-after-restore data-loss in #57). The offload stalls
      *  safely (strap keeps everything past the last GOOD ack); a fresh session ([begin]) clears it.
@@ -287,6 +297,74 @@ class Backfiller(
     /** Reject frames seen this session, so the suppression line can say what it stopped showing. */
     private var rejectFramesSeen: Int = 0
     private var rejectHexSuppressedNoted: Boolean = false
+
+    /**
+     * Per-session offload cadence, instrumentation only. The offload is acked chunk by chunk, so a
+     * chunk's time splits into two measured intervals: `phone`, from its HISTORY_END being handled here
+     * to our ack being handed to the link (decode, commit, reject archive, cursor), and the rest, from
+     * that ack to the next HISTORY_START being handled here (the radio both ways and the strap's own
+     * work). Summed per session so a strap log says which side an offload's time went to. Twin of the
+     * Swift `Backfiller.sessionChunkTiming`.
+     *
+     * Only a START that follows one of OUR acks in the same session measures the second interval, so an
+     * offload that closes chunk after chunk under one START reports it as not measured. Reset in [begin];
+     * guarded by [chunkLock] with the two stamps below, because [begin] runs on another thread.
+     */
+    @Volatile
+    var sessionChunkTiming = ChunkTiming()
+        private set
+    /** When the END of the chunk being finished was handled, and when the last chunk was acked. */
+    private var chunkEndAtNanos: Long? = null
+    private var lastAckAtNanos: Long? = null
+
+    /** See [sessionChunkTiming]. Whole milliseconds; an interval is counted once, when it closes. */
+    data class ChunkTiming(
+        val phoneCount: Int = 0, val phoneTotalMs: Long = 0, val phoneMaxMs: Long = 0,
+        val strapCount: Int = 0, val strapTotalMs: Long = 0, val strapMaxMs: Long = 0,
+    ) {
+        fun addPhone(ms: Long) = copy(
+            phoneCount = phoneCount + 1, phoneTotalMs = phoneTotalMs + ms, phoneMaxMs = maxOf(phoneMaxMs, ms),
+        )
+
+        fun addStrap(ms: Long) = copy(
+            strapCount = strapCount + 1, strapTotalMs = strapTotalMs + ms, strapMaxMs = maxOf(strapMaxMs, ms),
+        )
+
+        /**
+         * Null when no chunk was acked this session. Each side carries its own count: the second
+         * interval is measured for fewer chunks than the first, and for none under a single START.
+         * The Swift line prints that side without its count and calls it `strap`; here it is named for
+         * everything the interval contains.
+         */
+        val logLine: String?
+            get() {
+                if (phoneCount <= 0) return null
+                val rest = if (strapCount > 0) {
+                    "n=$strapCount avg=${strapTotalMs / strapCount}ms max=${strapMaxMs}ms"
+                } else {
+                    "not measured"
+                }
+                return "Backfill: timing chunks=$phoneCount phone(end→ack) avg=${phoneTotalMs / phoneCount}ms " +
+                    "max=${phoneMaxMs}ms · strap+radio(ack→next start) $rest"
+            }
+    }
+
+    /** A chunk's END was handled: the phone's interval opens. */
+    private fun noteChunkEnd() = synchronized(chunkLock) { chunkEndAtNanos = nanoTime() }
+
+    /** The chunk was acked: the phone's interval closes and the wait for the next START opens. */
+    private fun noteChunkAcked() = synchronized(chunkLock) {
+        val now = nanoTime()
+        chunkEndAtNanos?.let { sessionChunkTiming = sessionChunkTiming.addPhone((now - it) / 1_000_000L) }
+        chunkEndAtNanos = null
+        lastAckAtNanos = now
+    }
+
+    /** A START was handled: if it follows one of our acks, the wait for it closes. */
+    private fun noteChunkStart() = synchronized(chunkLock) {
+        lastAckAtNanos?.let { sessionChunkTiming = sessionChunkTiming.addStrap((nanoTime() - it) / 1_000_000L) }
+        lastAckAtNanos = null
+    }
 
     /**
      * Distinct historical record-layout versions logged this session. Before this, only the unmapped/
@@ -391,6 +469,9 @@ class Backfiller(
         synchronized(chunkLock) {
             chunk.clear()
             chunkOpen = true
+            sessionChunkTiming = ChunkTiming()
+            chunkEndAtNanos = null
+            lastAckAtNanos = null
         }
     }
 
@@ -407,8 +488,12 @@ class Backfiller(
                         chunk.clear()
                         chunkOpen = true
                     }
+                    noteChunkStart()
                 }
-                is HistoricalMeta.End -> finishChunk(meta.unix, meta.trim, frame)
+                is HistoricalMeta.End -> {
+                    noteChunkEnd()
+                    finishChunk(meta.unix, meta.trim, frame)
+                }
                 is HistoricalMeta.Complete -> {
                     isBackfilling = false
                     synchronized(chunkLock) {
@@ -431,6 +516,12 @@ class Backfiller(
      */
     private suspend fun finishChunk(unix: Long, trim: Long, endFrame: ByteArray) {
         val endData = endData(endFrame, family) ?: return
+
+        // A restore replaced the database under this process ([LiveStoreReplacement]). Whatever the
+        // insert below would report, the rows cannot be trusted to reach the restored store, so acking
+        // would let the strap trim history nobody kept. Hold the ack exactly like a persist failure; the
+        // restarted process is offered the same chunks again.
+        if (holdForReplacedStore(trim)) return
 
         // #773: corrupt future-RTC detection. A HISTORY_END carries the strap's own clock; a genuine offload
         // is always PAST-dated (it's banked history), so an end dated days into the future can only be a
@@ -503,14 +594,14 @@ class Backfiller(
                 )) {
                     com.noop.protocol.HistoricalLayoutSupport.UNMAPPED ->
                         log(
-                            "Historical records use firmware layout v$v, which NOOP doesn't decode yet: " +
+                            "Historical records use firmware layout v$v, which reNOOP doesn't decode yet: " +
                                 "those records carry no heart rate or motion, so any night made only of them " +
                                 "can't be staged from the strap. A strap emitting a mix of layouts still " +
                                 "stages the nights it can. Please report this (issue #1992).",
                         )
                     com.noop.protocol.HistoricalLayoutSupport.DECODES_WITHOUT_NAMED_SIGNAL ->
                         log(
-                            "Historical records use firmware layout v$v. NOOP decodes it, but these records " +
+                            "Historical records use firmware layout v$v. reNOOP decodes it, but these records " +
                                 "carry no per-second heart rate and no motion (they hold raw sensor channels " +
                                 "nothing scores yet), so any night made only of them can't be staged from the " +
                                 "strap. A strap emitting a mix of layouts still stages the nights it can. " +
@@ -603,7 +694,7 @@ class Backfiller(
                     log(
                         "Backfill: the strap sent $n record(s) of packet type $typeName, which this " +
                             "decoder has no rows for — they are being dropped. If $typeName is not a name " +
-                            "you recognise, this is a firmware record type NOOP has never mapped: please " +
+                            "you recognise, this is a firmware record type reNOOP has never mapped: please " +
                             "report it on #891 with the strap model and firmware build.",
                     )
                     // #891: and the bytes, so the report is actionable. Without this the line above asks a
@@ -625,7 +716,7 @@ class Backfiller(
                         "Backfill: strap reported ${ev.kind} with an implausible own-timestamp " +
                             "${BadClockDiagnostics.isoDay(ev.rawTs)} (${BadClockDiagnostics.hoursOffset(ev.rawTs, nowForRtc)} " +
                             "vs now) — the strap's RTC reset to a wrong base (#324/#928); this is the ground-truth " +
-                            "cause of the future-dated banking, not a NOOP decode bug.",
+                            "cause of the future-dated banking, not a reNOOP decode bug.",
                     )
                 }
             }
@@ -784,6 +875,12 @@ class Backfiller(
             return
         }
 
+        // Asked a second time, which the Swift twin does not do: here the restore runs on another thread
+        // while this chunk is being persisted, so the latch can be set between the check at the top and
+        // this point, and the insert above may then have gone through a connection to the file the
+        // restore removed.
+        if (holdForReplacedStore(trim)) return
+
         // Persist the trim cursor BEFORE acking (so a crash between persist and ack still resumes
         // from the right place). Stored via [TrimCursorStore] because the Room schema has no cursor
         // table — see the port FLAG. trim is a u32 carried as Long (unsigned-safe).
@@ -802,7 +899,24 @@ class Backfiller(
 
         ackTrim(trim, endData)
         lastAckedTrim = trim   // #364: record the advanced cursor for the auto-continue spin-detector
+        noteChunkAcked()       // timing only, after the ack: it can neither hold nor reorder it
         committed?.takeIf { !it.isEmpty }?.let(onChunkCommitted)
+    }
+
+    /**
+     * True when a restore has replaced the database under this process, in which case the chunk being
+     * finished is dropped un-acked and the session is stalled like a failed persist ([persistStalled]),
+     * so no later END of this session acks either. Logs once per session; the line is always on, since
+     * it is written only after a restore.
+     */
+    private fun holdForReplacedStore(trim: Long): Boolean {
+        if (!storeReplaced()) return false
+        if (!persistStalled) {
+            log("Backfill: the database was replaced by a restore — NOT acking trim=$trim; restart reNOOP so the strap re-sends this history.")
+        }
+        persistStalled = true
+        synchronized(chunkLock) { chunk.clear() }
+        return true
     }
 
     /**
@@ -966,7 +1080,7 @@ class Backfiller(
         fun futureRtcLine(endUnix: Long, wallNowUnix: Long): String {
             val aheadDays = maxOf(0L, endUnix - wallNowUnix) / 86_400L
             return "Backfill: the strap reported a record dated about $aheadDays day(s) in the FUTURE - " +
-                "its clock (RTC) is corrupt, not a NOOP problem. Those records can't be filed onto the " +
+                "its clock (RTC) is corrupt, not a reNOOP problem. Those records can't be filed onto the " +
                 "right day. Fully charge the strap to 100% and reconnect so it re-syncs its clock; if it " +
                 "persists, forget and re-pair the strap."
         }
@@ -1005,10 +1119,10 @@ class Backfiller(
             val ageDays = maxOf(0L, wallNowUnix - newestUnix) / 86_400L
             return "Backfill: this sync banked nothing and the strap's newest stored record is about " +
                 "$ageDays day(s) old. If you have worn it since then, it has stopped saving history to " +
-                "its flash. NOOP already re-sends the clock on every connect, so charging alone may not " +
+                "its flash. reNOOP already re-sends the clock on every connect, so charging alone may not " +
                 "be enough: charge to 100% and reconnect, then use Restart strap in Devices, and if that " +
                 "does not help forget and re-pair. If the official WHOOP app is also missing these days, " +
-                "the strap is the cause and not NOOP."
+                "the strap is the cause and not reNOOP."
         }
 
         /**
@@ -1032,9 +1146,9 @@ class Backfiller(
             val ageDays = maxOf(0L, wallNowUnix - newestUnix) / 86_400L
             return "Synced, but your strap handed over no stored history, and its newest saved record is " +
                 "about $ageDays day(s) old. If you have been wearing it since then, it has stopped saving " +
-                "to flash. Charge it to 100% and reconnect; NOOP already re-sets its clock every connect, " +
+                "to flash. Charge it to 100% and reconnect; reNOOP already re-sets its clock every connect, " +
                 "so if that does not help, try Restart strap in Devices, then forget and re-pair. If the " +
-                "official WHOOP app is missing these days too, the strap is the cause and not NOOP."
+                "official WHOOP app is missing these days too, the strap is the cause and not reNOOP."
         }
 
         /** #1754: the banner for an empty offload whose flash cursor is VALID and ADVANCING — the strap

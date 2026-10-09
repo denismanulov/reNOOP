@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -67,18 +65,27 @@ object IllnessAlertNotifier {
                 appLaunchIntent(context),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.illness_alert_title))
-                .setContentText(alert)
-                .setStyle(
-                    NotificationCompat.BigTextStyle()
-                        .bigText("$alert\nOn-device estimate (approximate), not a diagnosis."),
-                )
+            // Non-null here: shouldNotify above required an alert before it returned true.
+            val summary = alert ?: return
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_heart,
+                context.getString(R.string.illness_alert_title),
+                summary,
+                expandedBody = summary + "\n" + context.getString(R.string.illness_alert_disclaimer),
+            )
                 .setContentIntent(openApp)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                // The summary names health signals. On a lock screen set to hide sensitive content, what
+                // stands there instead is a generic notice (audit NT-1, the iOS hidden-preview placeholder).
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(
+                    NoopNotifications.builder(
+                        context, CHANNEL_ID, R.drawable.ic_stat_heart,
+                        context.getString(R.string.illness_alert_public), null,
+                    ).build(),
+                )
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, n)
             NoopPrefs.setIllnessLastNotifiedDay(context, today)
@@ -86,18 +93,10 @@ object IllnessAlertNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Illness early-warning",
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                ).apply {
-                    description = "A heads-up when resting HR, HRV, skin temp or respiration drift together vs your baseline."
-                },
-            )
-        }
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_illness_name, R.string.notif_channel_illness_desc,
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
     }
 }

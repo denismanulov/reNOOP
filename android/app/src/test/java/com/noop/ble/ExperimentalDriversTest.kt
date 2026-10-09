@@ -113,7 +113,6 @@ class ExperimentalDriversTest {
     fun garminUsesStandardRecognitionHelper() {
         assertTrue(GarminBroadcast.isGarmin("Garmin Instinct 2"))
         assertFalse(GarminBroadcast.isGarmin("Amazfit GTS"))
-        assertTrue(GarminBroadcast.broadcastHint.isNotEmpty())
     }
 
     // MARK: - SourceKind routing

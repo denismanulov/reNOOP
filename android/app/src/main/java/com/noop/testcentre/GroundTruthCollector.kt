@@ -367,7 +367,7 @@ class GroundTruthCollector private constructor(private val context: Context) {
         context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "NOOP 5/MG raw-data session")
+            putExtra(Intent.EXTRA_SUBJECT, "reNOOP 5/MG raw-data session")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }, "Export raw-data session").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }

@@ -156,7 +156,7 @@ fun NoopButton(
     val scale by animateFloatAsState(
         targetValue = targetScale,
         animationSpec = if (reduced) tween(0) else NoopMotion.value(),
-        label = uiString(R.string.l10n_noop_button_noopbutton_scale_1bee88be),
+        label = "NoopButton.scale",
     )
     val opacity = when {
         !enabled -> NoopButtonMetrics.disabledOpacity

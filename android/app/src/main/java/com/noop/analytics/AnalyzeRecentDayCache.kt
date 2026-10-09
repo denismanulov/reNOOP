@@ -32,6 +32,11 @@ object AnalyzeRecentDayCache {
      *
      * Keys are `owner|hrCount:hrMaxTs:anchor:detail|streams`, so the segment that differs names the
      * cause. Pure, so it is unit-tested directly.
+     *
+     * `stepDiv` is the day's own step divisor ([streamsWitness]), named when it is the only thing in the
+     * third segment that moved: a WHOOP 4.0 step auto-calibration measurement landed for that day. It is
+     * told apart from `rrAlias5` on purpose. The Swift twin takes everything after `rrAlias5=` as the
+     * alias and so reports a moved divisor as `rrAlias5`, a cause that did not happen.
      */
     internal fun missReason(cachedKey: String, freshKey: String): String {
         if (cachedKey == freshKey) return "none"
@@ -40,10 +45,28 @@ object AnalyzeRecentDayCache {
         if (a.size < 3 || b.size < 3) return "shape"
         if (a[0] != b[0]) return "owner"
         if (a[1] != b[1]) return "hr"
-        val ra = a[2].substringAfter("rrAlias5=", "")
-        val rb = b[2].substringAfter("rrAlias5=", "")
-        return if (ra != rb) "rrAlias5" else "streams"
+        val aliasA = a[2].substringAfter("rrAlias5=", "").substringBefore(STEP_DIVISOR_TAG)
+        val aliasB = b[2].substringAfter("rrAlias5=", "").substringBefore(STEP_DIVISOR_TAG)
+        if (aliasA != aliasB) return "rrAlias5"
+        val restA = a[2].substringBefore(STEP_DIVISOR_TAG)
+        val restB = b[2].substringBefore(STEP_DIVISOR_TAG)
+        return if (restA == restB) "stepDiv" else "streams"
     }
+
+    private const val STEP_DIVISOR_TAG = "|stepDiv="
+
+    /**
+     * The third segment of a day's key: the stored-stream fingerprint, the pass-wide R-R alias policy and
+     * the day's own step divisor. Twin of the string the Swift engine builds inline for `streams:`.
+     *
+     * The divisor rides here, per day, because a learned factor moves for one day at a time: it must
+     * invalidate that day and no other. In the pass-global config signature it would drop every cached
+     * day on each measurement. With step auto-calibration off it is the manual divisor for every day,
+     * which the config signature already carries, so it then never moves on its own. By bit pattern, so
+     * the comparison is exact.
+     */
+    fun streamsWitness(streams: String, unlabelledAliasOfWhoop5: Boolean, stepDivisor: Double): String =
+        "$streams|rrAlias5=$unlabelledAliasOfWhoop5$STEP_DIVISOR_TAG${stepDivisor.toRawBits()}"
 
     /**
      * The per-day reuse key. Reuse a cached night iff this string is unchanged since the scan was cached.

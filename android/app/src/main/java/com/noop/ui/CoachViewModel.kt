@@ -16,6 +16,7 @@ import com.noop.data.CoachMessageRow
 import com.noop.data.JournalEntry
 import com.noop.data.WhoopDatabase
 import com.noop.data.WhoopRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,8 +62,16 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     val messages: StateFlow<List<ChatMsg>> = _messages.asStateFlow()
 
     private val _sending = MutableStateFlow(false)
-    /** True while a request is in flight, the UI disables Send and shows a thinking state. */
+    /** True while a reply is being written: the composer offers Stop and the typing bubble shows. */
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
+
+    private val _messageTimes = MutableStateFlow(CoachMessageMeta.loadTimes(app.applicationContext))
+    /** When each message arrived (epoch ms), for the transcript's stamps. Restored messages keep the
+     *  time recorded when they first appeared; one from before times were kept has none. */
+    val messageTimes: StateFlow<Map<String, Long>> = _messageTimes.asStateFlow()
+
+    /** Set by [stop] for the reply being written; read by its delta callback and its failure path. */
+    @Volatile private var stopRequested = false
 
     private val _error = MutableStateFlow<String?>(null)
     /** Non-null when the last send failed; the UI shows it in red. Cleared on the next send. */
@@ -123,21 +132,6 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
 
     /** K7: Follow-up chips shown after each assistant reply. Static, byte-twin of the Swift list. */
     val followUpSuggestions: List<String> = aiCoach.followUpSuggestions
-
-    /**
-     * K12: Rough token estimate for the next send, based on the current draft + context size.
-     * Uses the standard ~4 chars/token heuristic. Returns null when not configured.
-     */
-    fun estimatedTokens(draft: String): Int? {
-        val app = getApplication<Application>()
-        if (!isConfigured(app.applicationContext)) return null
-        val systemPrompt = AiCoach.resolveSystemPrompt(app.applicationContext)
-        val systemPromptTokens = systemPrompt.length / 4
-        val contextTokens = if (consent.value) 750 else 50
-        val historyTokens = messages.value.sumOf { it.text.length / 4 }
-        val draftTokens = draft.length / 4
-        return systemPromptTokens + contextTokens + historyTokens + draftTokens
-    }
 
     /** Recompute the contextual chips from the current on-device days. Best-effort; never throws. */
     fun refreshSuggestions() {
@@ -425,6 +419,27 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
      *  (and the Compose transcript) stays bounded over a long-lived session. (parity with Swift) */
     private fun appendMessage(msg: ChatMsg) {
         _messages.value = (_messages.value + msg).takeLast(MAX_STORED_MESSAGES)
+        if (msg.id !in _messageTimes.value) {
+            _messageTimes.value = _messageTimes.value + (msg.id to System.currentTimeMillis())
+        }
+    }
+
+    /** Replaces the message [id] with [transform] of it (the streamed placeholder as words arrive). */
+    private fun updateMessage(id: String, transform: (ChatMsg) -> ChatMsg) {
+        _messages.value = _messages.value.map { if (it.id == id) transform(it) else it }
+    }
+
+    /**
+     * Ends a reply that did not finish: what arrived stays, marked interrupted; an empty placeholder
+     * leaves the transcript. Twin of Swift `AICoachEngine.settleUnfinished`.
+     */
+    private fun settleUnfinished(placeholderId: String, partial: String) {
+        val text = partial.trim()
+        if (text.isEmpty()) {
+            _messages.value = _messages.value.filterNot { it.id == placeholderId }
+        } else {
+            updateMessage(placeholderId) { it.copy(text = text, isInterrupted = true) }
+        }
     }
 
     /**
@@ -464,69 +479,154 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         val appCtx = ctx.applicationContext
         _error.value = null
         appendMessage(ChatMsg(role = "user", text = question))
-        _sending.value = true
+        // Re-read the stored grant rather than trusting the copy this instance was built with. Consent
+        // is editable from CoachSettingsScreen, and the system prompt already works this way
+        // (`resolveSystemPrompt` is read fresh per send); a revoked grant must not be able to survive in
+        // memory on the one call that egresses data.
+        streamReply(appCtx, brief = false) { consentNow ->
+            // The placeholder is the last message; everything before it is the history.
+            _messages.value.dropLast(1) to consentNow
+        }
+    }
 
-        // K1: append a placeholder assistant message, then mutate its text as chunks arrive.
+    /**
+     * "Today's Brief", asked for by its chip on an empty chat: readiness, today's training and one tip,
+     * streamed into the conversation as a reply marked [ChatMsg.isBrief]. Needs a provider and data
+     * access, and runs ONLY when tapped: opening the chat or turning on data access sends nothing (CR-10).
+     * Twin of Swift `AICoachEngine.startBriefIfNeeded()`.
+     */
+    fun startBrief(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        if (_sending.value || _messages.value.isNotEmpty()) return
+        if (!NoopPrefs.coachEnabled(appCtx) || !isConfigured(appCtx)) return
+        if (!AiKeyStore.readConsent(appCtx)) return
+        retireStaleConversationIfNeeded()
+        conversationDay = LocalDate.now().toEpochDay()
+        _error.value = null
+        streamReply(appCtx, brief = true) { consentNow ->
+            listOf(ChatMsg(role = "user", text = AiCoach.BRIEF_INSTRUCTION)) to consentNow
+        }
+    }
+
+    /**
+     * Streams one reply into a placeholder appended now. [history] builds what is sent (given the
+     * consent re-read at send time) and returns it with the consent to send under. Stoppable by [stop];
+     * a stop or a mid-stream failure keeps what arrived, marked interrupted, and only a failure raises
+     * [error]. Persists once the turn has settled.
+     */
+    private fun streamReply(
+        appCtx: Context,
+        brief: Boolean,
+        history: (consentNow: Boolean) -> Pair<List<ChatMsg>, Boolean>,
+    ) {
+        _sending.value = true
+        stopRequested = false
+        // K1: a placeholder assistant message whose text is replaced as chunks arrive.
         val placeholderId = java.util.UUID.randomUUID().toString()
-        appendMessage(ChatMsg(id = placeholderId, role = "assistant", text = ""))
+        appendMessage(ChatMsg(id = placeholderId, role = "assistant", text = "", isBrief = brief))
         var accumulated = ""
 
         viewModelScope.launch {
             try {
-                // Re-read the stored grant rather than trusting the copy this instance was built
-                // with. Consent is editable from CoachSettingsScreen, and the system prompt already
-                // works this way (`resolveSystemPrompt` is read fresh per send); a revoked grant
-                // must not be able to survive in memory on the one call that egresses data.
                 val consentNow = AiKeyStore.readConsent(appCtx)
                 _consent.value = consentNow
+                val (wire, consentToSend) = history(consentNow)
                 aiCoach.chatStream(
                     ctx = appCtx,
-                    history = _messages.value.dropLast(1), // exclude the placeholder
+                    history = wire,
                     provider = _provider.value,
                     model = _model.value,
-                    consent = consentNow,
+                    consent = consentToSend,
                     customBaseUrl = _customBaseUrl.value,
                     customAuthHeader = _customAuthHeader.value,
-                    includeSignals = consentNow && NoopPrefs.coachSignals(appCtx),
+                    includeSignals = consentToSend && NoopPrefs.coachSignals(appCtx),
                 ) { delta ->
+                    // A stopped reply takes nothing more, whatever the provider still had in flight.
+                    if (stopRequested) throw CancellationException("stopped")
                     accumulated += delta
-                    // Replace the placeholder's text with the accumulated stream so far.
-                    _messages.value = _messages.value.map { msg ->
-                        if (msg.id == placeholderId) ChatMsg(id = placeholderId, role = "assistant", text = accumulated)
-                        else msg
-                    }
+                    updateMessage(placeholderId) { it.copy(text = accumulated) }
                 }
-                // Finalize: trim whitespace. If the stream produced nothing, show "(no reply)".
-                val clean = accumulated.trim()
-                _messages.value = _messages.value.map { msg ->
-                    if (msg.id == placeholderId) {
-                        ChatMsg(id = placeholderId, role = "assistant",
-                                text = if (clean.isEmpty()) getApplication<Application>().getString(R.string.coach_no_reply) else clean)
-                    } else msg
+                if (stopRequested) {
+                    settleUnfinished(placeholderId, accumulated)
+                } else {
+                    // Finalize: trim whitespace. An empty answer reads "(no reply)"; an empty brief leaves.
+                    val clean = accumulated.trim()
+                    if (clean.isEmpty() && brief) {
+                        _messages.value = _messages.value.filterNot { it.id == placeholderId }
+                    } else {
+                        val text = clean.ifEmpty { getApplication<Application>().getString(R.string.coach_no_reply) }
+                        updateMessage(placeholderId) { it.copy(text = text) }
+                    }
                 }
             } catch (e: Exception) {
-                val partial = accumulated.trim()
-                if (partial.isNotEmpty()) {
-                    _messages.value = _messages.value.map { msg ->
-                        if (msg.id == placeholderId) {
-                            ChatMsg(id = placeholderId, role = "assistant",
-                                    text = getApplication<Application>().getString(R.string.coach_stream_interrupted, partial))
-                        } else msg
-                    }
+                // Mid-stream: keep the partial text, marked interrupted (PRD K1 acceptance); with nothing
+                // received the empty placeholder leaves. A stop is the wearer's choice, not a failure.
+                settleUnfinished(placeholderId, accumulated)
+                if (stopRequested) {
+                    _error.value = null
+                    _keyRejected.value = false
                 } else {
-                    // No text received at all — remove the empty placeholder.
-                    _messages.value = _messages.value.filterNot { it.id == placeholderId }
+                    _error.value = e.message ?: getApplication<Application>().getString(R.string.coach_failed_generic)
+                    // Typed, never text-matched: the message is localized and the type is not.
+                    _keyRejected.value = e is AiKeyRejectedException
                 }
-                _error.value = e.message ?: "Something went wrong. Please try again."
-                // Typed, never text-matched: the message is localized and the type is not.
-                _keyRejected.value = e is AiKeyRejectedException
             } finally {
+                stopRequested = false
                 _sending.value = false
-                // K2: persist once the turn is fully settled (success, mid-stream error, or empty-
-                // stream removal) — not per streamed chunk, so a long reply doesn't hammer the store.
+                // K2: persist once the turn is fully settled (success, stop, mid-stream error, or
+                // empty-stream removal) — not per streamed chunk, so a long reply doesn't hammer the store.
                 persistMessages()
             }
         }
+    }
+
+    // MARK: - Stop and try again
+
+    /**
+     * Stops the reply being written. What has arrived stays, marked interrupted, and no error is raised:
+     * stopping is the wearer's choice, not a failure. Sends nothing. Twin of Swift `AICoachEngine.stop()`.
+     */
+    fun stop() {
+        if (!_sending.value) return
+        stopRequested = true
+        aiCoach.cancelStreaming()
+    }
+
+    /** Whether the last reply can be asked for again (see [CoachConversationRules.canRetryLastReply]). */
+    fun canRetryLastReply(ctx: Context): Boolean {
+        val appCtx = ctx.applicationContext
+        return CoachConversationRules.canRetryLastReply(
+            messages = _messages.value,
+            sending = _sending.value,
+            configured = isConfigured(appCtx),
+            coachEnabled = NoopPrefs.coachEnabled(appCtx),
+            consent = AiKeyStore.readConsent(appCtx),
+        )
+    }
+
+    /** "Try Again" on the last reply: it leaves with the question it answered, and the question is asked
+     *  afresh (or, for the brief, the brief is written again). Twin of Swift `retryLastReply()`. */
+    fun retryLastReply(ctx: Context) {
+        if (!canRetryLastReply(ctx)) return
+        val msgs = _messages.value
+        val last = msgs.last()
+        if (last.isBrief) {
+            _messages.value = msgs.dropLast(1)
+            startBrief(ctx)
+            return
+        }
+        val question = msgs[msgs.size - 2].text
+        _messages.value = msgs.dropLast(2)
+        send(ctx, question)
+    }
+
+    /** "Try Again" on an undelivered question: it leaves the transcript and is asked afresh, landing at
+     *  the bottom as Messages resends it. */
+    fun retryFailedQuestion(ctx: Context) {
+        if (_sending.value) return
+        val failed = _messages.value.lastOrNull()?.takeIf { it.role == "user" } ?: return
+        _messages.value = _messages.value.dropLast(1)
+        send(ctx, failed.text)
     }
 
     // MARK: - PRD-K2: persisted conversation history
@@ -553,8 +653,16 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         // Retire by NOT restoring. The next append replaces the stored rows wholesale, so nothing is
         // deleted here and a transcript is never destroyed by merely opening the screen.
         if (isStaleConversation(lastDay, LocalDate.now().toEpochDay())) return
+        val flags = CoachMessageMeta.loadFlags(getApplication())
         _messages.value = rows.sortedBy { it.orderIndex }
-            .map { ChatMsg(id = it.id, role = it.role, text = it.text) }
+            .map {
+                val bits = flags[it.id] ?: 0
+                ChatMsg(
+                    id = it.id, role = it.role, text = it.text,
+                    isBrief = bits and CoachMessageMeta.FLAG_BRIEF != 0,
+                    isInterrupted = bits and CoachMessageMeta.FLAG_INTERRUPTED != 0,
+                )
+            }
         conversationDay = lastDay
     }
 
@@ -584,6 +692,7 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
      *  blocks the UI — the in-memory transcript (what the user sees) is unaffected either way. */
     private fun persistMessages() {
         val snapshot = _messages.value
+        CoachMessageMeta.save(getApplication(), snapshot, _messageTimes.value)
         val providerId = _provider.value.name
         viewModelScope.launch {
             val rows = snapshot.mapIndexed { index, m ->
@@ -603,6 +712,7 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         // Goes with the transcript, as in [clearKey] and [disconnect]: a field claiming the empty
         // transcript belongs to some past day would not be true.
         conversationDay = null
+        CoachMessageMeta.save(getApplication(), emptyList(), emptyMap())
         viewModelScope.launch { runCatching { coachDao.clearCoachMessages() } }
     }
 
@@ -693,11 +803,11 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
                 // Still appends unconditionally onto TODAY's transcript; it just doesn't append onto
                 // yesterday's, which the day boundary has already retired everywhere else.
                 retireStaleConversationIfNeeded()
-                appendMessage(ChatMsg(role = "assistant", text = getApplication<Application>().getString(R.string.coach_today_brief_format, text)))
+                appendMessage(ChatMsg(role = "assistant", text = text, isBrief = true))
                 conversationDay = LocalDate.now().toEpochDay()
                 persistMessages()
             } else {
-                _briefStatus.value = "Couldn't generate a brief right now — check your key and data access."
+                _briefStatus.value = getApplication<Application>().getString(R.string.coach_brief_failed)
             }
             _briefGenerating.value = false
         }
@@ -713,7 +823,7 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
     fun consumeScheduledBriefIfAny(ctx: Context) {
         if (_messages.value.isNotEmpty()) return
         val text = CoachBriefSettings.from(ctx.applicationContext).consumeStoredBrief() ?: return
-        appendMessage(ChatMsg(role = "assistant", text = getApplication<Application>().getString(R.string.coach_today_brief_format, text)))
+        appendMessage(ChatMsg(role = "assistant", text = text, isBrief = true))
         conversationDay = LocalDate.now().toEpochDay()
         persistMessages()
     }

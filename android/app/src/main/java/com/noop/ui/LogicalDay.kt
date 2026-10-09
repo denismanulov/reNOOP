@@ -169,3 +169,21 @@ internal const val LOGICAL_DAY_ROLLOVER_HOUR: Int = 4
 
 /** Exposed for symmetry / call-site readability (start of the rollover window). */
 internal val LOGICAL_DAY_ROLLOVER_TIME: LocalTime = LocalTime.of(LOGICAL_DAY_ROLLOVER_HOUR, 0)
+
+/**
+ * The skin-temp reading the Summary's Skin Temp card LEADS with (#1844): the first of the day's own row /
+ * the vitals carry / the per-field carry that holds EITHER number, resolved to absolute-or-deviation by
+ * [com.noop.analytics.SkinTempDisplay.leadReading]. (Moved here from the retired Today screen with its
+ * carry-order tests.)
+ *
+ * Both numbers are read off the SAME row, so an absolute is never paired with another night's deviation.
+ */
+internal fun resolveSkinTempReading(
+    d: DailyMetric?,
+    carriedDay: DailyMetric?,
+    skinTempCarryDay: DailyMetric?,
+    prefer: com.noop.analytics.SkinTempDisplay.Kind = com.noop.analytics.SkinTempDisplay.Kind.ABSOLUTE,
+): com.noop.analytics.SkinTempDisplay.Reading? =
+    listOfNotNull(d, carriedDay, skinTempCarryDay)
+        .firstOrNull { it.skinTempC != null || it.skinTempDevC != null }
+        ?.let { com.noop.analytics.SkinTempDisplay.leadReading(it.skinTempC, it.skinTempDevC, prefer) }

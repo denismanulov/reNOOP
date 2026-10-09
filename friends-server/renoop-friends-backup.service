@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up the reNOOP friends database
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/renoop-friends/backup.py

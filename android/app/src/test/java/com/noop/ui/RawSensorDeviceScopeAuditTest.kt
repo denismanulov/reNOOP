@@ -166,8 +166,9 @@ class RawSensorDeviceScopeAuditTest {
 
     @Test
     fun stressUsesAllThreeDeviceAwareRawTimelines() {
-        val stress = File(uiSourceDir(), "StressScreen.kt")
-        assertTrue("StressScreen.kt not found", stress.isFile)
+        // The Stress screen folded into the Stress metric page; its intraday read lives here now.
+        val stress = File(uiSourceDir(), "metric/MetricStressDay.kt")
+        assertTrue("metric/MetricStressDay.kt not found", stress.isFile)
         val source = stripComments(stress.readText())
 
         val bypasses = directRawRead.findAll(source).map { it.value }.toList()

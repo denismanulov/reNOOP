@@ -67,3 +67,4 @@ object LiveConsoleReadout {
         // Swift's .rounded() is half-away-from-zero, identical over the 0..100 this sees.
         if (activeIsWhoop) whoopPct?.let { Math.round(it).toInt() } else ringPct
 }
+

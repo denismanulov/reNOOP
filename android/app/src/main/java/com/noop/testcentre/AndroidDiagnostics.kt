@@ -968,7 +968,7 @@ object AndroidDiagnostics {
         // Single source of truth for the aggressive-vendor set (#386): the same list the Settings
         // "Keep NOOP alive overnight" row gates on, so the diagnostic and the fix never disagree.
         if (com.noop.ble.BackgroundHealth.isAggressiveVendor(manufacturer))
-            "aggressive vendor (${manufacturer.lowercase()}), whitelist NOOP to keep it alive"
+            "aggressive vendor (${manufacturer.lowercase()}), whitelist reNOOP to keep it alive"
         else "standard"
 
     /** Charging state from the sticky battery intent / BatteryManager. */

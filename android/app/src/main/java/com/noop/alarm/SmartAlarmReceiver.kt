@@ -59,16 +59,11 @@ class SmartAlarmReceiver : BroadcastReceiver() {
             context, 0, appLaunchIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val title = "Good morning"
-        val body = if (smart) {
-            "You're in a lighter sleep phase. Time to wake up."
-        } else {
-            "Your wake window has ended. Time to get up."
-        }
-        return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_heart)
-            .setContentTitle(title)
-            .setContentText(body)
+        val title = context.getString(R.string.smart_alarm_title)
+        val body = context.getString(
+            if (smart) R.string.smart_alarm_phone_body_light else R.string.smart_alarm_phone_body_deadline,
+        )
+        return com.noop.notif.NoopNotifications.builder(context, CHANNEL_ID, R.drawable.ic_stat_alarm, title, body)
             .setContentIntent(fullScreen)
             .setFullScreenIntent(fullScreen, true)   // promote to a full-screen alarm on a locked phone
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -83,15 +78,18 @@ class SmartAlarmReceiver : BroadcastReceiver() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // No early return when the channel exists: re-creating it is how its name and description
+            // follow a language change, and the OS keeps an existing channel's sound, vibration and
+            // importance as they are. Named identically by com.noop.notif.SmartAlarmNotifier, which
+            // shares this channel.
             val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Smart alarm",
+                context.getString(R.string.notif_channel_alarm_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "The phone wake alarm NOOP fires inside your chosen wake window."
+                description = context.getString(R.string.notif_channel_alarm_desc)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 600, 400, 600, 400, 600)
                 setBypassDnd(true)   // a wake alarm should sound through Do Not Disturb

@@ -94,18 +94,6 @@ internal fun parseSessionStages(stagesJSON: String?): StageMins? {
 }
 
 /**
- * #today-hosted-cards: the pure trailing-14-night sleep-hours trend — hours + index-aligned day keys, the
- * SAME rows [buildSleepModel] derives `trendHours`/`trendDates` from. Nap-free (no debt/session data), so a
- * Today host can build it from `days` alone. Kept byte-identical to the inline logic in [buildSleepModel].
- */
-internal fun sleepDurationTrend(days: List<DailyMetric>): Pair<List<Double>, List<String>> {
-    val trendRows = days.filter { (it.totalSleepMin ?: 0.0) > 0.0 }.takeLast(14)
-    val hours = trendRows.mapNotNull { it.totalSleepMin?.let { minutes -> minutes / 60.0 } }
-    val dates = trendRows.map { it.day }
-    return hours to dates
-}
-
-/**
  * Build the whole model from the cached daily metrics + the latest sleep session + the
  * export-verbatim sleep figures. Returns null when there is no usable latest night (no
  * stage minutes), which renders the empty state. All series are computed in one pass-set
@@ -330,55 +318,6 @@ internal fun fallbackSleepModel(
 }
 
 /**
- * #today-hosted-cards: the ONE loader that builds the shared [SleepModel] backing every SleepModel-derived
- * hosted sleep card in Today (Stages vs typical today; more to follow). It mirrors the Sleep tab's own
- * inputs step-for-step — the active∪canonical session union with the #241 richness merge, the learned
- * habitual midsleep, the imported metric series, and the nap-minutes-by-day map — then hands them to the
- * SAME [fallbackSleepModel] the Sleep tab uses (SleepScreen.kt), so a hosted card renders numbers
- * byte-identical to the Sleep tab. Returns null when no day has stage data (the first-run empty state).
- * Suspends (a handful of repo reads); call it from a keyed LaunchedEffect and cache the result, and only
- * when a SleepModel-backed card is actually hosted, so a Today with none pays no cost. Twin of the iOS
- * `LiquidTodayView` hostedSleepModel build.
- */
-internal suspend fun buildHostedSleepModel(
-    repo: WhoopRepository,
-    activeStrapId: String,
-    days: List<DailyMetric>,
-): SleepModel? {
-    val now = System.currentTimeMillis() / 1000L
-    // Active∪canonical union + #241 richness merge, keyed by LOCAL wake-day — the SAME merge SleepScreen
-    // does for its `sleeps` (imported-wins, stage-less imports yield to a computed day that has stages),
-    // ordered by effective onset.
-    val sleeps: List<SleepSession> = runCatching {
-        val imported = repo.sleepSessionsUnion(activeStrapId, 0L, now)
-        val computed = repo.computedSleepSessionsUnion(activeStrapId, 0L, now)
-        fun localEndDay(ts: Long): String {
-            val offsetSec = (java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000).toLong()
-            return AnalyticsEngine.dayString(ts, offsetSec)
-        }
-        WhoopRepository.mergeSleepRichness(imported, computed) { localEndDay(it.endTs) }
-            .sortedBy { it.effectiveStartTs }
-    }.getOrDefault(emptyList())
-
-    // Learned habitual midsleep (threads the active strap id, as SleepScreen does); null under threshold.
-    val habitualMidsleep = runCatching { repo.habitualMidsleepSec(activeStrapId) }.getOrNull()
-
-    // Imported headline series (the SAME ImportedSleepSeries the Sleep tab loads). metricSeries has no Flow.
-    suspend fun load(key: String) = runCatching {
-        repo.metricSeries("my-whoop", key, "0000-00-00", "9999-99-99")
-    }.getOrDefault(emptyList()).associate { it.day to it.value }
-    val imported = ImportedSleepSeries(
-        performance = load("sleep_performance"),
-        consistency = load("sleep_consistency"),
-        needMin = load("sleep_need_min"),
-        debtMin = load("sleep_debt_min"),
-    )
-
-    val napSleepMinByDay = napSleepMinutesByDay(sleeps, habitualMidsleep)
-    return fallbackSleepModel(days, imported, napSleepMinByDay, sessions = sleeps)
-}
-
-/**
  * Build a metric from a per-day transform, keeping only finite values.
  *
  * `latest` is STALENESS-BOUNDED ([Baselines.vitalCarryDays]): it is the newest value only while that
@@ -444,21 +383,3 @@ private fun mean(vals: List<Double>): Double? = if (vals.isEmpty()) null else va
 
 // MARK: - Stage segment reconstruction (durations only — same architecture as macOS)
 
-/**
- * Lay the stage minutes end-to-end as proportional hypnogram segments: light → deep →
- * light → rem → light → awake (deep early, REM later, awake last). Weights are minutes;
- * the Hypnogram normalizes them to width.
- */
-internal fun stageSegments(s: Stages): List<Pair<String, Float>> {
-    val out = ArrayList<Pair<String, Float>>()
-    fun add(name: String, minutes: Double) {
-        if (minutes > 0.0) out.add(name to minutes.toFloat())
-    }
-    add("light", s.light * 0.4)
-    add("deep", s.deep)
-    add("light", s.light * 0.3)
-    add("rem", s.rem)
-    add("light", s.light * 0.3)
-    add("awake", s.awake)
-    return out
-}

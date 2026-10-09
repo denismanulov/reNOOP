@@ -3,6 +3,12 @@ package com.noop.widget
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
+import com.noop.ui.EffortScale
+import com.noop.ui.UnitPrefs
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * The handful of numbers the home-screen widget shows, persisted to SharedPreferences so the
@@ -15,6 +21,10 @@ data class WidgetSnapshot(
     val restPct: Int? = null,
     /** Today's Effort 0–100 (the day's strain on the 0–100 scale), null until there's a HR window (#516). */
     val effortPct: Int? = null,
+    /** The same strain as stored, unrounded. The ring fills from [effortPct]; the figure inside it is
+     *  formatted from this on the wearer's chosen scale, so the widget and the Summary print one number
+     *  on the 0 to 21 scale. Null with [effortPct] null. */
+    val effort: Double? = null,
     /** Heart rate to show: the live sample when streaming, else the last-known reading carried over so a
      *  momentary quiet patch (5/MG HR-profile lull, a reconnect) doesn't blank the widget. Null only when
      *  there is no recent reading at all. See [HrDisplay]. */
@@ -63,6 +73,7 @@ object WidgetSnapshotStore {
     /** Prefs key for the encoded heart-rate trace (#1957). Its own key so an older build, or a wipe of
      *  the trace, leaves every scalar the other widgets read untouched. */
     private const val KEY_SERIES = "hrSeries"
+    private const val KEY_EFFORT_BITS = "effortBits"
 
     /** Prefs keys for the stress curve and the day it belongs to (#2040). Their own keys for the same
      *  reason the trace has one: an older build, or a day with nothing scored, must leave every scalar
@@ -71,6 +82,27 @@ object WidgetSnapshotStore {
     private const val KEY_STRESS_DAY = "stressDay"
     private const val KEY_STRESS_SCORED_AT = "stressScoredAt"
     private const val KEY_STRESS_FINGERPRINT = "stressFingerprint"
+
+    private val _revision = MutableStateFlow(0L)
+
+    /**
+     * Counts the redraws the widgets have been asked to make. Each widget's composition reads its data
+     * keyed on this ([currentWidgetSnapshot]), which is what makes an update reach a widget whose Glance
+     * session is still alive.
+     *
+     * A session outlives one update by about 45 seconds, and `update()` on a live session only
+     * RECOMPOSES it; `provideGlance` is not run again. Data captured there was therefore drawn again,
+     * unchanged, by every update that landed while the session lived: a widget placed (or pushed to) a
+     * few seconds before a second push kept the first push's numbers, beside a sibling widget whose
+     * session had ended and which showed the new ones. Bumped only where the widgets are actually told to
+     * redraw, so the gates above still decide whether anything is sent.
+     */
+    internal val revision: StateFlow<Long> = _revision.asStateFlow()
+
+    /** Tell every live widget composition its data changed. Called just before `updateAll`. */
+    internal fun noteRedraw() {
+        _revision.update { it + 1 }
+    }
 
     suspend fun push(context: Context, snap: WidgetSnapshot) {
         val app = context.applicationContext
@@ -117,7 +149,7 @@ object WidgetSnapshotStore {
         // actually render rather than re-deriving it: `load` resolves staleness and prunes the trace,
         // and a guess at either would be the thing that drifts.
         val visible = runCatching { load(app) }.getOrNull()
-        if (visible != null && !RenderedGate.changed(visible, WidgetTheme.isDark(app))) {
+        if (visible != null && !RenderedGate.changed(visible, WidgetTheme.isDark(app), UnitPrefs.effortScale(app))) {
             // The stamp reads "Updated <time>", so it names when the data is FROM. A push that carried
             // nothing new must not advance it: doing so would tell the reader 14:47 while showing them
             // 14:32's reading. Putting it back also keeps what the prefs hold and what the widget shows
@@ -136,10 +168,23 @@ object WidgetSnapshotStore {
         // Update only the providers that actually have a widget placed. The ids are already in hand, and
         // `updateAll` on a provider with none still crosses into GlanceAppWidgetManager to discover that
         // for itself. Someone running just the HR widget was paying for two of those on every push.
+        noteRedraw()
         if (standardIds.isNotEmpty()) runCatching { NoopGlanceWidget().updateAll(app) }
         if (compactIds.isNotEmpty()) runCatching { NoopCompactGlanceWidget().updateAll(app) }
         if (hrIds.isNotEmpty()) runCatching { HrGlanceWidget().updateAll(app) }
         if (stressIds.isNotEmpty()) runCatching { StressGlanceWidget().updateAll(app) }
+    }
+
+    /**
+     * Redraw the two score widgets from what is already stored. For a change that alters how a stored
+     * figure is PRINTED and brings no new data with it, which today is the strain scale: without this the
+     * widget would keep the old scale until the next push, and with the strap out of reach that is never.
+     */
+    suspend fun redrawScores(context: Context) {
+        val app = context.applicationContext
+        noteRedraw()
+        runCatching { NoopGlanceWidget().updateAll(app) }
+        runCatching { NoopCompactGlanceWidget().updateAll(app) }
     }
 
     /**
@@ -235,7 +280,10 @@ object WidgetSnapshotStore {
         val ids = runCatching {
             GlanceAppWidgetManager(app).getGlanceIds(StressGlanceWidget::class.java)
         }.getOrDefault(emptyList())
-        if (ids.isNotEmpty()) runCatching { StressGlanceWidget().updateAll(app) }
+        if (ids.isNotEmpty()) {
+            noteRedraw()
+            runCatching { StressGlanceWidget().updateAll(app) }
+        }
     }
 
     fun save(context: Context, snap: WidgetSnapshot) {
@@ -244,6 +292,9 @@ object WidgetSnapshotStore {
             .putInt("recovery", snap.recoveryPct ?: -1)
             .putInt("rest", snap.restPct ?: -1)
             .putInt("effort", snap.effortPct ?: -1)
+            // The exact double, as bits: a float or a rounded tenth can land on the other side of a
+            // display rounding boundary from the figure the Summary shows.
+            .apply { if (snap.effort != null) putLong(KEY_EFFORT_BITS, snap.effort.toRawBits()) else remove(KEY_EFFORT_BITS) }
             .putInt("battery", snap.batteryPct ?: -1)
             .putBoolean("connected", snap.connected)
             .putLong("updatedAt", snap.updatedAtMs)
@@ -289,6 +340,10 @@ object WidgetSnapshotStore {
             recoveryPct = p.getInt("recovery", -1).takeIf { it >= 0 },
             restPct = p.getInt("rest", -1).takeIf { it >= 0 },
             effortPct = p.getInt("effort", -1).takeIf { it >= 0 },
+            // A snapshot stored before this field existed has only the whole number; it stands in until
+            // the next push, which is at most a minute away on a connected strap.
+            effort = if (p.contains(KEY_EFFORT_BITS)) Double.fromBits(p.getLong(KEY_EFFORT_BITS, 0L))
+            else p.getInt("effort", -1).takeIf { it >= 0 }?.toDouble(),
             heartRate = hr,
             heartRateStale = hrStale,
             batteryPct = p.getInt("battery", -1).takeIf { it >= 0 },
@@ -383,13 +438,16 @@ internal object RenderedGate {
     /** True when [visible] differs from what was last sent. The first call after a process start always
      *  admits: the widgets may be showing something an earlier process left them. */
     @Synchronized
-    fun changed(visible: WidgetSnapshot, dark: Boolean): Boolean {
+    fun changed(visible: WidgetSnapshot, dark: Boolean, effortScale: EffortScale = EffortScale.HUNDRED): Boolean {
         val newest = visible.hrSeries.lastOrNull()
         // The stress curve joins the key (#2040). Without it a pass that scored a fresh hour, and
         // changed nothing else, would be declined here as "nothing the widgets display changed" and the
         // curve would sit an hour behind whatever unrelated value moved next.
         val newestStress = visible.stressSeries.lastOrNull { it.level != null }
+        // The strain FIGURE joins the key beside its whole number: on the 0 to 21 scale it moves in
+        // tenths the whole number does not see, and a change of scale changes it with no new data.
         val key = "${visible.recoveryPct}|${visible.restPct}|${visible.effortPct}|" +
+            "${WidgetCaptions.effort(visible.effortPct, visible.effort, effortScale)}|" +
             "${visible.batteryPct}|${visible.connected}|${visible.heartRate}|" +
             "${visible.heartRateStale}|${visible.hrSeries.size}|${newest?.ts}|${newest?.bpm}|" +
             "${visible.stressSeries.size}|${newestStress?.ts}|${newestStress?.level}|" +

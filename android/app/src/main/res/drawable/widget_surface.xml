@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget card below Android 12, where a RemoteViews view cannot be clipped to a rounded outline:
+     the rounding is drawn instead. Android 12+ uses the system's own widget corner radius. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="20dp" />
+    <solid android:color="@color/widget_surface" />
+</shape>

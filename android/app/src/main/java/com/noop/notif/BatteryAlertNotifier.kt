@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -185,10 +183,11 @@ object BatteryAlertNotifier {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
             val label = com.noop.analytics.BatteryEstimator.label(remainingHours)
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.battery_runtime_title))
-                .setContentText(context.getString(R.string.battery_runtime_body, label))
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                context.getString(R.string.battery_runtime_title),
+                context.getString(R.string.battery_runtime_body, label),
+            )
                 .setContentIntent(openAppIntent(context))
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -229,16 +228,15 @@ object BatteryAlertNotifier {
             )
             if (!decision.fire || lastSocPct == null || lastTsSec == null) return
             ensureChannel(context)
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.battery_stale_title))
-                .setContentText(
-                    context.getString(
-                        R.string.battery_stale_body,
-                        lastSocPct,
-                        StaleBatteryAlertPolicy.ageLabel(decision.ageSeconds),
-                    ),
-                )
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                context.getString(R.string.battery_stale_title),
+                context.getString(
+                    R.string.battery_stale_body,
+                    lastSocPct,
+                    StaleBatteryAlertPolicy.ageLabel(decision.ageSeconds),
+                ),
+            )
                 .setContentIntent(openAppIntent(context))
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -265,10 +263,11 @@ object BatteryAlertNotifier {
                 fullAlerted = NoopPrefs.batteryFullAlerted(context),
             )
             if (decision.fireLow) {
-                val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_stat_heart)
-                    .setContentTitle(context.getString(R.string.battery_low_title))
-                    .setContentText(context.getString(R.string.battery_low_body))
+                val n = NoopNotifications.builder(
+                    context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                    context.getString(R.string.battery_low_title),
+                    context.getString(R.string.battery_low_body),
+                )
                     .setContentIntent(openAppIntent(context))
                     .setAutoCancel(true)
                     .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -277,10 +276,11 @@ object BatteryAlertNotifier {
                 NotificationManagerCompat.from(context).notify(NOTIF_ID_LOW, n)
             }
             if (decision.fireFull) {
-                val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_stat_heart)
-                    .setContentTitle(context.getString(R.string.battery_full_title))
-                    .setContentText(context.getString(R.string.battery_full_body))
+                val n = NoopNotifications.builder(
+                    context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                    context.getString(R.string.battery_full_title),
+                    context.getString(R.string.battery_full_body),
+                )
                     .setContentIntent(openAppIntent(context))
                     .setAutoCancel(true)
                     .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -332,11 +332,11 @@ object BatteryAlertNotifier {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
             val body = context.getString(R.string.battery_critical_body, currPct)
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.battery_critical_title))
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                context.getString(R.string.battery_critical_title),
+                body,
+            )
                 .setContentIntent(openAppIntent(context))
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -395,11 +395,11 @@ object BatteryAlertNotifier {
                 com.noop.analytics.BatteryEstimator.label(runway.usableHours),
                 com.noop.analytics.BatteryEstimator.label(runway.requiredHours),
             )
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.battery_bedtime_title))
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_battery,
+                context.getString(R.string.battery_bedtime_title),
+                body,
+            )
                 .setContentIntent(openAppIntent(context))
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -419,23 +419,9 @@ object BatteryAlertNotifier {
         )
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            // No early return when the channel exists: createNotificationChannel is idempotent and
-            // updating an existing channel is the only way its name/description follow a language
-            // change. Both are user-visible in system Settings and were otherwise fixed in the
-            // install-time language forever. Every caller sits behind the persisted once-per-crossing
-            // gates (and #886's (SoC, charging) key), so this runs when an alert is actually posted,
-            // not on the ~1 Hz live-state tick.
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, context.getString(R.string.battery_channel_name),
-                    NotificationManager.IMPORTANCE_HIGH,
-                ).apply {
-                    description = context.getString(R.string.battery_channel_desc)
-                },
-            )
-        }
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID, R.string.battery_channel_name, R.string.battery_channel_desc,
+            NotificationManager.IMPORTANCE_HIGH,
+        )
     }
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A widget chart (the heart-rate trace, the stress curve): one image stretched to its box. On
+     Android 12+ it is given a light and a dark bitmap and the launcher shows the one for its own theme. -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_chart"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:importantForAccessibility="no"
+    android:scaleType="fitXY" />

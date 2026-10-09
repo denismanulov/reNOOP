@@ -1,23 +1,18 @@
 package com.noop.ui
 
-import com.noop.R
-import androidx.compose.ui.res.stringResource
-import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
-import android.widget.Toast
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.PermissionController
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,36 +21,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoGraph
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Sensors
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Watch
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,1227 +59,826 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.noop.R
+import com.noop.ble.OtherStrapApps
 import com.noop.ble.WhoopModel
 import com.noop.data.ImportSummary
-import com.noop.ingest.AppleHealthImporter
 import com.noop.ingest.HealthConnectImporter
 import com.noop.ingest.WhoopCsvImporter
+import com.noop.ui.m3.Health
+import com.noop.ui.m3.ListGroup
+import com.noop.ui.m3.ListRow
+import com.noop.ui.m3.M3Dimens
+import com.noop.ui.m3.ChevronRight
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
-// MARK: - OnboardingScreen
+// MARK: - First run (after the terms gate)
 //
-// Android's first-run flow mirrors the macOS OnboardingWizard shape: a paged,
-// full-screen sequence that sets expectations, scans/connects to the strap, captures
-// the profile values that power zones/calories, imports history, and then hands off to
-// the app shell. It uses the same AppViewModel/Repository/BLE client as the app itself.
+// Four steps, five when another strap app can reach the strap, laid out as Pixel's setup wizard pages
+// (mockup 12, twin of Swift `OnboardingWizard`): a step bar, a big glyph, a headline with one line under
+// it, the step's own content, and a bottom bar with a text button on the left and a filled button on the
+// right.
+//
+//  1 Welcome
+//  · Other strap apps    — only when NOOP / WHOOP is installed beside reNOOP and may use Bluetooth: two
+//                          apps split the history
+//  2 Find your strap     — pick the model, Scan; becomes "Connected" once the strap bonds
+//  3 About you           — date of birth / sex / height / weight / units; only answered rows are written
+//  4 Bring your history  — optional WHOOP export / Health Connect import; Done finishes
+//
+// The notification permission is left to the features that need it (their switches ask), and Bluetooth is
+// asked for on the first Scan, never on top of a screen that does not explain it. It uses the same
+// AppViewModel, BLE client, profile store and importers as the app itself. Rendered alone (the host
+// returns before the app shell), so TalkBack never reaches anything behind it.
+
+/** A page of the wizard. [OtherApps] is in the path only when another strap app can reach the strap. */
+internal enum class SetupStep { Welcome, OtherApps, Scan, Profile, Import }
+
+/** Where a page sits in the wizard, as the step bar draws it: [number] of [count]. */
+internal data class StepPosition(val number: Int, val count: Int)
 
 @Composable
 fun OnboardingScreen(viewModel: AppViewModel, onFinished: () -> Unit) {
     val context = LocalContext.current
-    val pages = remember { OnboardingPage.entries }
-    // rememberSaveable so a config change (rotation, dark-mode, font-scale, locale,
-    // multi-window) doesn't recreate the Activity and throw the user back to page 1.
-    var pageIndex by rememberSaveable { mutableIntStateOf(0) }
-    val page = pages[pageIndex]
-    val live by viewModel.live.collectAsState()
+    // Whether the other-strap-apps step is in the path: another strap app is installed and may use
+    // Bluetooth. Read when the wizard opens, so the step bar has its length from the first page, and again
+    // on leaving Welcome, where the Swift twin decides it. Most people never see the step.
+    var otherApps by rememberSaveable { mutableStateOf(OtherStrapApps.ableToSync(context).isNotEmpty()) }
+    // rememberSaveable so a configuration change (rotation, dark mode, font scale, locale) keeps the step.
+    var index by rememberSaveable { mutableIntStateOf(0) }
+    // Which About You rows the user has answered, kept here so going back and forth doesn't reset them.
+    val answers = rememberSaveable(saver = ProfileAnswers.Saver) { ProfileAnswers() }
 
-    // The bonded celebration only makes sense once a strap is actually bonded. Auto-advance to it
-    // the moment that happens on the Connect step (mirrors macOS's scan → celebration), and skip
-    // it in both directions when nothing is bonded so it never shows a false "You're connected".
-    LaunchedEffect(live.bonded) {
-        if (live.bonded && page == OnboardingPage.Connect) pageIndex++
-    }
+    val path = OnboardingRules.path(otherApps)
+    val step = path[index.coerceIn(0, path.lastIndex)]
+    val position = StepPosition(path.indexOf(step) + 1, path.size)
 
     fun complete() {
         // Onboarding deferred the foreground promotion; do it now if a strap is live.
         viewModel.promoteBackgroundConnectionIfActive()
         onFinished()
     }
-
-    // Each permission is requested as the user LEAVES the step that explains it — never on top of
-    // the explaining screen, and never at launch: Bluetooth on the "before you connect" step,
-    // notifications on the dedicated notifications step. We advance once the prompt is dismissed,
-    // whatever the result. blePermissions() is the same shared source of truth Live/Settings use.
-    val blePerms = remember { blePermissions() }
-    val bleAdvanceLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { pageIndex++ }
-    val notifAdvanceLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { pageIndex++ }
-
-    fun advance() {
-        when (page) {
-            OnboardingPage.Bluetooth -> {
-                val granted = blePerms.all {
-                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-                }
-                if (!granted) { bleAdvanceLauncher.launch(blePerms); return }
-            }
-            OnboardingPage.Connect -> {
-                // No strap bonded → skip the celebration and go straight to Profile.
-                if (!live.bonded) { pageIndex = pages.indexOf(OnboardingPage.Profile); return }
-            }
-            OnboardingPage.Notifications -> {
-                val needsNotif = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                    PackageManager.PERMISSION_GRANTED
-                if (needsNotif) { notifAdvanceLauncher.launch(Manifest.permission.POST_NOTIFICATIONS); return }
-            }
-            else -> {}
-        }
-        pageIndex++
+    fun next() {
+        // Only Welcome may change the path: it is the first page, so no index behind it can shift.
+        if (step == SetupStep.Welcome) otherApps = OtherStrapApps.ableToSync(context).isNotEmpty()
+        if (index >= OnboardingRules.path(otherApps).lastIndex) complete() else index++
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Palette.surfaceBase,
-    ) {
-        // Design Reset: the flow sits on a flat opaque surfaceBase substrate — no scenic starfield
-        // hero behind the steps (mirrors the iOS onboarding's clean surfaceBase background). Each
-        // step's read-outs live on flat opaque NoopCards over this canvas, not floating on a scene.
-        Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // Edge-to-edge (setDecorFitsSystemWindows=false) draws under the system bars,
-                // so inset for them here — the onboarding has no Scaffold to do it for us.
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = Metrics.screenPadding)
-                .padding(top = 16.dp, bottom = 16.dp),
-        ) {
-            OnboardingTopBar(
-                page = pageIndex + 1,
-                total = pages.size,
-                progress = (pageIndex + 1).toFloat() / pages.size.toFloat(),
-            )
+    BackHandler(enabled = index > 0) { index-- }
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = 44.dp, bottom = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                when (page) {
-                    OnboardingPage.Welcome -> WelcomeStep()
-                    OnboardingPage.WhatItDoes -> WhatItDoesStep()
-                    OnboardingPage.Expectations -> ExpectationsStep()
-                    OnboardingPage.Bluetooth -> BluetoothStep()
-                    OnboardingPage.Wear -> WearStep()
-                    OnboardingPage.Connect -> ConnectStep(viewModel)
-                    OnboardingPage.Bonded -> BondedStep(viewModel)
-                    OnboardingPage.Profile -> ProfileStep()
-                    OnboardingPage.Import -> ImportStep(viewModel)
-                    OnboardingPage.Notifications -> NotificationsStep()
-                    OnboardingPage.Appearance -> AppearanceStep()
-                    OnboardingPage.Done -> DoneStep()
-                }
-            }
-
-            OnboardingFooter(
-                canGoBack = pageIndex > 0,
-                cta = uiString(page.ctaRes),
-                onBack = {
-                    var target = pageIndex - 1
-                    // Skip the bonded celebration going back when nothing is bonded.
-                    if (target >= 0 && pages[target] == OnboardingPage.Bonded && !live.bonded) target--
-                    if (target >= 0) pageIndex = target
-                },
-                onNext = {
-                    if (pageIndex == pages.lastIndex) {
-                        complete()
-                    } else {
-                        advance()
-                    }
-                },
-            )
-        }
-        }
+    when (step) {
+        SetupStep.Welcome -> WelcomeStep(position, ::next)
+        SetupStep.OtherApps -> OtherAppsStep(position, ::next)
+        SetupStep.Scan -> ScanStep(viewModel, position, ::next)
+        SetupStep.Profile -> ProfileStep(answers, position, ::next)
+        SetupStep.Import -> ImportStep(viewModel, position, ::next)
     }
 }
 
-private enum class OnboardingPage(val ctaRes: Int) {
-    Welcome(R.string.onboarding_cta_begin),
-    WhatItDoes(R.string.onboarding_cta_continue),
-    Expectations(R.string.onboarding_cta_continue),
-    Bluetooth(R.string.onboarding_cta_continue),
-    Wear(R.string.onboarding_cta_continue),
-    Connect(R.string.onboarding_cta_continue),
-    Bonded(R.string.onboarding_cta_continue),
-    Profile(R.string.onboarding_cta_save_continue),
-    Import(R.string.onboarding_cta_continue),
-    Notifications(R.string.onboarding_cta_continue),
-    Appearance(R.string.onboarding_cta_continue),
-    Done(R.string.onboarding_cta_enter);
-}
+// MARK: - Setup page
 
-// MARK: - Shell
-
+/**
+ * One setup page, as Pixel's setup wizard draws it: the step bar ([step], none on the terms gate), the
+ * glyph in a 64 dp tonal tile, a headline and one line under it, the content, and the bottom bar with
+ * [secondary] on the left and [primary] on the right.
+ */
 @Composable
-private fun OnboardingTopBar(page: Int, total: Int, progress: Float) {
-    val animated by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(Motion.durationStandard),
-        label = uiString(R.string.l10n_onboarding_screen_onboardingprogress_6e1e5c29),
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Overline("NOOP", color = Palette.accent)
-            Spacer(Modifier.weight(1f))
-            Text(uiString(R.string.l10n_onboarding_screen_page_total_50b38f9a, page, total), style = NoopType.captionNumber, color = Palette.textTertiary)
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .clip(RoundedCornerShape(50))
-                .background(Palette.hairline),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(animated)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Palette.accent),
-            )
-        }
-    }
-}
-
-@Composable
-private fun OnboardingFooter(
-    canGoBack: Boolean,
-    cta: String,
-    onBack: () -> Unit,
-    onNext: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = Metrics.gap),
-        horizontalArrangement = Arrangement.spacedBy(Metrics.gap),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedButton(
-            onClick = onBack,
-            enabled = canGoBack,
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Palette.textPrimary,
-                disabledContentColor = Palette.textTertiary,
-            ),
-            modifier = Modifier.weight(0.9f),
-        ) {
-            Text(uiString(R.string.l10n_onboarding_screen_back_b52b36b7), style = NoopType.subhead)
-        }
-        Button(
-            onClick = onNext,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Palette.accent,
-                contentColor = Palette.surfaceBase,
-            ),
-            modifier = Modifier.weight(1.4f),
-        ) {
-            Text(cta, style = NoopType.headline)
-        }
-    }
-}
-
-@Composable
-private fun StepShell(
-    title: String? = null,
-    subtitle: String? = null,
-    content: @Composable () -> Unit,
+internal fun SetupPage(
+    step: StepPosition?,
+    title: String,
+    message: String?,
+    glyph: @Composable () -> Unit,
+    primary: SetupAction?,
+    secondary: SetupAction? = null,
+    content: @Composable ColumnScope.() -> Unit = {},
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
-        if (title != null || subtitle != null) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                title?.let {
-                    // Big SF-Rounded hero headline — the onboarding's first-impression voice.
-                    Text(
-                        it,
-                        style = NoopType.display(30f),
-                        color = Palette.textPrimary,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                subtitle?.let {
-                    Text(
-                        it,
-                        style = NoopType.body,
-                        color = Palette.textSecondary,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
-        content()
-    }
-}
-
-// MARK: - Steps
-
-@Composable
-private fun WelcomeStep() {
-    StepShell {
+        if (step != null) StepBar(step)
         Column(
-            modifier = Modifier
+            Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .heightIn(min = 430.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, top = 40.dp, bottom = 16.dp),
         ) {
-            // The NOOP mark centred on a flat brushed-titanium hero tile (the metallic titanium ramp, a
-            // reset token — no gold). Clean and flat: a hairline rim, no bloom.
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(150.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(150.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(*Palette.titaniumGradient.toTypedArray()))
-                        .border(1.dp, Palette.hairline, CircleShape),
-                )
-                BrandMark(size = 104.dp)
-            }
-            Spacer(Modifier.height(18.dp))
+            glyph()
+            Spacer(Modifier.height(24.dp))
             Text(
-                uiString(R.string.l10n_onboarding_screen_all_your_data_none_of_the_6fc6f26d),
-                style = NoopType.title2,
-                color = Palette.textSecondary,
-                textAlign = TextAlign.Center,
+                title,
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
             )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                uiString(R.string.l10n_onboarding_screen_a_private_window_into_your_recovery_b8dd2ff2),
-                style = NoopType.body,
-                color = Palette.textTertiary,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WhatItDoesStep() {
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_what_noop_does_b25b362d),
-        subtitle = uiString(R.string.onboarding_three_promises),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-            FeatureRow(
-                icon = Icons.Filled.AutoGraph,
-                tint = Palette.accent,
-                title = uiString(R.string.l10n_onboarding_screen_see_recovery_clearly_d8db34a9),
-                body = uiString(R.string.onboarding_recovery_body),
-            )
-            FeatureRow(
-                icon = Icons.Filled.MonitorHeart,
-                tint = Palette.accent,
-                title = uiString(R.string.l10n_onboarding_screen_watch_your_heart_live_8c9c1267),
-                body = uiString(R.string.onboarding_live_hr_body),
-            )
-            FeatureRow(
-                icon = Icons.Filled.Lock,
-                tint = Palette.statusPositive,
-                title = uiString(R.string.l10n_onboarding_screen_own_your_data_offline_997fe15e),
-                body = uiString(R.string.onboarding_local_data_body),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExpectationsStep() {
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_what_to_expect_ed98f851),
-        subtitle = uiString(R.string.onboarding_expectations_subtitle),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-            AppChangelog.expectations.forEach { e ->
-                ExpectationCard(e)
+            if (message != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            Spacer(Modifier.height(32.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap), content = content)
         }
-    }
-}
-
-@Composable
-private fun BluetoothStep() {
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_a_quick_word_before_you_connect_5a29015a),
-        subtitle = uiString(R.string.onboarding_bluetooth_subtitle),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+        Row(
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 28.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(icon = Icons.Filled.Bluetooth, tint = Palette.accent, size = 86)
-            InfoCard(
-                icon = Icons.Filled.Lock,
-                tint = Palette.statusPositive,
-                title = uiString(R.string.l10n_onboarding_screen_nothing_leaves_your_phone_502d5d0c),
-                message = uiString(R.string.onboarding_bluetooth_local_body),
-            )
-            Checkline(uiString(R.string.onboarding_bluetooth_permission))
-            Checkline(uiString(R.string.onboarding_whoop_pairing_mode))
-        }
-    }
-}
-
-@Composable
-private fun WearStep() {
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_put_your_strap_on_031d4807),
-        subtitle = uiString(R.string.onboarding_wear_subtitle),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            IconBadge(icon = Icons.Filled.Sensors, tint = Palette.accent, size = 86)
-            NoopCard(padding = 18.dp) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Checkline(uiString(R.string.onboarding_wear_snug))
-                    Checkline(uiString(R.string.onboarding_wear_charge))
-                    Checkline(uiString(R.string.onboarding_wear_nearby))
+            if (secondary != null) {
+                TextButton(onClick = secondary.onClick, enabled = secondary.enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(secondary.label, style = MaterialTheme.typography.titleSmall)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (primary != null) {
+                Button(onClick = primary.onClick, enabled = primary.enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(primary.label, style = MaterialTheme.typography.titleSmall)
                 }
             }
         }
     }
 }
 
+/** A bottom-bar button of a setup page. */
+internal class SetupAction(val label: String, val enabled: Boolean = true, val onClick: () -> Unit)
+
+/** The step bar: one segment per step, the steps reached filled. */
 @Composable
-private fun ConnectStep(viewModel: AppViewModel) {
-    val context = LocalContext.current
-    val live by viewModel.live.collectAsState()
-    val selectedModel by viewModel.selectedModel.collectAsState()
-
-    val blePerms = remember { blePermissions() }
-    // The Scan button goes through the same shared gate as Live/Settings (requests the permission
-    // if missing, then connects). Onboarding connects without promoting the foreground service —
-    // OnboardingScreen promotes it on completion. See AppViewModel.connect(promoteService).
-    val requestConnect = rememberRequestScan { viewModel.connect(promoteService = false) }
-    var autoConnectStarted by rememberSaveable { mutableStateOf(false) }
-
-    val bleGranted = blePerms.all {
-        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-    }
-
-    LaunchedEffect(Unit) {
-        if (!autoConnectStarted && !live.bonded && !live.connected && !live.scanning) {
-            autoConnectStarted = true
-            // Only auto-scan if permission is already in hand (granted on the Bluetooth step). We
-            // never raise the OS prompt here — that would land on top of this step's own content.
-            if (bleGranted) viewModel.connect(promoteService = false)
+private fun StepBar(step: StepPosition) {
+    val label = stringResource(R.string.onboarding_step, step.number, step.count)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp)
+            .clearAndSetSemantics { contentDescription = label },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        for (i in 1..step.count) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (i <= step.number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest),
+            )
         }
     }
+}
 
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_find_your_strap_fe460461),
-        subtitle = when {
-            live.bonded -> uiString(R.string.onboarding_connect_bonded_subtitle)
-            bleGranted -> uiString(R.string.onboarding_connect_searching_subtitle)
-            else -> uiString(R.string.onboarding_connect_permission_subtitle)
+/** The 64 dp tonal tile a setup page leads with; [positive] and [warning] tint the glyph. */
+@Composable
+internal fun SetupGlyph(icon: ImageVector, positive: Boolean = false, warning: Boolean = false) {
+    Box(
+        Modifier
+            .size(64.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = when {
+                positive -> Health.colors.positive
+                warning -> Health.colors.warning
+                else -> MaterialTheme.colorScheme.onPrimaryContainer
+            },
+            modifier = Modifier.size(36.dp),
+        )
+    }
+}
+
+// MARK: - 1 · Welcome
+
+@Composable
+private fun WelcomeStep(position: StepPosition, next: () -> Unit) {
+    SetupPage(
+        step = position,
+        title = stringResource(R.string.onboarding_welcome_title),
+        message = stringResource(R.string.onboarding_welcome_message),
+        glyph = { BrandMark(size = 64.dp) },
+        primary = SetupAction(stringResource(R.string.onboarding_get_started), onClick = next),
+    )
+}
+
+// MARK: - 1½ · Other strap apps
+
+/**
+ * Shown only when another app that syncs WHOOP straps is installed and may use Bluetooth
+ * ([OtherStrapApps]). The strap keeps one history queue and drops each chunk as soon as any app acks it,
+ * so two apps on one strap each end up with holes. Continue is never blocked: the choice is the user's,
+ * this step only makes sure it is made knowingly. Twin of Swift `OtherAppsStep`.
+ *
+ * The Swift step cannot tell whether its advice was followed, since iOS reports only that the other app
+ * is installed, and says so in a footnote. Here the list is what Android reports after the advice: an
+ * app that was uninstalled, or lost its Nearby devices permission, is gone from it on the way back.
+ */
+@Composable
+private fun OtherAppsStep(position: StepPosition, next: () -> Unit) {
+    val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    var others by remember { mutableStateOf(OtherStrapApps.ableToSync(context)) }
+
+    // Back from Settings or the launcher after uninstalling the other app or taking its permission away:
+    // read the list again.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { others = OtherStrapApps.ableToSync(context) }
+    }
+
+    val names = OtherStrapApps.phrase(others, locale)
+    // Android 12 made Bluetooth a permission the user can take away again; before it, uninstalling is the
+    // only advice that works.
+    val revocable = OtherStrapApps.nearbyDevicesRevocable()
+
+    SetupPage(
+        step = position,
+        title = stringResource(if (names == null) R.string.onboarding_no_other_apps_title else R.string.onboarding_one_app_title),
+        message = when {
+            names == null -> stringResource(R.string.onboarding_no_other_apps_message)
+            revocable -> stringResource(R.string.onboarding_other_apps_message, names)
+            else -> stringResource(R.string.onboarding_other_apps_message_uninstall, names)
+        },
+        glyph = {
+            if (names == null) SetupGlyph(Icons.Filled.CheckCircle, positive = true)
+            else SetupGlyph(Icons.Filled.Warning, warning = true)
+        },
+        primary = SetupAction(stringResource(R.string.onboarding_continue), onClick = next),
+        secondary = if (others.isEmpty()) null else SetupAction(stringResource(R.string.onboarding_check_again)) {
+            others = OtherStrapApps.ableToSync(context)
         },
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            IconBadge(
-                icon = if (live.bonded) Icons.Filled.CheckCircle else Icons.Filled.Bluetooth,
-                tint = if (live.bonded) Palette.statusPositive else Palette.accent,
-                size = 92,
+        if (others.isNotEmpty()) {
+            ListGroup {
+                others.forEach { name ->
+                    item { shape ->
+                        ListRow(
+                            shape = shape,
+                            title = name,
+                            trailing = {
+                                Text(
+                                    stringResource(R.string.onboarding_other_app_installed),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 2 · Find your strap
+
+@Composable
+private fun ScanStep(viewModel: AppViewModel, position: StepPosition, next: () -> Unit) {
+    val context = LocalContext.current
+    val live by viewModel.live.collectAsStateWithLifecycle()
+    val selectedModel by viewModel.selectedModel.collectAsStateWithLifecycle()
+
+    var scanning by rememberSaveable { mutableStateOf(false) }
+    // Set when a scan ran its calm beat without bonding.
+    var notFound by rememberSaveable { mutableStateOf(false) }
+    // A new Scan restarts the calm beat.
+    var attempt by rememberSaveable { mutableIntStateOf(0) }
+    // Bluetooth refused for reNOOP: say so, and send the user where it can be given, rather than blame the strap.
+    var asked by rememberSaveable { mutableStateOf(false) }
+    var granted by remember { mutableStateOf(blePermissionsGranted(context)) }
+    val bluetoothDenied = asked && !granted
+
+    // Back from Settings (or the system prompt): read the permission again.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { granted = blePermissionsGranted(context) }
+    }
+
+    // The explicit user scan, through the same permission gate Live and Devices use. Onboarding connects
+    // without promoting the foreground service; the flow promotes it on completion.
+    val requestConnect = rememberRequestScan {
+        asked = true
+        granted = blePermissionsGranted(context)
+        if (granted) {
+            scanning = true
+            notFound = false
+            attempt++
+            viewModel.connect(promoteService = false)
+        }
+    }
+
+    // After a calm beat without a bond, say what usually helps.
+    LaunchedEffect(attempt) {
+        if (attempt == 0) return@LaunchedEffect
+        delay(12_000)
+        if (!viewModel.live.value.bonded) {
+            scanning = false
+            notFound = true
+        }
+    }
+    LaunchedEffect(live.bonded) { if (live.bonded) { scanning = false; notFound = false } }
+
+    val message = when (
+        OnboardingRules.scanMessage(
+            live.bonded, live.batteryPct != null, bluetoothDenied, notFound, selectedModel,
+            otherAppSyncing = live.otherAppSyncingAtMs != null,
+        )
+    ) {
+        ScanMessage.BONDED_OTHER_APP -> stringResource(R.string.onboarding_bonded_other_app)
+        ScanMessage.BONDED_BATTERY -> stringResource(R.string.onboarding_bonded_battery, live.batteryPct?.toInt() ?: 0)
+        ScanMessage.BONDED -> stringResource(R.string.onboarding_bonded)
+        ScanMessage.BLUETOOTH_OFF -> stringResource(R.string.onboarding_bt_off)
+        ScanMessage.NOT_FOUND_5 -> stringResource(R.string.onboarding_not_found_5)
+        ScanMessage.NOT_FOUND_4 -> stringResource(R.string.onboarding_not_found_4)
+        ScanMessage.WEAR_IT -> stringResource(R.string.onboarding_wear_it)
+    }
+
+    val primary = when {
+        live.bonded -> SetupAction(stringResource(R.string.onboarding_continue), onClick = next)
+        bluetoothDenied -> SetupAction(stringResource(R.string.onboarding_open_settings)) {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.fromParts("package", context.packageName, null)),
             )
+        }
+        else -> SetupAction(stringResource(R.string.onboarding_scan), enabled = !scanning, onClick = requestConnect)
+    }
+    // WHOOP leads, but isn't required: other straps and imports live under Devices.
+    val secondary = if (live.bonded) null else SetupAction(stringResource(R.string.onboarding_set_up_later), onClick = next)
 
-            val (label, tone, pulsing) = when {
-                live.encryptedBond -> Triple(uiString(R.string.onboarding_state_bonded_streaming), StrandTone.Positive, true)
-                live.bonded -> Triple(uiString(R.string.onboarding_state_live_hr_unpaired), StrandTone.Warning, true)
-                live.connected -> Triple(uiString(R.string.onboarding_state_connected_pairing), StrandTone.Warning, true)
-                live.scanning -> Triple(uiString(R.string.onboarding_state_searching), StrandTone.Accent, true)
-                else -> Triple(uiString(R.string.onboarding_state_ready_scan), StrandTone.Neutral, false)
-            }
-            StatePill(label, tone = tone, pulsing = pulsing, showsDot = true)
-
-            live.statusNote?.let {
-                Text(
-                    it,
-                    style = NoopType.footnote,
-                    color = Palette.textSecondary,
-                    textAlign = TextAlign.Center,
-                )
-            }
-
-            if (!live.bonded) {
-                NoopCard(padding = 16.dp) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Text(uiString(R.string.l10n_onboarding_screen_strap_02b88eeb), style = NoopType.footnote, color = Palette.textSecondary)
-                            SegmentedPillControl(
-                                items = WhoopModel.entries.toList(),
-                                selection = selectedModel,
-                                label = { it.displayName },
-                                onSelect = {
-                                    viewModel.setSelectedModel(it)
-                                    if (!live.bonded) {
+    SetupPage(
+        step = position,
+        title = stringResource(if (live.bonded) R.string.onboarding_connected else R.string.onboarding_find_strap),
+        message = message,
+        glyph = { SetupGlyph(if (live.bonded) Icons.Filled.CheckCircle else Icons.Filled.Watch, positive = live.bonded) },
+        primary = primary,
+        secondary = secondary,
+    ) {
+        if (!live.bonded) {
+            ListGroup {
+                WhoopModel.entries.forEach { model ->
+                    item { shape ->
+                        val chosen = model == selectedModel
+                        ListRow(
+                            shape = shape,
+                            title = model.displayName,
+                            modifier = Modifier.semantics { selected = chosen },
+                            leading = {
+                                Icon(
+                                    if (chosen) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            role = Role.RadioButton,
+                            onClick = {
+                                // Switching family while not bonded restarts the scan for the new one.
+                                if (model != selectedModel) {
+                                    viewModel.setSelectedModel(model)
+                                    if (scanning || live.connected) {
                                         viewModel.disconnect()
                                         requestConnect()
                                     }
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        // "Searching…" beside a spinner while a scan runs, as setup looks for nearby devices.
+        if (!live.bonded && !bluetoothDenied && (scanning || live.connected)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
+                Text(
+                    stringResource(if (live.connected) R.string.onboarding_connecting else R.string.onboarding_searching),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            Button(
-                                onClick = { requestConnect() },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Palette.accent,
-                                    contentColor = Palette.surfaceBase,
-                                ),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Icon(Icons.Filled.Bluetooth, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(uiString(R.string.onboarding_rescan), style = NoopType.body)
-                            }
-                            OutlinedButton(
-                                onClick = { viewModel.disconnect() },
-                                enabled = live.connected || live.scanning,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.statusCritical),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(uiString(R.string.l10n_onboarding_screen_stop_9e253470), style = NoopType.body)
-                            }
+private fun blePermissionsGranted(context: android.content.Context): Boolean =
+    blePermissions().all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+
+// MARK: - 3 · About you
+
+/** The About You rows the user has answered. A row nobody touched shows "Not Set" and is never written. */
+internal class ProfileAnswers(
+    birth: Boolean = false,
+    height: Boolean = false,
+    weight: Boolean = false,
+    sex: String? = null,
+) {
+    var birth by mutableStateOf(birth)
+    var height by mutableStateOf(height)
+    var weight by mutableStateOf(weight)
+    /** Written on Continue, so picking Not Set again leaves the profile as it was. */
+    var sex by mutableStateOf(sex)
+
+    companion object {
+        val Saver = androidx.compose.runtime.saveable.Saver<ProfileAnswers, List<Any?>>(
+            save = { listOf(it.birth, it.height, it.weight, it.sex) },
+            restore = { ProfileAnswers(it[0] as Boolean, it[1] as Boolean, it[2] as Boolean, it[3] as String?) },
+        )
+    }
+}
+
+private val SEXES = listOf(
+    "female" to R.string.onboarding_female,
+    "male" to R.string.onboarding_male,
+    "nonbinary" to R.string.onboarding_sex_other,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileStep(answers: ProfileAnswers, position: StepPosition, next: () -> Unit) {
+    val context = LocalContext.current
+    val profile = remember { ProfileStore.from(context.applicationContext) }
+    // ProfileStore wraps SharedPreferences rather than snapshot state; this counter repaints after a write.
+    var rev by remember { mutableIntStateOf(0) }
+    @Suppress("UNUSED_VARIABLE") val tick = rev
+    // The stored profile is always SI. Body measurements and exercise distance follow regional conventions
+    // independently; an unset distance choice follows the body choice for compatibility.
+    var unitSystem by remember { mutableStateOf(UnitPrefs.system(context)) }
+    var distanceRaw by remember {
+        mutableStateOf(NoopPrefs.of(context).getString(NoopPrefs.KEY_DISTANCE_UNIT_SYSTEM, "") ?: "")
+    }
+    val distanceSystem = UnitPrefs.resolveDistance(unitSystem, distanceRaw)
+    val locale = LocalConfiguration.current.locales[0]
+    var open by remember { mutableStateOf<String?>(null) }
+    val notSet = stringResource(R.string.onboarding_not_set)
+
+    SetupPage(
+        step = position,
+        title = stringResource(R.string.onboarding_about_you),
+        message = stringResource(R.string.onboarding_about_you_message),
+        // The profile photo when there is one, else the person glyph on the setup tile.
+        glyph = { if (ProfileAvatarStore.bitmap != null) ProfileAvatar(size = 64.dp) else SetupGlyph(Icons.Filled.Person) },
+        primary = SetupAction(stringResource(R.string.onboarding_continue)) {
+            answers.sex?.let { profile.sex = it }
+            next()
+        },
+    ) {
+        ListGroup {
+            item { shape ->
+                // #146: a date of birth, so age advances on its own instead of going stale.
+                val dob = Instant.ofEpochMilli(profile.dateOfBirthMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+                ValueRow(shape, stringResource(R.string.onboarding_dob),
+                    if (answers.birth) dob.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)) else notSet) {
+                    open = "dob"
+                }
+            }
+            item { shape ->
+                Box {
+                    ValueRow(shape, stringResource(R.string.onboarding_sex_label),
+                        answers.sex?.let { key -> SEXES.firstOrNull { it.first == key }?.let { stringResource(it.second) } } ?: notSet) {
+                        open = "sex"
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = open == "sex", onDismissRequest = { open = null }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(notSet) }, onClick = { answers.sex = null; open = null })
+                        SEXES.forEach { (key, label) ->
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { answers.sex = key; open = null })
                         }
                     }
                 }
             }
-
-            InfoCard(
-                icon = Icons.Filled.Lock,
-                tint = Palette.statusPositive,
-                title = uiString(R.string.l10n_onboarding_screen_this_can_run_while_you_finish_cd7ef783),
-                message = uiString(R.string.onboarding_connect_background_body),
-            )
-
-            // WHOOP is NOOP's primary band, so onboarding leads with it — but it isn't required.
-            // Make that obvious so a non-WHOOP user doesn't feel stuck on this step (#415-adjacent):
-            // they can continue now and pair a heart-rate strap or import data afterwards.
-            if (!live.bonded) {
-                Text(
-                    uiString(R.string.l10n_onboarding_screen_no_whoop_you_can_still_continue_ec58d88d),
-                    style = NoopType.footnote,
-                    color = Palette.textTertiary,
-                    textAlign = TextAlign.Center,
+            item { shape ->
+                ValueRow(shape, stringResource(R.string.onboarding_height),
+                    if (answers.height) UnitFormatter.heightFromCentimeters(profile.heightCm, unitSystem) else notSet) { open = "height" }
+            }
+            item { shape ->
+                ValueRow(shape, stringResource(R.string.onboarding_weight),
+                    if (answers.weight) UnitFormatter.massFromKilograms(profile.weightKg, unitSystem) else notSet) { open = "weight" }
+            }
+        }
+        // Two explicit choices: "Metric/Imperial" alone cannot describe mixed conventions such as Canadian
+        // pounds with kilometres.
+        ListGroup {
+            item { shape ->
+                MenuValueRow(
+                    shape = shape,
+                    title = stringResource(R.string.onboarding_body_measurements),
+                    value = stringResource(if (unitSystem == UnitSystem.METRIC) R.string.onboarding_metric_units else R.string.onboarding_imperial_units),
+                    options = listOf(
+                        UnitSystem.METRIC to stringResource(R.string.onboarding_metric_units),
+                        UnitSystem.IMPERIAL to stringResource(R.string.onboarding_imperial_units),
+                    ),
+                    onPick = { unitSystem = it; NoopPrefs.setUnitSystem(context, it) },
+                )
+            }
+            item { shape ->
+                MenuValueRow(
+                    shape = shape,
+                    title = stringResource(R.string.onboarding_distance),
+                    value = stringResource(if (distanceSystem == UnitSystem.METRIC) R.string.onboarding_kilometres else R.string.onboarding_miles),
+                    options = listOf(
+                        UnitSystem.METRIC to stringResource(R.string.onboarding_kilometres),
+                        UnitSystem.IMPERIAL to stringResource(R.string.onboarding_miles),
+                    ),
+                    onPick = { distanceRaw = it.raw; NoopPrefs.setDistanceUnitSystem(context, it) },
                 )
             }
         }
     }
-}
 
-// A short celebration once the strap bonds — the Connect step auto-advances here on bond, and
-// the nav skips it entirely when nothing is bonded (mirrors the macOS scan → bonded moment).
-@Composable
-private fun BondedStep(viewModel: AppViewModel) {
-    val live by viewModel.live.collectAsState()
-    StepShell {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 430.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                RecoveryRing(score = 100.0, diameter = 200.dp, lineWidth = 14.dp, showsLabel = false)
-                Icon(
-                    Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = Palette.statusPositive,
-                    modifier = Modifier.size(54.dp),
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-            Text(
-                uiString(R.string.l10n_onboarding_screen_you_re_connected_7e06aee0),
-                style = NoopType.title1,
-                color = Palette.textPrimary,
-                textAlign = TextAlign.Center,
+    when (open) {
+        "dob" -> {
+            val state = rememberDatePickerState(
+                initialSelectedDateMillis = OnboardingRules.pickerMillisForDob(profile.dateOfBirthMillis),
+                yearRange = OnboardingRules.dobYearRange(),
             )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                live.batteryPct?.let { uiString(R.string.onboarding_strap_bonded_battery, it.toInt()) }
-                    ?: uiString(R.string.onboarding_strap_bonded_ready),
-                style = NoopType.body,
-                color = Palette.textSecondary,
-                textAlign = TextAlign.Center,
+            DatePickerDialog(
+                onDismissRequest = { open = null },
+                confirmButton = {
+                    TextButton(onClick = {
+                        state.selectedDateMillis?.let {
+                            profile.dateOfBirthMillis = OnboardingRules.dobFromPicker(it)
+                            answers.birth = true
+                            rev++
+                        }
+                        open = null
+                    }) { Text(stringResource(R.string.onboarding_ok)) }
+                },
+                dismissButton = { TextButton(onClick = { open = null }) { Text(stringResource(R.string.onboarding_cancel)) } },
+            ) { DatePicker(state = state, showModeToggle = false) }
+        }
+        "height" -> {
+            val steps = remember { (120..230).toList() }
+            WheelDialog(
+                title = stringResource(R.string.onboarding_height),
+                options = steps.map { UnitFormatter.heightFromCentimeters(it.toDouble(), unitSystem) },
+                selected = steps.indices.minByOrNull { kotlin.math.abs(steps[it] - profile.heightCm) } ?: 0,
+                onPick = { profile.heightCm = steps[it].toDouble(); answers.height = true; rev++; open = null },
+                onDismiss = { open = null },
             )
         }
-    }
-}
-
-@Composable
-private fun ProfileStep() {
-    val context = LocalContext.current
-    val profile = remember { ProfileStore.from(context.applicationContext) }
-    // The stored profile is always SI. Body measurements and exercise distance can follow regional
-    // conventions independently; an unset distance choice follows the body choice for compatibility.
-    var unitSystem by remember { mutableStateOf(UnitPrefs.system(context)) }
-    var distanceSystemRaw by remember {
-        mutableStateOf(NoopPrefs.of(context).getString(NoopPrefs.KEY_DISTANCE_UNIT_SYSTEM, "") ?: "")
-    }
-    val distanceUnitSystem = UnitPrefs.resolveDistance(unitSystem, distanceSystemRaw)
-    var rev by remember { mutableIntStateOf(0) }
-    fun mutate(block: () -> Unit) {
-        block()
-        rev++
-    }
-    @Suppress("UNUSED_VARIABLE") val tick = rev
-
-    // Wheel-picker option lists — replace the +/- stepper tap-spamming with a tap-to-scroll selector. The
-    // stored profile stays SI; Weight/Height option labels re-format per the live unit system, and the
-    // picker maps the chosen index back to SI on select. Age is 13..100 (matches setAge's clamp).
-    val ageSteps = remember { (13..100).toList() }
-    val weightSteps = remember { generateSequence(30.0) { it + 0.5 }.takeWhile { it <= 250.0001 }.toList() }
-    val heightSteps = remember { (120..230).toList() }
-    val ageOptions = remember { ageSteps.map { "$it" } }
-    val weightOptions = remember(unitSystem) { weightSteps.map { UnitFormatter.massFromKilograms(it, unitSystem) } }
-    val heightOptions = remember(unitSystem) { heightSteps.map { UnitFormatter.heightFromCentimeters(it.toDouble(), unitSystem) } }
-
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_about_you_5c4698b6),
-        subtitle = uiString(R.string.onboarding_profile_subtitle),
-    ) {
-        NoopCard(padding = 18.dp) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                ProfileFieldRow(label = uiString(R.string.l10n_onboarding_screen_age_ff9f1ff3)) {
-                    WheelPickerField(
-                        value = "${profile.age}",
-                        unit = uiString(R.string.onboarding_years),
-                        accessibility = uiString(R.string.onboarding_age_accessibility, profile.age),
-                        options = ageOptions,
-                        selectedIndex = ageSteps.indexOf(profile.age).coerceAtLeast(0),
-                        dialogTitle = uiString(R.string.l10n_onboarding_screen_age_ff9f1ff3),
-                        // #146: age derives from a stored date of birth; setAge re-anchors it (clamped 13..100).
-                        onSelected = { mutate { profile.setAge(ageSteps[it]) } },
-                    )
-                }
-                ThinDivider()
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Overline(uiString(R.string.onboarding_sex), color = Palette.textTertiary)
-                    SegmentedPillControl(
-                        items = ONBOARDING_SEX_OPTIONS,
-                        selection = ONBOARDING_SEX_OPTIONS.firstOrNull { it.tag == profile.sex }
-                            ?: ONBOARDING_SEX_OPTIONS[0],
-                        label = { uiString(it.labelRes) },
-                        onSelect = { mutate { profile.sex = it.tag } },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                ThinDivider()
-                // Keep the two choices explicit: "Metric/Imperial" alone cannot describe common mixed
-                // conventions such as Canadian pounds with kilometres.
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Overline(uiString(R.string.units_body_measurements), color = Palette.textTertiary)
-                    SegmentedPillControl(
-                        items = listOf(UnitSystem.METRIC, UnitSystem.IMPERIAL),
-                        selection = unitSystem,
-                        label = { if (it == UnitSystem.METRIC) uiString(R.string.onboarding_metric) else uiString(R.string.onboarding_imperial) },
-                        onSelect = {
-                            unitSystem = it
-                            NoopPrefs.setUnitSystem(context, it)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                ThinDivider()
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Overline(uiString(R.string.units_exercise_distance_pace), color = Palette.textTertiary)
-                    SegmentedPillControl(
-                        items = listOf(UnitSystem.METRIC, UnitSystem.IMPERIAL),
-                        selection = distanceUnitSystem,
-                        label = {
-                            if (it == UnitSystem.METRIC) uiString(R.string.units_kilometres)
-                            else uiString(R.string.units_miles)
-                        },
-                        onSelect = {
-                            distanceSystemRaw = it.raw
-                            NoopPrefs.setDistanceUnitSystem(context, it)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                ThinDivider()
-                ProfileFieldRow(label = uiString(R.string.l10n_onboarding_screen_weight_69c0b815)) {
-                    WheelPickerField(
-                        // Full re-labelled string (e.g. "74.5 kg" / "164.2 lb"); unit folded into value.
-                        value = UnitFormatter.massFromKilograms(profile.weightKg, unitSystem),
-                        accessibility = uiString(R.string.l10n_onboarding_screen_weight_69c0b815),
-                        options = weightOptions,
-                        selectedIndex = weightSteps.indices.minByOrNull { kotlin.math.abs(weightSteps[it] - profile.weightKg) } ?: 0,
-                        dialogTitle = uiString(R.string.l10n_onboarding_screen_weight_69c0b815),
-                        onSelected = { mutate { profile.weightKg = weightSteps[it] } },
-                    )
-                }
-                ThinDivider()
-                ProfileFieldRow(label = uiString(R.string.l10n_onboarding_screen_height_3f608b49)) {
-                    WheelPickerField(
-                        value = UnitFormatter.heightFromCentimeters(profile.heightCm, unitSystem),
-                        accessibility = uiString(R.string.l10n_onboarding_screen_height_3f608b49),
-                        options = heightOptions,
-                        selectedIndex = heightSteps.indices.minByOrNull { kotlin.math.abs(heightSteps[it] - profile.heightCm) } ?: 0,
-                        dialogTitle = uiString(R.string.l10n_onboarding_screen_height_3f608b49),
-                        onSelected = { mutate { profile.heightCm = heightSteps[it].toDouble() } },
-                    )
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.semantics { contentDescription = uiString(R.string.l10n_onboarding_screen_estimated_max_heart_rate_profile_hrmax_622da889, profile.hrMax) },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(Icons.Filled.FavoriteBorder, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(17.dp))
-            Text(
-                uiString(R.string.l10n_onboarding_screen_estimated_max_heart_rate_profile_hrmax_06356290, profile.hrMax),
-                style = NoopType.footnote,
-                color = Palette.textTertiary,
+        "weight" -> {
+            val steps = remember { generateSequence(30.0) { it + 0.5 }.takeWhile { it <= 250.0001 }.toList() }
+            WheelDialog(
+                title = stringResource(R.string.onboarding_weight),
+                options = steps.map { UnitFormatter.massFromKilograms(it, unitSystem) },
+                selected = steps.indices.minByOrNull { kotlin.math.abs(steps[it] - profile.weightKg) } ?: 0,
+                onPick = { profile.weightKg = steps[it]; answers.weight = true; rev++; open = null },
+                onDismiss = { open = null },
             )
         }
     }
 }
 
 @Composable
-private fun ImportStep(viewModel: AppViewModel) {
+private fun ValueRow(shape: androidx.compose.ui.graphics.Shape, title: String, value: String, onClick: () -> Unit) {
+    ListRow(
+        shape = shape,
+        title = title,
+        trailing = { Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        onClick = onClick,
+    )
+}
+
+/** A wheel in a dialog, for the bounded height / weight values. */
+@Composable
+private fun WheelDialog(title: String, options: List<String>, selected: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    var index by remember { mutableIntStateOf(selected) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { WheelPicker(options = options, selectedIndex = selected, onSelectedIndexChange = { index = it }, modifier = Modifier.fillMaxWidth()) },
+        confirmButton = { TextButton(onClick = { onPick(index.coerceIn(0, options.lastIndex)) }) { Text(stringResource(R.string.onboarding_ok)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.onboarding_cancel)) } },
+    )
+}
+
+// MARK: - 4 · Your history (optional)
+
+/** As setup's "Copy apps & data": the sources as rows of one group. */
+@Composable
+private fun ImportStep(viewModel: AppViewModel, position: StepPosition, next: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // busy stays transient: a config change / process death cancels the import coroutine,
-    // so a persisted busy=true would strand the buttons disabled with nothing running.
-    var busy by remember { mutableStateOf(false) }
+    // busy stays transient: a configuration change cancels the import coroutine.
+    var busy by remember { mutableStateOf<String?>(null) }
     var status by rememberSaveable { mutableStateOf<String?>(null) }
-    var hcReadCategories by remember {
-        mutableStateOf(HealthConnectImporter.selectedCategories(context))
-    }
-    val importingText = uiString(R.string.onboarding_importing)
-    val importLabel = uiString(R.string.onboarding_import_label)
-    val importFailed = uiString(R.string.onboarding_failed)
-    val healthConnectDenied = uiString(R.string.onboarding_health_connect_denied)
+    var failed by rememberSaveable { mutableStateOf(false) }
+    val importLabel = stringResource(R.string.onboarding_import_label)
+    val importFailed = stringResource(R.string.onboarding_failed)
+    val hcDenied = stringResource(R.string.onboarding_health_connect_denied)
 
-    fun runImport(block: suspend () -> ImportSummary) {
-        busy = true
-        status = importingText
+    fun runImport(which: String, block: suspend () -> ImportSummary) {
+        busy = which
+        failed = false
         scope.launch {
+            var threw = false
             val summary = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse { ImportSummary.failure(importLabel, it.message ?: importFailed) }
+                runCatching { block() }.getOrElse { threw = true; ImportSummary.failure(importLabel, it.message ?: importFailed) }
             }
-            // Import & Data Ingest test mode (Test Centre): emit the parser / per-stage / day-delta trace,
-            // tagged IMPORT, iff the mode is on. Gated zero-cost when off; shared with the Data Sources flow.
+            // Import & Data Ingest test mode (Test Centre): the same trace the Import page emits.
             emitImportTrace(context, viewModel, summary)
-            busy = false
+            busy = null
+            failed = threw
             status = summary.message
-            Toast.makeText(context, summary.message, Toast.LENGTH_LONG).show()
         }
     }
 
-    val whoopImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) runImport { WhoopCsvImporter.importZip(context, uri, viewModel.repo) } }
-
-    val appleImportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) runImport { AppleHealthImporter.importExport(context, uri, viewModel.repo) } }
-
-    val hcPermissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract(),
-    ) { granted ->
-        val selectedPermissions = HealthConnectImporter.permissionsFor(hcReadCategories)
-        if (granted.any { it in selectedPermissions }) {
-            runImport { HealthConnectImporter.import(context, viewModel.repo, ProfileStore.from(context).heightCm) }
+    val whoopLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runImport("whoop") { WhoopCsvImporter.importZip(context, uri, viewModel.repo) }
+    }
+    val hcCategories = remember { HealthConnectImporter.selectedCategories(context) }
+    val hcLauncher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+        if (granted.any { it in HealthConnectImporter.permissionsFor(hcCategories) }) {
+            runImport("hc") { HealthConnectImporter.import(context, viewModel.repo, ProfileStore.from(context).heightCm) }
         } else {
-            val message = healthConnectDenied
-            status = message
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            failed = true
+            status = hcDenied
         }
     }
-
-    val healthConnectAvailable = remember {
-        HealthConnectImporter.sdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-    }
+    val hcAvailable = remember { HealthConnectImporter.sdkStatus(context) == HealthConnectClient.SDK_AVAILABLE }
 
     fun startHealthConnect() {
         scope.launch {
             val granted = runCatching {
                 HealthConnectImporter.client(context).permissionController.getGrantedPermissions()
             }.getOrDefault(emptySet())
-            // #645: a user who predates the selector has nothing stored. Recover their real scope from
-            // what Android already grants BEFORE the checkboxes are read back, or a first visit would
-            // show Recovery-only and saving it would lock in the narrowing.
+            // #645: recover a pre-selector user's real scope from what Android already grants.
             HealthConnectImporter.migrateSelectionFromGrants(context, granted)
-            hcReadCategories = HealthConnectImporter.selectedCategories(context)
-            val selectedPermissions = HealthConnectImporter.permissionsFor(hcReadCategories)
-            if (granted.any { it in selectedPermissions } &&
-                !HealthConnectImporter.hasUnaskedPermissions(context, hcReadCategories)
-            ) {
-                runImport { HealthConnectImporter.import(context, viewModel.repo, ProfileStore.from(context).heightCm) }
+            val categories = HealthConnectImporter.selectedCategories(context)
+            val wanted = HealthConnectImporter.permissionsFor(categories)
+            if (granted.any { it in wanted } && !HealthConnectImporter.hasUnaskedPermissions(context, categories)) {
+                runImport("hc") { HealthConnectImporter.import(context, viewModel.repo, ProfileStore.from(context).heightCm) }
             } else {
-                // Marked before launching so the request is made ONCE per permission set: a user who
-                // declines is not asked again on every visit (#949).
-                HealthConnectImporter.markPermissionsAsked(context, hcReadCategories)
-                hcPermissionLauncher.launch(selectedPermissions)
+                // Asked ONCE per permission set: a user who declines is not asked again on every visit (#949).
+                HealthConnectImporter.markPermissionsAsked(context, categories)
+                hcLauncher.launch(wanted)
             }
         }
     }
 
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_bring_your_history_5b8775c9),
-        subtitle = uiString(R.string.onboarding_import_subtitle),
+    SetupPage(
+        step = position,
+        title = stringResource(R.string.onboarding_history_title),
+        message = stringResource(R.string.onboarding_history_message),
+        glyph = { SetupGlyph(Icons.Filled.Download) },
+        primary = SetupAction(stringResource(R.string.onboarding_done), onClick = next),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            IconBadge(icon = Icons.Filled.Storage, tint = Palette.accent, size = 82)
-            InfoCard(
-                icon = Icons.Filled.AutoGraph,
-                tint = Palette.accent,
-                title = uiString(R.string.l10n_onboarding_screen_history_fills_the_dashboard_immediately_9728dde5),
-                message = uiString(R.string.onboarding_import_history_body),
-            )
-
-            NoopCard(padding = 16.dp) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OnboardingActionButton(
-                        label = uiString(R.string.l10n_onboarding_screen_import_whoop_export_zip_16f4176b),
-                        icon = Icons.Filled.FileUpload,
-                        enabled = !busy,
-                    ) { whoopImportLauncher.launch(arrayOf("*/*")) }
-                    OnboardingActionButton(
-                        label = uiString(R.string.l10n_onboarding_screen_import_from_health_connect_35d55e21),
-                        icon = Icons.Filled.MonitorHeart,
-                        enabled = !busy && healthConnectAvailable,
-                    ) { startHealthConnect() }
-                    if (healthConnectAvailable) {
-                        HealthConnectCategorySelector(
-                            selected = hcReadCategories,
-                            onSelectionChange = { categories ->
-                                hcReadCategories = categories
-                                HealthConnectImporter.setSelectedCategories(context, categories)
-                            },
-                        )
-                    }
-                    OnboardingActionButton(
-                        label = uiString(R.string.l10n_onboarding_screen_import_apple_health_export_077b5624),
-                        icon = Icons.Filled.FavoriteBorder,
-                        enabled = !busy,
-                    ) { appleImportLauncher.launch(arrayOf("*/*")) }
+        ListGroup {
+            item { shape ->
+                ImportRow(shape, Icons.Filled.FolderZip, stringResource(R.string.onboarding_whoop_export), busy == "whoop", busy == null) {
+                    whoopLauncher.launch(arrayOf("*/*"))
                 }
             }
-
-            if (!healthConnectAvailable) {
-                Text(
-                    uiString(R.string.l10n_onboarding_screen_health_connect_is_not_available_on_0336b16d),
-                    style = NoopType.footnote,
-                    color = Palette.textTertiary,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            status?.let {
-                Text(
-                    it,
-                    style = NoopType.footnote,
-                    color = if (busy) Palette.accent else Palette.textSecondary,
-                    textAlign = TextAlign.Center,
-                )
+            item { shape ->
+                ImportRow(shape, Icons.Filled.MonitorHeart, stringResource(R.string.onboarding_health_connect), busy == "hc",
+                    busy == null && hcAvailable) { startHealthConnect() }
             }
         }
-    }
-}
-
-@Composable
-private fun NotificationsStep() {
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_stay_in_the_loop_f54254af),
-        subtitle = uiString(R.string.onboarding_notifications_subtitle),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            IconBadge(icon = Icons.Filled.Notifications, tint = Palette.accent, size = 86)
-            InfoCard(
-                icon = Icons.Filled.Bluetooth,
-                tint = Palette.statusPositive,
-                title = uiString(R.string.l10n_onboarding_screen_a_quiet_ongoing_status_97bf2a44),
-                message = uiString(R.string.onboarding_notifications_status_body),
-            )
-            Checkline(uiString(R.string.onboarding_notifications_alerts))
-            Checkline(uiString(R.string.onboarding_notifications_permission))
-        }
-    }
-}
-
-// A late step that tells new users NOOP's look is theirs to set — the same System / Light / Dark
-// choice that lives in Settings → Appearance, with a live preview. Writing the choice flips the whole
-// app immediately (AppearancePrefs.mode is snapshot state; Palette re-resolves live), so the picker
-// IS the preview — and two mini swatches show both the warm-paper Light and dark blue-grey looks.
-@Composable
-private fun AppearanceStep() {
-    val context = LocalContext.current
-    var mode by remember { mutableStateOf(AppearancePrefs.mode) }
-
-    StepShell(
-        title = uiString(R.string.l10n_onboarding_screen_make_it_yours_54135155),
-        subtitle = uiString(R.string.onboarding_appearance_subtitle),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            // Two mini look-swatches so the choice is concrete: warm-paper Light and dark blue-grey.
-            // The one matching the live theme carries an accent (blue) rim; System shows whichever
-            // the phone is currently on.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Metrics.gap),
-            ) {
-                ThemeSwatch(
-                    title = uiString(R.string.l10n_onboarding_screen_light_a36ef8ab),
-                    tokens = LightTokens,
-                    selected = Palette.isLight,
-                    modifier = Modifier.weight(1f),
-                )
-                ThemeSwatch(
-                    title = uiString(R.string.l10n_onboarding_screen_dark_ae1ef014),
-                    tokens = DarkTokens,
-                    selected = !Palette.isLight,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            NoopCard(padding = 18.dp) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ProfileFieldRow(label = uiString(R.string.l10n_onboarding_screen_theme_a797e309)) {
-                        SegmentedPillControl(
-                            items = listOf(AppearanceMode.SYSTEM, AppearanceMode.LIGHT, AppearanceMode.DARK),
-                            selection = mode,
-                            label = { appearance ->
-                                when (appearance) {
-                                    AppearanceMode.SYSTEM -> uiString(R.string.onboarding_system)
-                                    AppearanceMode.LIGHT -> uiString(R.string.l10n_onboarding_screen_light_a36ef8ab)
-                                    AppearanceMode.DARK -> uiString(R.string.l10n_onboarding_screen_dark_ae1ef014)
-                                }
-                            },
-                            onSelect = {
-                                mode = it
-                                // Persist + flip live — the rest of the onboarding (and the app) re-themes
-                                // instantly, so the user sees their choice land before tapping Continue.
-                                AppearancePrefs.set(context, it)
-                            },
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.Palette,
-                            contentDescription = null,
-                            tint = Palette.accent,
-                            modifier = Modifier.size(17.dp),
-                        )
-                        Text(
-                            when (mode) {
-                                AppearanceMode.SYSTEM -> uiString(R.string.onboarding_theme_follow_system)
-                                AppearanceMode.LIGHT -> uiString(R.string.onboarding_theme_light_description)
-                                AppearanceMode.DARK -> uiString(R.string.onboarding_theme_dark_description)
-                            },
-                            style = NoopType.footnote,
-                            color = Palette.textTertiary,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** A small fixed-palette look-swatch (a surface chip + accent ring + hairline) so the user can see a
- *  theme without switching to it. Uses the passed token set directly (not the live Palette) so Light
- *  always renders Light and Dark always renders Dark, whatever the current theme. */
-@Composable
-private fun ThemeSwatch(
-    title: String,
-    tokens: PaletteTokens,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(76.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(tokens.surfaceBase)
-                .border(
-                    width = if (selected) 2.dp else 1.dp,
-                    color = if (selected) Palette.accent else tokens.hairline,
-                    shape = RoundedCornerShape(14.dp),
-                )
-                .padding(12.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // A mini score bead in the live accent (reset blue — gold is killed), on the theme's
-                // raised card. Uses the live Palette.accent, not tokens.gold (whose LIGHT value is still
-                // the retired gold), so the bead reads as the reset accent on both swatches.
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(Palette.accent),
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .width(46.dp)
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(tokens.surfaceRaised),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .width(32.dp)
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(tokens.hairlineStrong),
-                    )
-                }
-            }
-        }
-        Text(
-            title,
-            style = NoopType.footnote,
-            color = if (selected) Palette.accent else Palette.textTertiary,
-        )
-    }
-}
-
-@Composable
-private fun DoneStep() {
-    StepShell {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 430.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            IconBadge(icon = Icons.Filled.CheckCircle, tint = Palette.statusPositive, size = 100)
-            Spacer(Modifier.height(22.dp))
+        val line = status
+        if (busy == null && line != null) {
             Text(
-                uiString(R.string.l10n_onboarding_screen_your_thread_starts_here_acdccf92),
-                style = NoopType.title1,
-                color = Palette.textPrimary,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                uiString(R.string.l10n_onboarding_screen_every_beat_every_night_every_day_ab536123),
-                style = NoopType.body,
-                color = Palette.textSecondary,
-                textAlign = TextAlign.Center,
+                line,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
         }
     }
 }
 
-// MARK: - Pieces
-
 @Composable
-private fun FeatureRow(icon: ImageVector, tint: Color, title: String, body: String) {
-    NoopCard(padding = 16.dp) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            IconSquare(icon = icon, tint = tint)
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
-                Text(title, style = NoopType.headline, color = Palette.textPrimary)
-                Text(body, style = NoopType.subhead, color = Palette.textSecondary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExpectationCard(e: AppChangelog.Expectation) {
-    NoopCard(padding = 14.dp) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(e.icon, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(22.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(e.title, style = NoopType.headline, color = Palette.textPrimary)
-                Text(e.body, style = NoopType.subhead, color = Palette.textSecondary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoCard(icon: ImageVector, tint: Color, title: String, message: String) {
-    NoopCard(padding = 16.dp) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            IconSquare(icon = icon, tint = tint)
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
-                Text(title, style = NoopType.headline, color = Palette.textPrimary)
-                Text(message, style = NoopType.subhead, color = Palette.textSecondary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun OnboardingActionButton(
-    label: String,
+private fun ImportRow(
+    shape: androidx.compose.ui.graphics.Shape,
     icon: ImageVector,
+    title: String,
+    busy: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
+    ListRow(
+        shape = shape,
+        title = title,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Palette.accent,
-            contentColor = Palette.surfaceBase,
-            disabledContainerColor = Palette.surfaceInset,
-            disabledContentColor = Palette.textTertiary,
-        ),
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = NoopType.body)
-    }
-}
-
-@Composable
-private fun Checkline(text: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(Icons.Filled.Check, contentDescription = null, tint = Palette.statusPositive, modifier = Modifier.size(17.dp))
-        Text(text, style = NoopType.subhead, color = Palette.textSecondary, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun IconBadge(icon: ImageVector, tint: Color, size: Int) {
-    Box(
-        modifier = Modifier
-            .size(size.dp)
-            .clip(CircleShape)
-            .background(tint.copy(alpha = 0.13f))
-            .border(1.dp, tint.copy(alpha = 0.28f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size((size * 0.42f).dp))
-    }
-}
-
-@Composable
-private fun IconSquare(icon: ImageVector, tint: Color) {
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(RoundedCornerShape(11.dp))
-            .background(tint.copy(alpha = 0.13f))
-            .border(1.dp, tint.copy(alpha = 0.22f), RoundedCornerShape(11.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-    }
-}
-
-/** Label-left, control-right form row — mirrors Settings' FormRow so profile editors match. */
-@Composable
-private fun ProfileFieldRow(label: String, control: @Composable () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 44.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(label, style = NoopType.body, color = Palette.textPrimary, modifier = Modifier.weight(1f))
-        control()
-    }
-}
-
-@Composable
-private fun ThinDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(Palette.hairline),
+        leading = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
+        trailing = {
+            if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else ChevronRight()
+        },
+        onClick = onClick,
     )
 }
 
-private data class OnboardingSexOption(val tag: String, val labelRes: Int)
+// MARK: - Pure rules
 
-private val ONBOARDING_SEX_OPTIONS = listOf(
-    OnboardingSexOption("male", R.string.onboarding_male),
-    OnboardingSexOption("female", R.string.onboarding_female),
-    OnboardingSexOption("nonbinary", R.string.onboarding_other),
-)
+/** What the Find Your Strap step says under its title. */
+internal enum class ScanMessage { BONDED_OTHER_APP, BONDED_BATTERY, BONDED, BLUETOOTH_OFF, NOT_FOUND_5, NOT_FOUND_4, WEAR_IT }
+
+internal object OnboardingRules {
+    /**
+     * The wizard's pages in order. The other-strap-apps page follows Welcome only when another strap app
+     * can reach the strap ([otherStrapApps]). Twin of Swift `OnboardingWizard.push(after:)`.
+     */
+    fun path(otherStrapApps: Boolean): List<SetupStep> =
+        SetupStep.entries.filter { it != SetupStep.OtherApps || otherStrapApps }
+
+    /**
+     * One sentence for where the search stands. #130: a 5.0/MG bonds to one host at a time, so the WHOOP
+     * app holding it hides it from a scan; its not-found line says to unpair it there. [otherAppSyncing]:
+     * `ForeignOffloadDetector` saw another app pull this strap's history while we are connected. Twin of
+     * Swift `ScanStep.message`.
+     */
+    fun scanMessage(
+        bonded: Boolean,
+        hasBattery: Boolean,
+        bluetoothDenied: Boolean,
+        notFound: Boolean,
+        model: WhoopModel,
+        otherAppSyncing: Boolean = false,
+    ): ScanMessage = when {
+        bonded && otherAppSyncing -> ScanMessage.BONDED_OTHER_APP
+        bonded -> if (hasBattery) ScanMessage.BONDED_BATTERY else ScanMessage.BONDED
+        bluetoothDenied -> ScanMessage.BLUETOOTH_OFF
+        notFound -> if (model == WhoopModel.WHOOP5_MG) ScanMessage.NOT_FOUND_5 else ScanMessage.NOT_FOUND_4
+        else -> ScanMessage.WEAR_IT
+    }
+
+    /** The date picker works in UTC midnights; the profile stores a local start of day. */
+    fun pickerMillisForDob(dobMillis: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
+        Instant.ofEpochMilli(dobMillis).atZone(zone).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+    /** A picked date (UTC midnight) as the local start of that day, kept within the profile's 13–100 years. */
+    fun dobFromPicker(utcMillis: Long, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone)): Long {
+        val picked = Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+        val clamped = when {
+            picked.isAfter(today.minusYears(13)) -> today.minusYears(13)
+            picked.isBefore(today.minusYears(100)) -> today.minusYears(100)
+            else -> picked
+        }
+        return clamped.atStartOfDay(zone).toInstant().toEpochMilli()
+    }
+
+    /** The years the date-of-birth picker offers: ages 13 to 100. */
+    fun dobYearRange(today: LocalDate = LocalDate.now()): IntRange = (today.year - 100)..(today.year - 13)
+}
+
+// MARK: - Brand mark
+
+/**
+ * The reNOOP mark: an OPEN recovery ring (≈80 % arc, round caps, from 12 o'clock, clockwise) in the
+ * Charge colour with a solid core dot. Decorative, so it carries no content label.
+ */
+@Composable
+internal fun BrandMark(size: Dp = 22.dp) {
+    val ring = Health.colors.charge
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val core = MaterialTheme.colorScheme.onSurface
+    Canvas(modifier = Modifier.size(size)) {
+        val stroke = this.size.minDimension * 0.13f
+        val radius = (this.size.minDimension - stroke) / 2f
+        val topLeft = Offset(center.x - radius, center.y - radius)
+        val arcSize = Size(radius * 2f, radius * 2f)
+        val capStroke = Stroke(width = stroke, cap = StrokeCap.Round)
+        drawCircle(color = track, radius = radius, center = center, style = capStroke)
+        drawArc(color = ring, startAngle = -90f, sweepAngle = 288f, useCenter = false, topLeft = topLeft, size = arcSize, style = capStroke)
+        drawCircle(color = core, radius = stroke * 0.62f, center = center)
+    }
+}

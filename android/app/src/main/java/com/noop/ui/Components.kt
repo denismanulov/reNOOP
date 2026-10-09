@@ -1,7 +1,6 @@
 package com.noop.ui
 
 import com.noop.R
-import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.core.animateFloat
@@ -45,15 +44,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoGraph
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.platform.LocalContext
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,7 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import android.content.Context
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
@@ -81,14 +71,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 // MARK: - Locked component system (ported from StrandDesign/Components.swift + StrandCard.swift)
 //
@@ -110,39 +97,24 @@ import kotlin.math.sin
  * near-neutral gold wash. Drawn with `drawBehind` so the animation/recomposition of the card's
  * content never reaches this surface subtree. Mirrors StrandDesign's FrostedCardSurface.
  */
-/** App-wide card-surface opacity (0f = fully see-through, 1f = solid), driven by the "Card transparency"
- *  setting. Reactive (a mutableState) so the Settings slider live-previews; initialised from NoopPrefs at
- *  app start via [init]. Only the card SURFACE (fill + border + wash) fades — the card's CONTENT is drawn
- *  above and stays fully readable over the background. */
-object CardAppearance {
-    var opacity by mutableStateOf(1f)
-    fun init(context: Context) {
-        opacity = (NoopPrefs.cardOpacityPercent(context) / 100f).coerceIn(0f, 1f)
-    }
-}
-
 fun Modifier.frostedCardSurface(
     tint: Color? = null,
     cornerRadius: Dp = Metrics.cardRadius,
     washStrength: Float = 1f,
 ): Modifier = composed {
-    // "Card transparency" setting: scale the whole glass surface (fill + border + wash) by the user's
-    // opacity so cards fade toward the background. Reading the reactive value here makes the slider
-    // live-preview. Content drawn above the surface is unaffected, so numbers/labels stay readable.
-    val op = CardAppearance.opacity
     this
         // Elevation idiom: DARK is flat (the hairline + hue carry the edge). LIGHT raises the white card
         // off the warm-paper canvas with a soft drop shadow — the hairline alone is too faint on paper.
         .then(
             if (Palette.isLight)
-                Modifier.shadow(elevation = (6f * op).dp, shape = RoundedCornerShape(cornerRadius), clip = false)
+                Modifier.shadow(elevation = 6.dp, shape = RoundedCornerShape(cornerRadius), clip = false)
             else Modifier
         )
         .drawBehind {
             val radiusPx = cornerRadius.toPx()
             val corner = androidx.compose.ui.geometry.CornerRadius(radiusPx, radiusPx)
-            val fill = Palette.surfaceRaised.copy(alpha = Palette.surfaceRaised.alpha * op)
-            val border = Palette.hairline.copy(alpha = Palette.hairline.alpha * op)
+            val fill = Palette.surfaceRaised
+            val border = Palette.hairline
 
             if (tint == null) {
                 // NEUTRAL card (iOS FrostedCardSurface tint == nil): a FLAT raised surface — no vertical
@@ -159,8 +131,8 @@ fun Modifier.frostedCardSurface(
                 drawRoundRect(
                     brush = Brush.linearGradient(
                         colorStops = arrayOf(
-                            0.0f to tint.copy(alpha = 0.05f * washStrength * op),
-                            0.5f to tint.copy(alpha = 0.015f * washStrength * op),
+                            0.0f to tint.copy(alpha = 0.05f * washStrength),
+                            0.5f to tint.copy(alpha = 0.015f * washStrength),
                             1.0f to Color.Transparent,
                         ),
                         start = Offset(0f, 0f),
@@ -196,58 +168,6 @@ fun NoopCard(
             .padding(padding),
     ) {
         content()
-    }
-}
-
-// MARK: - DataPendingNote — the shared "what shows now vs what needs an import" banner
-//
-// A NoopCard with a leading AutoGraph glyph, a bold title and a body line. Every data
-// screen drops one of these in its empty/partial state so the user always knows what is
-// live now and what an import will backfill. Copy is passed verbatim by the call site.
-
-@Composable
-fun DataPendingNote(title: String, body: String, modifier: Modifier = Modifier) {
-    NoopCard(modifier = modifier, padding = 18.dp) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                Icons.Filled.AutoGraph,
-                contentDescription = null,
-                tint = Palette.accent,
-                modifier = Modifier.size(20.dp),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, style = NoopType.headline, color = Palette.textPrimary)
-                Text(body, style = NoopType.subhead, color = Palette.textSecondary)
-            }
-        }
-    }
-}
-
-// MARK: - SyncingHistoryNote — pulsing "history sync in progress" line (#77)
-//
-// Shown above a screen's empty state while the strap's historical offload runs, so a half-loaded
-// screen ("No nights here yet") reads as in-progress rather than final. Shows the honest live
-// signal — chunks pulled so far — never a percent (total pending is unknowable from the protocol,
-// so a determinate bar would lie).
-
-@Composable
-fun SyncingHistoryNote(chunks: Int, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        StatePill("Syncing strap history…", tone = StrandTone.Accent, pulsing = true)
-        if (chunks > 0) {
-            Text(
-                uiString(R.string.l10n_components_chunks_chunks_pulled_cec186cf, chunks),
-                style = NoopType.footnote,
-                color = Palette.textSecondary,
-            )
-        }
     }
 }
 
@@ -346,7 +266,7 @@ private fun PulsingDotHalo(tone: StrandTone, size: Dp) {
             animation = tween(Motion.breathPeriodMs, easing = Motion.easeInOut),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = uiString(R.string.l10n_components_dotscale_5bc02101),
+        label = "dotScale",
     )
     val haloAlpha by transition.animateFloat(
         initialValue = 0.5f,
@@ -355,7 +275,7 @@ private fun PulsingDotHalo(tone: StrandTone, size: Dp) {
             animation = tween(Motion.breathPeriodMs, easing = Motion.easeInOut),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = uiString(R.string.l10n_components_dothalo_3332546c),
+        label = "dotHalo",
     )
     Box(
         modifier = Modifier
@@ -443,191 +363,6 @@ fun SourceBadge(text: String, tint: Color = Palette.accent, modifier: Modifier =
     }
 }
 
-// MARK: - TrendChip — a small tinted delta pill with a direction arrow.
-//
-// A compact trend pill: an up/down/flat arrow + the delta text, tinted to [color].
-// Inferred direction comes from a leading +/− in the text (else flat). Sits in the
-// corner of a StatTile or beside a metric value. Mirrors StrandDesign's TrendChip.
-
-@Composable
-fun TrendChip(text: String, color: Color = Palette.textTertiary, modifier: Modifier = Modifier) {
-    val t = text.trim()
-    val symbol = when {
-        t.startsWith("+") || t.startsWith("▲") || t.lowercase().startsWith("up") -> "▲"
-        t.startsWith("-") || t.startsWith("−") || t.startsWith("▼") || t.lowercase().startsWith("down") -> "▼"
-        // No sign → a plain magnitude (e.g. a workout's "874 kcal"), not a trend: show NO direction
-        // glyph. Previously this fell to "–", whose leading dash read as a negative ("-874 kcal" — #41).
-        else -> null
-    }
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        if (symbol != null) Text(symbol, style = NoopType.captionNumber.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold), color = color)
-        // Ellipsize rather than overflow if a caller constrains the chip's width (e.g. the workout
-        // tiles' compactDelta path) — keeps the pill inside its share of the row (#332).
-        Text(text, style = NoopType.captionNumber, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-// MARK: - StatTile — uniform fixed-height metric tile
-//
-// PUBLIC API unchanged (label, value, caption, accent, delta, deltaColor); an optional
-// [tint] was ADDED (defaulted to the accent) so each tile reads as part of its colour
-// world via a faint card wash. The delta now renders as a TrendChip.
-
-// MARK: - AutoSizeValue — a single-line value that SHRINKS to fit instead of truncating
-//
-// Compose (BOM 2024.06) has no `TextAutoSize`, and the metric/workout tiles are narrow with a
-// trailing sparkline or kcal chip — so a value like "1h 52m" or a tile number was ellipsizing to
-// "1…" (#319/#332). This steps the font down (to a 0.6× floor, matching the Swift tile's
-// minimumScaleFactor) until the text fits one line, then holds. Resets when the text/style changes.
-@Composable
-internal fun AutoSizeValue(
-    text: String,
-    style: TextStyle,
-    color: Color,
-    modifier: Modifier = Modifier,
-    minScale: Float = 0.6f,
-    textAlign: TextAlign = TextAlign.Start,
-) {
-    var scale by remember(text, style) { mutableStateOf(1f) }
-    Text(
-        text = text,
-        color = color,
-        style = style,
-        fontSize = style.fontSize * scale,
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = textAlign,
-        modifier = modifier,
-        onTextLayout = { result ->
-            // `lineCount > 0` before asking: isLineEllipsized carries a range precondition, and this
-            // composable is reached from every StatTile on every screen with a computed value, so the
-            // cost of a layout that reports no lines would be an app-wide crash rather than a wrong font
-            // size. One comparison buys the question away.
-            val ellipsized = result.lineCount > 0 && result.isLineEllipsized(0)
-            if (shouldShrinkValue(result.didOverflowWidth, ellipsized, scale, minScale)) {
-                scale = maxOf(minScale, scale - 0.08f)
-            }
-        },
-    )
-}
-
-/**
- * Whether a value laid out like this should take another step down. Pure, so the rule is testable
- * away from Compose: the composable above cannot be laid out by the plain-JVM suite, and the source
- * grep that stood here instead would have passed just as happily with the condition inverted.
- *
- * Either signal means the value did not fit. [didOverflowWidth] is what the loop originally keyed on
- * alone, and it goes false under `TextOverflow.Ellipsis` because Compose constrains the laid-out
- * paragraph to the width it was given: the ellipsis removes the evidence of the overflow it is
- * reporting. [lineEllipsized] carries that case. Keeping both means the overflow modes that DO report
- * an unconstrained width still drive the loop. (#2171, @kavemang)
- *
- * The floor is strict on purpose. At exactly [minScale] the answer is no, so a value that still does
- * not fit at 0.6x truncates rather than stepping below the size the Swift tile's minimumScaleFactor
- * pins, and the loop terminates instead of resizing on every layout pass.
- */
-internal fun shouldShrinkValue(
-    didOverflowWidth: Boolean,
-    lineEllipsized: Boolean,
-    scale: Float,
-    minScale: Float,
-): Boolean = (didOverflowWidth || lineEllipsized) && scale > minScale
-
-@Composable
-fun StatTile(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    caption: String? = null,
-    accent: Color = Palette.textPrimary,
-    delta: String? = null,
-    deltaColor: Color = Palette.textTertiary,
-    tint: Color? = null,
-    // When true, the trailing delta chip yields width to the value instead of taking its full
-    // intrinsic size. Used by narrow two-column tiles where a wide chip (e.g. "1234 kcal" or
-    // "+10 vs base") would otherwise starve the reading column and clip its value. The default
-    // keeps callers that have enough width exactly as they were.
-    //
-    // NO CALLER PASSES TRUE ANY MORE, and reach for a shorter chip before reaching for this (#2145).
-    // It splits the row evenly, which starves BOTH sides once the chip is wide: the value is weighted
-    // with fill = true, so it is held to exactly its share however little the chip turns out to need.
-    // The stress marker tiles clipped their reading AND their chip this way. The workouts feed went
-    // full width, the stress tiles shortened the chip; both then wanted the natural-width path.
-    compactDelta: Boolean = false,
-) {
-    // Each tile borrows its accent as a faint card wash, so a metric reads as part of its
-    // colour world while staying legible on the deep blue-black. Falls back to the accent.
-    NoopCard(modifier = modifier.height(Metrics.tileHeight), padding = 14.dp, tint = tint ?: accent) {
-        Column {
-            Overline(label)
-            Spacer(Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Value takes priority width and SHRINKS to fit (down to 0.6×) rather than
-                // truncating to "1…", matching the Swift tile's minimumScaleFactor (#319/#332).
-                // The chip keeps its intrinsic size at the end.
-                AutoSizeValue(
-                    value,
-                    style = NoopType.number(26f),
-                    color = accent,
-                    modifier = Modifier.weight(1f),
-                )
-                if (delta != null) {
-                    Spacer(Modifier.width(8.dp))
-                    // In compact mode the chip shares the row's remaining space (fill = false, so it
-                    // never grows past its content) — this guarantees the weighted value column keeps
-                    // its half and the primary reading remains intact beside a wide chip (#332/#492).
-                    TrendChip(
-                        text = delta,
-                        color = deltaColor,
-                        modifier = if (compactDelta) Modifier.weight(1f, fill = false) else Modifier,
-                    )
-                }
-            }
-            if (caption != null) {
-                Text(
-                    caption, style = NoopType.footnote, color = Palette.textTertiary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-    }
-}
-
-// MARK: - InsightCard
-//
-// PUBLIC API unchanged; an optional [tint] was ADDED (defaulted to the status colour)
-// so the coaching card sits in the same colour world as the score it summarises.
-
-@Composable
-fun InsightCard(
-    category: String,
-    status: String,
-    detail: String,
-    modifier: Modifier = Modifier,
-    statusColor: Color = Palette.accent,
-    tint: Color? = null,
-) {
-    NoopCard(modifier = modifier, padding = 18.dp, tint = tint ?: statusColor) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Overline(category)
-            Text(status, style = NoopType.title1, color = statusColor)
-            Text(detail, style = NoopType.subhead, color = Palette.textSecondary)
-        }
-    }
-}
-
 // MARK: - SegmentedPillControl — the ONE segmented control
 
 @Composable
@@ -707,247 +442,6 @@ fun <T> SegmentedPillControl(
     }
 }
 
-// MARK: - BevelGauge (NEW) — the layered ring gauge primitive
-//
-// The shared instrument behind RecoveryRing and StrainGauge: an open gauge with
-//   • a soft frosted inner disc (subtle radial fill, hairline rim)
-//   • a faint full-span track ring
-//   • a gradient-stroked progress arc (sweep gradient over the domain ramp)
-//   • a soft outer BLOOM whose intensity scales with the fill (breathing pulse)
-//   • a GLOWING end-cap dot at the arc tip (coloured halo + white core)
-//   • a centred big bold number with an optional wordmark / caption / state word
-//
-// It owns no domain logic — callers pass the fraction, the ramp stops, the tip colour
-// and the centre read-out strings. RecoveryRing / StrainGauge keep their own public
-// signatures and delegate here, so every screen re-skins without a call-site change.
-//
-// The geometry defaults to the Bevel 240° instrument (gap at the bottom). Three optional
-// params (defaulted, so every existing call site is untouched) let the RecoveryRing brand
-// glyph diverge: [startDeg]/[spanDeg] override the arc (it uses −90° / ~288° = open ~80%
-// ring, clockwise), [coreDot] paints a SOLID gold core dot at the centre, and [wordmark]
-// stamps a micro ALL-CAPS "NOOP" above the number. Mirrors StrandDesign/BevelGauge.swift.
-
-@Composable
-fun BevelGauge(
-    fraction: Double,
-    stops: List<Pair<Float, Color>>,
-    tipColor: Color,
-    numberText: String,
-    modifier: Modifier = Modifier,
-    captionText: String? = null,
-    stateText: String? = null,
-    supporting: String? = null,
-    diameter: Dp = 200.dp,
-    lineWidth: Dp = 16.dp,
-    showsLabel: Boolean = true,
-    startDeg: Float = 150f,      // default: lower-left start of the 240° Bevel gauge
-    spanDeg: Float = 240f,       // default: 240° open gauge, gap centered at bottom
-    coreDot: Color? = null,      // RecoveryRing brand glyph: a solid core dot at the centre
-    wordmark: String? = null,    // RecoveryRing brand glyph: micro ALL-CAPS mark above the number
-) {
-    val frac = fraction.toFloat().coerceIn(0f, 1f)
-
-    val animatedFraction by animateFloatAsState(
-        targetValue = frac,
-        animationSpec = tween(Motion.durationSlow, easing = Motion.drawIn),
-        label = uiString(R.string.l10n_components_ringfill_59cd4fb9),
-    )
-    // Outer bloom — a faint, STATIC glow. The breathing pulse is gone (matching iOS): it sits calm so
-    // the ring reads flat/Material, not glowing. Strength tracks the iOS bloomOpacity (0.05 + 0.13·frac)
-    // — a restrained additive halo, well down from the old (0.16 + 0.40·frac) pulse.
-    val bloomOpacity = 0.05f + 0.13f * frac
-    val sweep = Brush.sweepGradient(*stops.toTypedArray())
-
-    Box(
-        modifier = modifier.size(diameter),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(diameter)
-                // PERF (#scroll-jank): the frosted inner disc + its hairline rim — and crucially the
-                // radial-gradient disc Brush they need — are STATIC (they read neither the animated
-                // fraction nor any scroll state) yet shared one drawBehind with the fraction-driven arc,
-                // so they were re-issued every animation/scroll frame. Hoist JUST the disc + rim into
-                // drawWithCache (keyed on the implicit size + lineWidth + the palette tones) so they
-                // rasterise once and replay as a texture. The track stays in the per-frame layer because
-                // the original z-order is disc → rim → BLOOM → track → fill arc → cap, i.e. the bloom (a
-                // fraction-driven, per-frame layer) sits BETWEEN the rim and the track — caching the track
-                // above the bloom would move it over the bloom and change the pixels. The remaining
-                // per-frame layer is just the track + bloom + fill arc + cap + core (a handful of
-                // drawArc/drawCircle calls), no longer the expensive radial disc. Pixel-identical.
-                .drawWithCache {
-                    val stroke = lineWidth.toPx()
-                    val radius = (min(size.width, size.height) - stroke) / 2f
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val discRadius = (radius - stroke * 0.4f).coerceAtLeast(1f)
-                    val discBrush = Brush.radialGradient(
-                        colors = listOf(
-                            Palette.surfaceInset.copy(alpha = 0f),
-                            Palette.surfaceInset.copy(alpha = 0.55f),
-                        ),
-                        center = center,
-                        radius = radius,
-                    )
-                    val rimStroke = Stroke(width = 1.dp.toPx())
-                    onDrawBehind {
-                        // Frosted inner disc behind the arc — a glassy "well".
-                        drawCircle(brush = discBrush, radius = discRadius, center = center)
-                        // Faint hairline rim around the inner disc (iOS innerDisc strokeBorder hairline 0.5).
-                        drawCircle(
-                            color = Palette.hairline.copy(alpha = 0.5f),
-                            radius = discRadius,
-                            center = center,
-                            style = rimStroke,
-                        )
-                    }
-                }
-                // The per-frame layer: bloom + full-span track + fill arc + end cap + brand core, in the
-                // ORIGINAL order. Drawn AFTER (over) the cached disc/rim. Reads animatedFraction so it
-                // re-issues per frame, but it is only a few drawArc/drawCircle calls now.
-                .drawBehind {
-                    val stroke = lineWidth.toPx()
-                    val radius = (min(size.width, size.height) - stroke) / 2f
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val topLeft = Offset(center.x - radius, center.y - radius)
-                    val arcSize = Size(radius * 2f, radius * 2f)
-                    val sweepStroke = Stroke(width = stroke, cap = StrokeCap.Round)
-
-                    // Outer bloom — a soft, lower-opacity wide arc (drawn first, under the track).
-                    // A glow only reads on the dark canvas; on the white light card it just smears the
-                    // edge, so it's suppressed there (the deepened arc carries the ring on its own).
-                    // Drawn at the restrained, static [bloomOpacity] (≈0.05–0.18) — crisp, not glowing.
-                    if (animatedFraction > 0.001f && !Palette.isLight) {
-                        drawArc(
-                            brush = sweep,
-                            startAngle = startDeg,
-                            sweepAngle = spanDeg * animatedFraction,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = Stroke(width = stroke * 1.15f, cap = StrokeCap.Round),
-                            alpha = bloomOpacity,
-                        )
-                    }
-
-                    // Full-span track — the carved inset "well" the arc sits in (iOS: solid surfaceInset,
-                    // full opacity, same round cap), not a faint hairline. Stays here (over the bloom,
-                    // under the fill arc) to preserve the exact original z-order.
-                    drawArc(
-                        color = Palette.surfaceInset,
-                        startAngle = startDeg,
-                        sweepAngle = spanDeg,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = sweepStroke,
-                    )
-
-                    // Filled gradient arc.
-                    if (animatedFraction > 0.001f) {
-                        drawArc(
-                            brush = sweep,
-                            startAngle = startDeg,
-                            sweepAngle = spanDeg * animatedFraction,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = sweepStroke,
-                        )
-
-                        // Clean Material end-cap (iOS BevelGauge.endCap): a single small tipCore dot with a
-                        // faint tip-coloured overlay — half the old size, no saturated full-colour disc and
-                        // no hard white centre pip ("the dot" the maintainer flagged).
-                        val tipAngle = Math.toRadians((startDeg + spanDeg * animatedFraction).toDouble())
-                        val bead = Offset(
-                            center.x + radius * cos(tipAngle).toFloat(),
-                            center.y + radius * sin(tipAngle).toFloat(),
-                        )
-                        drawCircle(color = Palette.tipCore, radius = stroke * 0.35f, center = bead)
-                        drawCircle(color = tipColor.copy(alpha = 0.35f), radius = stroke * 0.35f, center = bead)
-                    }
-
-                    // Brand glyph core: a small solid gold dot at the very centre — but ONLY in the
-                    // glyph-only lock-up (logo / nav). When a number is shown the dot sits behind the
-                    // digits and muddies them (community feedback at the v3 launch), so suppress it
-                    // whenever showsLabel — leaving a clean ring + number + micro-NOOP wordmark.
-                    if (coreDot != null && !showsLabel) {
-                        drawCircle(color = coreDot, radius = stroke * 0.40f, center = center)
-                    }
-                },
-        )
-
-        if (showsLabel) {
-            // Big bold number ≈ diameter * 0.30.
-            val numberSp = diameter.value * 0.30f
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // Micro ALL-CAPS NOOP wordmark above the number (RecoveryRing brand glyph).
-                if (wordmark != null) {
-                    Text(
-                        text = wordmark.uppercase(),
-                        style = NoopType.overline.copy(
-                            fontSize = (numberSp * 0.16f).sp,
-                            letterSpacing = (numberSp * 0.055f).sp,  // ≈ .34em wordmark tracking
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = Palette.gold,
-                        modifier = Modifier.padding(bottom = 1.dp),
-                    )
-                }
-                Text(
-                    text = numberText,
-                    style = NoopType.display(numberSp).copy(fontWeight = FontWeight.Bold),
-                    color = Palette.textPrimary,
-                )
-                if (captionText != null) {
-                    // Caption scales WITH the gauge (iOS: rounded(diameter*0.085, .medium)).
-                    Text(
-                        text = captionText,
-                        style = NoopType.footnote.copy(
-                            fontSize = (diameter.value * 0.085f).sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        color = Palette.textTertiary,
-                    )
-                }
-                if (stateText != null) {
-                    // State word scales with the gauge so it never overflows the small three-up rings
-                    // (#403): stateSize = min(11, diameter*0.085), with the overline tracking scaled to
-                    // match. Pinned to the original 11pt on the large solo-hero rings (≥130dp).
-                    val stateSize = minOf(11f, diameter.value * 0.085f)
-                    Text(
-                        text = stateText,
-                        style = NoopType.overline.copy(
-                            fontSize = stateSize.sp,
-                            letterSpacing = (NoopType.overlineTracking * stateSize / 11f).sp,
-                        ),
-                        color = tipColor,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                if (supporting != null) {
-                    Text(
-                        text = supporting,
-                        style = NoopType.footnote,
-                        color = Palette.textSecondary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-// MARK: - RecoveryRing (Titanium & Gold brand glyph) — THE signature Charge / Rest component
-//
-// PUBLIC API is unchanged (score, supporting, diameter, lineWidth, showsLabel); it now
-// delegates its visuals to [BevelGauge]. An optional [valueFormat] was ADDED (defaulted)
-// so the Rest hero can show "Rest 87" while Charge keeps the bare number — same shape as
-// the macOS RecoveryRing.valueFormat. The state word + tip colour sample the recovery (gold)
-// ramp. Unlike the Bevel 240° gauge it draws the BRAND GLYPH: an open ~80% ring starting at
-// −90° (12 o'clock) clockwise, a solid gold centre core dot and a micro "NOOP" wordmark.
-
 // MARK: - GlowRing — crisp WHOOP-style score ring (Compose parity with iOS StrandDesign.GlowRing, #23)
 //
 // A clean solid arc with round caps over a clearly-visible full-circle track and a bold centred number
@@ -994,12 +488,12 @@ fun GlowRing(
         animFraction = animateFloatAsState(
             targetValue = if (started) target else 0f,
             animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
-            label = uiString(R.string.l10n_components_glowring_fraction_5bcc7cd7),
+            label = "glowring-fraction",
         ).value
         animValue = animateFloatAsState(
             targetValue = if (started) value.toFloat() else 0f,
             animationSpec = tween(durationMillis = 850, easing = FastOutSlowInEasing),
-            label = uiString(R.string.l10n_components_glowring_value_ac0e87de),
+            label = "glowring-value",
         ).value
     }
     val trackColor = Palette.textPrimary.copy(alpha = 0.10f)
@@ -1095,75 +589,6 @@ fun GlowRing(
             )
         }
     }
-}
-
-@Composable
-fun RecoveryRing(
-    score: Double,
-    modifier: Modifier = Modifier,
-    supporting: String? = null,
-    diameter: Dp = 240.dp,
-    lineWidth: Dp = 16.dp,
-    showsLabel: Boolean = true,
-    valueFormat: ((Double) -> String)? = null,
-) {
-    BevelGauge(
-        fraction = score / 100.0,
-        stops = Palette.recoveryStops,
-        tipColor = Palette.recoveryColor(score),
-        numberText = valueFormat?.invoke(score) ?: score.toInt().toString(),
-        stateText = Palette.recoveryState(score),
-        supporting = supporting,
-        diameter = diameter,
-        lineWidth = lineWidth,
-        showsLabel = showsLabel,
-        // Brand-glyph geometry: open ~80% ring (288° of 360°), 12-o'clock start, clockwise,
-        // plus the solid gold core dot + micro NOOP wordmark that mark the recovery hero.
-        startDeg = -90f,
-        spanDeg = 288f,
-        coreDot = Palette.gold,
-        wordmark = "NOOP",
-        modifier = modifier,
-    )
-}
-
-// MARK: - StrainGauge (NEW) — the Effort hero gauge
-//
-// The Effort sibling of RecoveryRing: a [BevelGauge] over the amber strain ramp. The arc fills to
-// strain/outOf, with an "of N" caption naming the scale max. `outOf` is the maximum of the scale the
-// passed [strain] is ON (default 21, WHOOP's Day-Strain axis). The Effort hero passes the value already
-// converted to the user's selected display scale (#313) plus its matching max (100 or 21) and an optional
-// [valueText] override for the centre numeral, so the arc, number and caption all read on one scale rather
-// than being hardcoded to 0–21. Stays scale-agnostic — the caller owns the conversion (EffortScale is an
-// app concern). Mirrors StrandDesign's StrainGauge so the hero row reads as three matched instruments
-// (Charge gold · Effort amber · Rest blue).
-
-@Composable
-fun StrainGauge(
-    strain: Double,
-    modifier: Modifier = Modifier,
-    outOf: Double = 21.0,
-    valueText: String? = null,
-    diameter: Dp = 240.dp,
-    lineWidth: Dp = 16.dp,
-    showsLabel: Boolean = true,
-) {
-    val clamped = strain.coerceIn(0.0, outOf)
-    val fraction = if (outOf > 0) clamped / outOf else 0.0
-    BevelGauge(
-        fraction = fraction,
-        stops = Palette.strainStops,
-        // Tip tint sampled by the fill FRACTION so it spans the full ember→amber ramp identically on the
-        // 0–100 and 0–21 display scales (a maxed gauge reaches the bright-amber peak, not a stuck ember).
-        tipColor = Palette.effortTint(fraction),
-        numberText = valueText
-            ?: if (clamped % 1.0 == 0.0) clamped.toInt().toString() else String.format(java.util.Locale.US, "%.1f", clamped),
-        captionText = "of ${outOf.toInt()}",
-        diameter = diameter,
-        lineWidth = lineWidth,
-        showsLabel = showsLabel,
-        modifier = modifier,
-    )
 }
 
 // MARK: - ScenicHeroBackground (NEW) — premium hero backdrop
@@ -1289,15 +714,11 @@ fun ScreenScaffold(
         Column(
             modifier = columnModifier
                 .verticalScroll(rememberScrollState())
-                // #1836: the bar's height is added to the CONTENT's bottom padding, not to the screen's
-                // layout. That distinction is the whole overlay: the screen reaches the bottom edge so its
-                // backdrop paints behind and around the glass, while the scrolling content still stops
-                // clear of the bar. Zero when the overlay is off, so the slot layout is untouched.
                 .padding(
                     start = 28.dp,
                     end = 28.dp,
                     top = topPadding,
-                    bottom = 28.dp + BottomBarStyleStore.barHeightForContent(),
+                    bottom = 28.dp,
                 ),
             // #765: one shared inter-card spacing token (was a bare `20.dp`), so the eager + lazy scaffolds
             // and every screen through them keep the SAME uniform gap between top-level cards.
@@ -1562,43 +983,3 @@ private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
         onClick = onClick,
     )
 
-// MARK: - Backup / restore failure
-
-/**
- * The dialog a failed backup, restore or export ends on.
- *
- * These messages run to several sentences and each one finishes with the part the reader can act on,
- * so a Toast was the wrong container: the reported case clipped at "SQLite reports: *** in d..." and
- * threw away BOTH the diagnosis and the "your current data is untouched" that followed it. What
- * survived was the one fragment that helps nobody. A dialog shows the sentence whole.
- *
- * [Copy] puts it on the clipboard, so a corruption report carries SQLite's own words rather than a
- * fragment retyped off a screenshot. Apple has shown these in an alert all along; this is Android
- * catching up to it.
- */
-@Composable
-fun BackupFailureDialog(message: String, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Palette.surfaceOverlay,
-        text = { Text(message, style = NoopType.subhead, color = Palette.textSecondary) },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(uiString(R.string.l10n_components_close_bbfa773e), color = Palette.accent)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = {
-                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clip?.setPrimaryClip(ClipData.newPlainText("NOOP backup error", message))
-                // Dismiss on copy. Android 13+ shows its own clipboard confirmation, but minSdk here is
-                // 26, and on everything below that a Copy that left the dialog sitting there gave no
-                // sign it had done anything. Dialog buttons conventionally dismiss anyway.
-                onDismiss()
-            }) {
-                Text(uiString(R.string.l10n_components_copy_af74f7c5), color = Palette.textSecondary)
-            }
-        },
-    )
-}

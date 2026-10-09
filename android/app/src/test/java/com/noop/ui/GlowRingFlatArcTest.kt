@@ -28,7 +28,7 @@ class GlowRingFlatArcTest {
             if (f.isFile) {
                 val src = f.readText()
                 val body = src.substringAfter("fun GlowRing(", "")
-                    .substringBefore("\n@Composable\nfun RecoveryRing(", "")
+                    .substringBefore("\n@Composable\nfun ScenicHeroBackground(", "")
                 check(body.isNotBlank()) { "GlowRing body not found — the anchors moved, fix this test" }
                 return body
             }

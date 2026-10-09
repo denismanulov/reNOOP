@@ -3,7 +3,6 @@ package com.noop.ui
 import com.noop.R
 import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
-import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -112,27 +111,6 @@ enum class ScoreSection {
     /** The number shown inside the sample gauge (the 0–100 score the fraction maps to). */
     val sampleNumber: String
         get() = "${(sampleFraction * 100).roundToInt()}"
-}
-
-/**
- * One-time first-run flag for the Today "New here?" scoring-guide card. A tiny self-contained
- * plain-prefs store, so the card's seen-state lives next to the screen that owns it and never
- * touches the unrelated onboarding/changelog prefs.
- */
-object ScoringGuidePrefs {
-    private const val FILE = "noop_scoring_guide_prefs"
-    private const val KEY_CARD_SEEN = "scoringGuideCardSeen"
-
-    private fun prefs(ctx: Context) =
-        ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-
-    /** Whether the one-time first-run card has been seen/dismissed (default false = show it once). */
-    fun cardSeen(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_CARD_SEEN, false)
-
-    /** Set once the user opens the guide from the card OR dismisses it — either way it never returns. */
-    fun setCardSeen(ctx: Context) =
-        prefs(ctx).edit().putBoolean(KEY_CARD_SEEN, true).apply()
 }
 
 /**
@@ -307,7 +285,7 @@ private fun ScoreCard(
     // Deep-link highlight: a brief accent ring when arrived at via an ⓘ, fading back to the hairline.
     val ringColor by animateColorAsState(
         targetValue = if (highlighted) section.accent else Palette.hairline,
-        label = uiString(R.string.l10n_scoring_guide_screen_scorecardhighlight_4af6985c),
+        label = "scoreCardHighlight",
     )
     val shape = RoundedCornerShape(Metrics.cardRadius)
     Box(
@@ -377,7 +355,6 @@ private fun ScoreCard(
  * The flat illustrative ring for a score section — a clean [GlowRing] (Design Reset: solid crisp arc,
  * NO bloom) in the section's Reset accent, the same primitive the Today hero rings use, with the score
  * name as a small caption below. Decorative ("what a strong day looks like"), so it carries no semantics.
- * Replaces the old per-section bloom [BevelGauge].
  */
 @Composable
 private fun SampleRing(section: ScoreSection) {

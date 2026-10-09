@@ -4,8 +4,9 @@ import java.time.LocalDate
 
 /**
  * Local-only menstrual cycle tracker storage. A period start is one value-1 [MetricSeriesRow] under
- * the dedicated `noop-cycle` source. This is the value-for-value twin of Swift
- * `CycleTrackingStore`: same source, key, day format, ordering, idempotent upsert and physical delete.
+ * the dedicated `noop-cycle` source. It was written as the value-for-value twin of
+ * the Swift store the iOS redesign has since removed: same source, key, day format, ordering, idempotent
+ * upsert and physical delete.
  * Imports and strap analysis use different source ids, so they cannot overwrite user-entered history.
  */
 class CycleTrackingStore(

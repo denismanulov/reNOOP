@@ -459,6 +459,12 @@ class WhoopRepository(
      *  path banks v18 rows, so a plain map is enough. Swift twin: `WhoopStore.v18AuxRowsSincePrune`. */
     private val v18AuxRowsSincePrune = mutableMapOf<String, Int>()
 
+    /** What each user-edited night was last re-staged from, so an unchanged night is not re-read on
+     *  every scoring pass. Held here because it describes THIS store: a second repository, or a test's,
+     *  starts with none. Per process and never persisted; a restore ends the process. See
+     *  [com.noop.analytics.SleepStageHealer.RestagedNights]. */
+    val restagedNights = com.noop.analytics.SleepStageHealer.RestagedNights()
+
     private val _sleepSampleRevision = MutableStateFlow(0L)
     val sleepSampleRevision: StateFlow<Long> = _sleepSampleRevision.asStateFlow()
     private val _batteryRevision = MutableStateFlow(0L)
@@ -1242,7 +1248,6 @@ class WhoopRepository(
         dao.v18AuxSamples(deviceId, from, to, limit)
             .map { V18AuxCodec.unpack(it.fields, it.ts) }
 
-
     /** Downsampled HR (mean bpm per [bucketSeconds]) for the strap, for the Today 24h trend chart. */
     suspend fun hrBucketsForDevice(deviceId: String, from: Long, to: Long, bucketSeconds: Long = 300L) =
         dao.hrBuckets(deviceId, from, to, bucketSeconds)
@@ -1427,14 +1432,28 @@ class WhoopRepository(
         // That is the point of a raw export, and it is the evidence the duplication was diagnosed from,
         // so a diagnostic export and the app can legitimately disagree on beat counts.
         OuraRedrainCollapse.withoutRedrainedRuns(
-            when {
-                isWhoop5RrSource(deviceId, unlabelledAliasOfWhoop5) ->
-                    dao.whoop5RrIntervals(deviceId, from, to, limit)
-                isWhoop4RrSource(deviceId) || dao.hasWhoop4HistoricalRrSource(deviceId) ->
-                    dao.whoop4RrIntervals(deviceId, from, to, limit)
-                else -> dao.rrIntervals(deviceId, from, to, limit)
+            when (rrReadPolicy(deviceId, unlabelledAliasOfWhoop5)) {
+                RrReadPolicy.WHOOP5 -> dao.whoop5RrIntervals(deviceId, from, to, limit)
+                RrReadPolicy.WHOOP4 -> dao.whoop4RrIntervals(deviceId, from, to, limit)
+                RrReadPolicy.GENERIC -> dao.rrIntervals(deviceId, from, to, limit)
             }
         )
+    }
+
+    /** The three reads [rrIntervalsForDevice] chooses between. */
+    enum class RrReadPolicy { WHOOP5, WHOOP4, GENERIC }
+
+    /**
+     * Which read [rrIntervalsForDevice] takes for a device, resolved in the order it always was: a
+     * WHOOP 5 source first, then a registry-confirmed WHOOP 4 or one that has banked type-47 history,
+     * then the generic read. One resolver, so a witness of that read (the edited-night re-stage memory,
+     * [com.noop.analytics.SleepStageHealer.restageInputs]) names the branch the read itself takes: the
+     * "ever banked a type-47 beat" probe is device-wide and no windowed fingerprint can see it move.
+     */
+    suspend fun rrReadPolicy(deviceId: String, unlabelledAliasOfWhoop5: Boolean = false): RrReadPolicy = when {
+        isWhoop5RrSource(deviceId, unlabelledAliasOfWhoop5) -> RrReadPolicy.WHOOP5
+        isWhoop4RrSource(deviceId) || dao.hasWhoop4HistoricalRrSource(deviceId) -> RrReadPolicy.WHOOP4
+        else -> RrReadPolicy.GENERIC
     }
 
     /** Whether the device registry CONFIRMS this owner is a WHOOP 4, so its type-47 history is scorable. */
@@ -1472,6 +1491,16 @@ class WhoopRepository(
     ): List<StandardHrContactSample> = dao.eventsByKind(
         deviceId, StandardHrMapping.CONTACT_EVENT_KIND, from, to, limit,
     ).map(StandardHrMapping::contactSample)
+
+    /** The nonzero WHOOP 4.0 v24 `aux_byte_86` readings, codes included; a zero byte is never stored. */
+    suspend fun v24AuxByte86Samples(
+        deviceId: String,
+        from: Long,
+        to: Long,
+        limit: Int = DEFAULT_LIMIT,
+    ): List<V24AuxByte86Sample> = dao.eventsByKind(
+        deviceId, V24AuxByte86Mapping.EVENT_KIND, from, to, limit,
+    ).map(V24AuxByte86Mapping::sample)
 
     suspend fun batterySamples(deviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT) =
         dao.batterySamples(deviceId, from, to, limit)
@@ -2114,32 +2143,6 @@ class WhoopRepository(
         List<SleepSession> {
         val ids = rawWhoopSourceIds(deviceId).map { "$it-noop" }
         return dedupSleepBlocks(ids.flatMap { dao.sleepSessions(it, from, to, limit) })
-    }
-
-    /**
-     * ALL sleep sessions across every registered WHOOP (active first, archived included, canonical
-     * last) over the last [days], imported [sleepSessionsUnion] merged with the computed
-     * [computedSleepSessionsUnion] twin: a computed session is kept only when its LOCAL wake-day (the
-     * same `AnalyticsEngine.dayString` keyer `mergeSleep` uses) is NOT already covered by an imported
-     * session that day — no richness exception, unlike `mergeSleepRichness`/[sleepSessionsMerged].
-     * Sorted by [SleepSession.effectiveStartTs] ascending, so the caller's `.lastOrNull()` is the most
-     * recent night. Robust to a stale/wrong [deviceId] (e.g. no strap currently connected) because
-     * [rawWhoopSourceIds] enumerates every registered WHOOP regardless of which id is passed in.
-     * Mirrors Swift `Repository.allSleepSessions(days:)` exactly.
-     */
-    suspend fun allSleepSessionsUnion(deviceId: String, days: Int = 4000): List<SleepSession> {
-        val now = System.currentTimeMillis() / 1000L
-        val lo = now - days * 86_400L
-        val hi = now + 86_400L
-        val imported = sleepSessionsUnion(deviceId, lo, hi)
-        val computed = computedSleepSessionsUnion(deviceId, lo, hi)
-        fun endDay(s: SleepSession): String {
-            val offsetSec = (java.util.TimeZone.getDefault().getOffset(s.endTs * 1000) / 1000).toLong()
-            return com.noop.analytics.AnalyticsEngine.dayString(s.endTs, offsetSec)
-        }
-        val importedDays = imported.mapTo(HashSet(), ::endDay)
-        val computedKept = computed.filter { endDay(it) !in importedDays }
-        return (imported + computedKept).sortedBy { it.effectiveStartTs }
     }
 
     /** Workouts over every registered WHOOP (active first, archived retained) plus canonical "my-whoop",

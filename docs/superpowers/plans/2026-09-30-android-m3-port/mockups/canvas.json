@@ -1,0 +1,29 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-09-30T18:40:00Z"},
+  "title": "reNOOP Android — референсы Material 3",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 412, "h": 2330, "title": "1A · Сводка (структура Дениса)", "is_interactive": true},
+    "02-Summary-B.dc.html": {"x": 492, "y": 0, "w": 412, "h": 1760, "title": "1B · Сводка (компактно, как Fitbit)", "is_interactive": true},
+    "03-Metric.dc.html": {"x": 984, "y": 0, "w": 412, "h": 1720, "title": "2 · Страница показателя (ВСР)", "is_interactive": true},
+    "04-Browse.dc.html": {"x": 1476, "y": 0, "w": 412, "h": 915, "title": "3 · Обзор (поиск)", "is_interactive": true},
+    "05-Sleep.dc.html": {"x": 0, "y": 2730, "w": 412, "h": 1640, "title": "4 · Сон (оценка сна)", "is_interactive": true},
+    "06-Workouts.dc.html": {"x": 492, "y": 2730, "w": 412, "h": 1300, "title": "5 · Тренировки", "is_interactive": true},
+    "07-Recording.dc.html": {"x": 984, "y": 2730, "w": 412, "h": 915, "title": "6 · Запись тренировки", "is_interactive": true},
+    "08-Schedule.dc.html": {"x": 1476, "y": 2730, "w": 412, "h": 1360, "title": "7 · Расписание сна (как Часы)", "is_interactive": true},
+    "09-Settings.dc.html": {"x": 0, "y": 4770, "w": 412, "h": 1560, "title": "8 · Настройки (как Pixel)", "is_interactive": true},
+    "10-Coach.dc.html": {"x": 492, "y": 4770, "w": 412, "h": 915, "title": "9 · ИИ-тренер (как Google Сообщения)", "is_interactive": true},
+    "11-Devices.dc.html": {"x": 984, "y": 4770, "w": 412, "h": 1180, "title": "10 · Устройства", "is_interactive": true},
+    "12-Onboarding.dc.html": {"x": 1476, "y": 4770, "w": 412, "h": 915, "title": "11 · Первый запуск", "is_interactive": true}
+  },
+  "order": ["Main.dc.html", "02-Summary-B.dc.html", "03-Metric.dc.html", "04-Browse.dc.html", "05-Sleep.dc.html", "06-Workouts.dc.html", "07-Recording.dc.html", "08-Schedule.dc.html", "09-Settings.dc.html", "10-Coach.dc.html", "11-Devices.dc.html", "12-Onboarding.dc.html"],
+  "notes": {
+    "row1": {"x": 0, "y": -300, "text": "Главные вкладки: Сводка, показатель, Обзор", "kind": "title1", "maxW": 1888},
+    "row2": {"x": 0, "y": 2430, "text": "Сон и тренировки", "kind": "title1", "maxW": 1888},
+    "row3": {"x": 0, "y": 4470, "text": "Настройки, тренер, устройства, первый запуск", "kind": "title1", "maxW": 1888},
+    "how": {"x": 1968, "y": 0, "w": 360, "text": "Как смотреть: у каждого экрана есть Tweaks — тёмная тема (dark) и палитра колец (reNOOP / Apple, как у Дениса). Кнопки и карточки кликабельны в режиме Play. Отметь номера: что норм, что переделать.", "size": "m", "fill": "teal"}
+  },
+  "designSystems": []
+}

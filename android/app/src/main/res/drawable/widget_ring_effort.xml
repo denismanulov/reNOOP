@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A widget score ring (effort): a full track with the score's arc over it, clockwise from 12 o'clock.
+     A ProgressBar draws it, because a RemoteViews widget cannot draw an arc itself: the bar's progress is
+     the ring's level, and both colours are resources, so the launcher follows the system theme without
+     the app. The ring fills its box: inner radius 1/2.5 plus thickness 1/10 of the width is its half. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape
+            android:innerRadiusRatio="2.5"
+            android:shape="ring"
+            android:thicknessRatio="10"
+            android:useLevel="false">
+            <solid android:color="@color/widget_ring_track" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <rotate
+            android:fromDegrees="270"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="270">
+            <shape
+                android:innerRadiusRatio="2.5"
+                android:shape="ring"
+                android:thicknessRatio="10"
+                android:useLevel="true">
+                <solid android:color="@color/widget_effort" />
+            </shape>
+        </rotate>
+    </item>
+</layer-list>

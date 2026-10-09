@@ -187,9 +187,6 @@ fun breathPresenceIntroBodyRes(): Int = R.string.breath_presence_intro_body
 fun localizedBreathTitle(id: String): String =
     breathProtocolCopyIds(id)?.let { uiString(it.title) } ?: id
 
-fun localizedBreathSubtitle(id: String): String =
-    breathProtocolCopyIds(id)?.let { uiString(it.subtitle) }.orEmpty()
-
 @StringRes
 fun breathStageLabelRes(label: String): Int? = when (label) {
         "Belly in" -> R.string.breath_stage_belly_in

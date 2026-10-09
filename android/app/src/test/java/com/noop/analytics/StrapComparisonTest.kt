@@ -3,8 +3,7 @@ package com.noop.analytics
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Pins the #1300 two-strap comparison (reuses the existing per-metric tolerances). Swift twin:
- *  `StrapComparisonTests`. */
+/** Pins the #1300 two-strap comparison (reuses the existing per-metric tolerances). */
 class StrapComparisonTest {
 
     private val RHR = MetricArbitrationPolicy.MetricKind.RESTING_HR

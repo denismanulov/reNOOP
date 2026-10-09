@@ -103,17 +103,4 @@ class ChartTimeTicksTest {
         assertEquals(epochs.sorted(), epochs)                         // still monotonic
     }
 
-    @Test fun timestampFractionInterpolatesBetweenBucketTimestamps() {
-        val ts = listOf(0L, 100L, 200L, 400L)
-        assertEquals(0f, timestampFraction(ts, 0L)!!, 1e-6f)
-        assertEquals(1f, timestampFraction(ts, 400L)!!, 1e-6f)
-        // Halfway between buckets 1 and 2 → fractional index 1.5 of 3.
-        assertEquals(0.5f, timestampFraction(ts, 150L)!!, 1e-6f)
-        // A gap (200→400) still interpolates within its own segment: 300 → index 2.5 of 3.
-        assertEquals(2.5f / 3f, timestampFraction(ts, 300L)!!, 1e-6f)
-        // Outside the extent, and degenerate lists, map to nothing rather than an edge pin.
-        assertEquals(null, timestampFraction(ts, -1L))
-        assertEquals(null, timestampFraction(ts, 401L))
-        assertEquals(null, timestampFraction(listOf(5L), 5L))
-    }
 }

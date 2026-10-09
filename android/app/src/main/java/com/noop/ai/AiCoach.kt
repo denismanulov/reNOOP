@@ -74,6 +74,18 @@ class AiCoach(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    /** The streaming request in flight, so the Coach's stop button can end it (CO-2). */
+    @Volatile private var streamingCall: okhttp3.Call? = null
+
+    /**
+     * Ends the reply being streamed, if any: the request is cancelled, so its read throws and the caller
+     * settles what has arrived. Sends nothing; a no-op when nothing streams. Twin of Swift
+     * `AICoachEngine.stop()` (which cancels the reply's task).
+     */
+    fun cancelStreaming() {
+        streamingCall?.cancel()
+    }
+
     /**
      * Send the conversation to [provider] using [model] and return the assistant reply text.
      *
@@ -608,7 +620,7 @@ class AiCoach(
         val latestByMarker = runCatching { latestLabMarkers() }.getOrDefault(emptyList())
         if (latestByMarker.isNotEmpty()) {
             if (sb.isNotEmpty()) sb.append("\n")
-            sb.append("LAB BOOK (numbers the user entered themselves from their own reports; NOOP does not ")
+            sb.append("LAB BOOK (numbers the user entered themselves from their own reports; reNOOP does not ")
             sb.append("test or interpret them — never assert whether a value is normal/high/low):\n")
             for (row in latestByMarker) {
                 val name = MarkerCatalog.definition(row.markerKey)?.displayName
@@ -1045,8 +1057,10 @@ class AiCoach(
         onDelta: (String) -> Unit,
         extractDelta: (String) -> String?,
     ) {
+        val call = http.newCall(request)
+        streamingCall = call
         try {
-            http.newCall(request).execute().use { resp ->
+            call.execute().use { resp ->
                 if (resp.code !in 200..299) {
                     val body = resp.body?.string().orEmpty()
                     throw httpError(provider, resp.code, body)
@@ -1075,6 +1089,8 @@ class AiCoach(
                 )
             }
             throw Exception(msg.ifBlank { "A network error occurred while streaming the reply." })
+        } finally {
+            if (streamingCall === call) streamingCall = null
         }
     }
 
@@ -1376,7 +1392,8 @@ class AiCoach(
                 "0-100, effort 0-100, rest/sleep and its deep/REM/light breakdown, sleep " +
                 "efficiency, HRV, resting heart rate) and recent workouts. " +
                 "Charge is the daily recovery/readiness score; effort is the day's cardiovascular " +
-                "load. Coach using autoregulation: charge 67-100 = green light to build/push, " +
+                "load. The app shows these to the user as Recovery (charge), Strain (effort) and Sleep " +
+                "(rest): use those names when you answer. Coach using autoregulation: charge 67-100 = green light to build/push, " +
                 "higher effort is fine; 34-66 = maintain, quality over volume, keep it controlled; " +
                 "0-33 = active recovery only (Zone 2, mobility, extra sleep) and protect against " +
                 "accumulating effort debt. Optimise workouts with progressive overload, polarised ~80/20 " +

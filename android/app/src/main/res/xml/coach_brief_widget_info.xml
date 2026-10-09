@@ -9,4 +9,5 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="1800000"
+    android:previewLayout="@layout/widget_preview_coach"
     android:initialLayout="@layout/glance_default_loading_layout" />

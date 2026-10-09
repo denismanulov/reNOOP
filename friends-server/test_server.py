@@ -53,12 +53,12 @@ class FriendsServerTest(unittest.TestCase):
         self.app.close_db()
         self.tmp.cleanup()
 
-    def signup(self, nick, name=None):
+    def signup(self, nick, name=None, password="correct horse"):
         # Each sign-up arrives from its own address, as it would through the proxy, so the
         # per-address sign-up limit is tested where it is meant to bite and nowhere else.
         self._ip += 1
         status, body = self.anon.call(
-            "POST", "/v1/register", {"nick": nick, "name": name or nick.title()},
+            "POST", "/v1/register", {"nick": nick, "name": name or nick.title(), "password": password},
             headers={"X-Forwarded-For": "10.0.0.%d" % self._ip})
         self.assertEqual(201, status, body)
         return Client(self.base, body["token"])
@@ -83,66 +83,86 @@ class FriendsServerTest(unittest.TestCase):
 
     # --- accounts ---
 
-    def test_register_and_profile(self):
+    def test_register_login_and_profile(self):
         ruslan = self.signup("ruslan", "Руслан")
         status, me = ruslan.call("GET", "/v1/me")
         self.assertEqual(200, status)
         self.assertEqual({"nick": "ruslan", "name": "Руслан", "avatarRev": 0,
                           "share": {"scores": True, "sleep": True, "workouts": True, "hr": False}}, me)
+        status, body = self.anon.call("POST", "/v1/login", {"nick": "@Ruslan", "password": "correct horse"})
+        self.assertEqual(200, status)
+        self.assertEqual(200, Client(self.base, body["token"]).call("GET", "/v1/me")[0])
 
-    def test_sign_up_needs_only_a_nickname(self):
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "@Ruslan"})
+    def test_sign_up_needs_only_a_nickname_and_a_password(self):
+        status, body = self.anon.call("POST", "/v1/register", {"nick": "Ruslan", "password": "correct horse"})
         self.assertEqual(201, status)
         self.assertEqual(("ruslan", "ruslan"), (body["me"]["nick"], body["me"]["name"]))
         renamed = Client(self.base, body["token"]).call("PATCH", "/v1/me", {"name": "Руслан"})[1]
         self.assertEqual("Руслан", renamed["name"])
 
-    def test_there_is_no_password_and_no_way_to_sign_in_again(self):
-        """The token from sign-up is the account's one credential. Nothing takes a password, and
-        nothing hands out a second token for a nickname that is already taken."""
+    def test_wrong_password_and_unknown_nick_read_the_same(self):
         self.signup("ruslan")
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "denchik", "password": "correct horse"})
-        self.assertEqual((400, "bad_payload"), (status, body["error"]))
-        self.assertTrue(self.anon.call("GET", "/v1/nicks/denchik")[1]["free"])
-        self.assertEqual(404, self.anon.call("POST", "/v1/login", {"nick": "ruslan"})[0])
-        self.assertEqual((409, "nick_taken"), (lambda r: (r[0], r[1]["error"]))(
-            self.anon.call("POST", "/v1/register", {"nick": "ruslan"})))
+        wrong = self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "not the one"})
+        missing = self.anon.call("POST", "/v1/login", {"nick": "nobody", "password": "not the one"})
+        self.assertEqual((401, "bad_credentials"), (wrong[0], wrong[1]["error"]))
+        self.assertEqual(wrong, missing)
 
     def test_nick_rules_and_uniqueness(self):
         self.signup("ruslan")
         for bad in ("ab", "has space", "кириллица", "x" * 21):
-            status, body = self.anon.call("POST", "/v1/register", {"nick": bad, "name": "N"})
+            status, body = self.anon.call("POST", "/v1/register", {"nick": bad, "name": "N", "password": "12345678"})
             self.assertEqual((400, "bad_nick"), (status, body["error"]), bad)
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "RUSLAN", "name": "N"})
+        status, body = self.anon.call("POST", "/v1/register", {"nick": "RUSLAN", "name": "N", "password": "12345678"})
         self.assertEqual((409, "nick_taken"), (status, body["error"]))
         self.assertEqual({"nick": "ruslan", "free": False}, self.anon.call("GET", "/v1/nicks/ruslan")[1])
         self.assertEqual({"nick": "denchik", "free": True}, self.anon.call("GET", "/v1/nicks/denchik")[1])
 
-    def test_everything_but_sign_up_needs_a_session(self):
+    def test_short_password_refused(self):
+        status, body = self.anon.call("POST", "/v1/register", {"nick": "ruslan", "name": "R", "password": "1234567"})
+        self.assertEqual((400, "bad_password"), (status, body["error"]))
+
+    def test_everything_but_sign_in_needs_a_session(self):
         for method, path in (("GET", "/v1/me"), ("GET", "/v1/feed"), ("GET", "/v1/users/ruslan"),
                              ("PUT", "/v1/me/days/" + self.today()), ("GET", "/v1/friends/requests")):
             self.assertEqual(401, self.anon.call(method, path, {} if method == "PUT" else None)[0], path)
         self.assertEqual(401, Client(self.base, "made-up-token").call("GET", "/v1/me")[0])
 
-    def test_signing_out_ends_the_session_for_good(self):
+    def test_logout_ends_only_that_session(self):
+        first = self.signup("ruslan")
+        second = Client(self.base, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "correct horse"})[1]["token"])
+        self.assertEqual(204, first.call("DELETE", "/v1/session")[0])
+        self.assertEqual(401, first.call("GET", "/v1/me")[0])
+        self.assertEqual(200, second.call("GET", "/v1/me")[0])
+
+    def test_password_change_signs_other_phones_out(self):
         phone = self.signup("ruslan")
-        self.assertEqual(204, phone.call("DELETE", "/v1/session")[0])
+        other = Client(self.base, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "correct horse"})[1]["token"])
+        self.assertEqual(401, phone.call("POST", "/v1/me/password", {"old": "nope nope", "new": "new password"})[0])
+        status, body = phone.call("POST", "/v1/me/password", {"old": "correct horse", "new": "new password"})
+        self.assertEqual(200, status)
+        self.assertEqual(401, other.call("GET", "/v1/me")[0])
         self.assertEqual(401, phone.call("GET", "/v1/me")[0])
-        # The nickname is still taken: without a password there is no second way in.
-        self.assertFalse(self.anon.call("GET", "/v1/nicks/ruslan")[1]["free"])
+        self.assertEqual(200, Client(self.base, body["token"]).call("GET", "/v1/me")[0])
+        self.assertEqual(200, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "new password"})[0])
 
     def test_invite_code_gates_sign_up_when_set(self):
         self.app.invite_code = "let-me-in"
         self.assertTrue(self.anon.call("GET", "/v1/info")[1]["inviteRequired"])
-        body = {"nick": "ruslan", "name": "R"}
+        body = {"nick": "ruslan", "name": "R", "password": "12345678"}
         self.assertEqual(403, self.anon.call("POST", "/v1/register", body)[0])
         self.assertEqual(403, self.anon.call("POST", "/v1/register", dict(body, invite="guess"))[0])
         self.assertEqual(201, self.anon.call("POST", "/v1/register", dict(body, invite="let-me-in"))[0])
 
     def test_sign_up_is_limited_per_address(self):
-        codes = [self.anon.call("POST", "/v1/register", {"nick": "user_%d" % i, "name": "U"},
+        codes = [self.anon.call("POST", "/v1/register", {"nick": "user_%d" % i, "name": "U", "password": "12345678"},
                                 headers={"X-Forwarded-For": "203.0.113.9"})[0] for i in range(6)]
         self.assertEqual([201] * 5 + [429], codes)
+
+    def test_login_is_limited_per_nick(self):
+        self.signup("ruslan")
+        codes = [self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "guess %d" % i},
+                                headers={"X-Forwarded-For": "198.51.100.%d" % i})[0] for i in range(11)]
+        self.assertEqual([401] * 10 + [429], codes)
 
     # --- friends ---
 
@@ -233,8 +253,8 @@ class FriendsServerTest(unittest.TestCase):
         ruslan, denis = self.signup("ruslan"), self.signup("denchik")
         self.befriend(ruslan, "ruslan", denis, "denchik")
         denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())
-        self.assertEqual(401, self.anon.call("POST", "/v1/me/delete")[0])
-        self.assertEqual(204, denis.call("POST", "/v1/me/delete")[0])
+        self.assertEqual(401, denis.call("POST", "/v1/me/delete", {"password": "wrong one"})[0])
+        self.assertEqual(204, denis.call("POST", "/v1/me/delete", {"password": "correct horse"})[0])
         self.assertEqual(401, denis.call("GET", "/v1/me")[0])
         self.assertEqual([], ruslan.call("GET", "/v1/feed")[1]["friends"])
         db = self.app.db()

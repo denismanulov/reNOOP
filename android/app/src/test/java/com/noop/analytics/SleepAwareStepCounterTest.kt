@@ -17,16 +17,30 @@ class SleepAwareStepCounterTest {
         val samples = listOf(
             step(0, 100, 0),
             step(1, 102, 1),
-            step(2, 110, 1), // impossible 8 ticks/s: rejected by StepsCounter too
-            step(4, 117, 2),
-            step(5, 120, 0),
+            step(2, 111, 1), // impossible 9 ticks/s: rejected by StepsCounter too
+            step(4, 118, 2),
+            step(5, 121, 0),
         )
 
         assertEquals(StepsCounter.stepsInWindow(samples), SleepAwareStepCounter.stepsInWindow(samples, emptyList()))
         assertEquals(9, SleepAwareStepCounter.stepsInWindow(samples, emptyList()))
         val detail = SleepAwareStepCounter.count(samples, emptyList())
         assertEquals(3, detail.rejectedActivityClassTicks)
-        assertEquals(8, detail.rejectedImplausibleTicks)
+        assertEquals(9, detail.rejectedImplausibleTicks)
+    }
+
+    @Test fun bufferedReleaseAfterFlatRunCounts() {
+        val flat = (0L..9L).map { step(it, 500, null) }
+        val count = SleepAwareStepCounter.count(flat + listOf(step(10, 512, null), step(11, 514, null)), emptyList())
+        assertEquals(14, count.totalTicks)
+        assertEquals(0, count.rejectedImplausibleTicks)
+    }
+
+    @Test fun lastMovedTimeCarriesAcrossPages() {
+        val accumulator = SleepAwareStepCounter.Accumulator(emptyList(), hasActivityClasses = false)
+        accumulator.acceptPage((0L..9L).map { step(it, 500, null) })
+        accumulator.acceptPage(listOf(step(10, 512, null)))
+        assertEquals(12, accumulator.finish().totalTicks)
     }
 
     @Test fun awakeGapInsideSleepCountsWithNormalRules() {

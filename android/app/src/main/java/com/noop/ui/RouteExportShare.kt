@@ -43,7 +43,7 @@ object RouteExportShare {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = mime
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP workout route")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP workout route")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share route"))

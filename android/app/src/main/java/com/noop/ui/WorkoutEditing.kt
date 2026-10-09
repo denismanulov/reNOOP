@@ -509,51 +509,6 @@ object WorkoutEditing {
         )
     }
 
-    /** Common sports offered when re-labelling a detected bout (the user can fine-tune via Edit). */
-    val relabelSports: List<String> = listOf(
-        "Running", "Walking", "Cycling", "Strength Training", "Swimming", "Rowing", "Yoga", "HIIT",
-        "CrossFit", "Hiking", "Tennis",
-    )
-}
-
-// MARK: - Filter predicate (#64)
-//
-// The Workouts list filters beyond the time range: a SPORT filter (a specific displayed sport, or all),
-// a SOURCE filter (Whoop / Apple / Detected / Manual / Lifting / File, or all), and a free-text SEARCH
-// over the displayed sport name. All three are pure and compose with the time-range window the screen
-// already computes, so the whole screen reads one filtered set. Kotlin mirror of macOS WorkoutFilter.
-
-/**
- * One workout-list filter state. [sport] is a displayed-sport key ([WorkoutEditing.displaySport]), null =
- * all sports. [sourceClass] is the origin class, null = all sources. [search] is a free-text query over
- * the displayed sport name (trimmed, case-insensitive; empty = no search).
- */
-data class WorkoutFilter(
-    val sport: String? = null,
-    val sourceClass: WorkoutSource? = null,
-    val search: String = "",
-) {
-    /** True when no facet is active — the caller can skip the walk and keep the input verbatim. */
-    val isActive: Boolean
-        get() = sport != null || sourceClass != null || search.trim().isNotEmpty()
-
-    /**
-     * Does one row pass every active facet? Sport matches on the DISPLAYED name (so "detected" folds to
-     * "Activity", camelCase splits); source matches on classify; search is a case-insensitive substring
-     * of the displayed sport.
-     */
-    fun matches(row: WorkoutRow): Boolean {
-        if (sport != null && WorkoutEditing.displaySport(row.sport) != sport) return false
-        if (sourceClass != null && WorkoutEditing.classify(row.source) != sourceClass) return false
-        val q = search.trim()
-        if (q.isNotEmpty() && !WorkoutEditing.displaySport(row.sport).contains(q, ignoreCase = true)) {
-            return false
-        }
-        return true
-    }
-
-    /** Apply the filter to a windowed list, preserving order. A no-op when nothing is active. */
-    fun apply(rows: List<WorkoutRow>): List<WorkoutRow> = if (!isActive) rows else rows.filter { matches(it) }
 }
 
 // MARK: - Merge (#64)

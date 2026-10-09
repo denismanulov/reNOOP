@@ -162,6 +162,8 @@ object CoachBriefScheduler {
     private suspend fun publishToWidget(context: Context, text: String?) {
         writeBriefToWidgetPrefs(context, text)
         if (text != null) {
+            // A widget whose Glance session is still alive re-reads the brief on this, not on updateAll.
+            com.noop.widget.WidgetSnapshotStore.noteRedraw()
             runCatching { com.noop.widget.CoachBriefGlanceWidget().updateAll(context.applicationContext) }
         }
     }
@@ -191,14 +193,15 @@ object CoachBriefScheduler {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
             val body = oneLineSummary(text)
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.coach_brief_title))
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            val n = com.noop.notif.NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_coach,
+                context.getString(R.string.coach_brief_title),
+                body,
+            )
+                // The brief opens Coach, where it is (the iOS notification's tap-through, audit NT-2).
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
-                        context, 5, appLaunchIntent(context),
+                        context, 5, AppLinks.intent(context, AppLink.Coach),
                         android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
                     ),
                 )
@@ -215,13 +218,15 @@ object CoachBriefScheduler {
         runCatching {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.coach_brief_unavailable_title))
-                .setContentText(context.getString(R.string.coach_brief_unavailable_body))
+            val n = com.noop.notif.NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_coach,
+                context.getString(R.string.coach_brief_unavailable_title),
+                context.getString(R.string.coach_brief_unavailable_body),
+            )
+                // "Open Coach to try again" opens Coach.
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
-                        context, 6, appLaunchIntent(context),
+                        context, 6, AppLinks.intent(context, AppLink.Coach),
                         android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
                     ),
                 )

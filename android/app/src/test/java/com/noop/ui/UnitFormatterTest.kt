@@ -64,13 +64,6 @@ class UnitFormatterTest {
     }
 
     @Test
-    fun distanceFromKilometers() {
-        assertEquals("12.4 km", UnitFormatter.distanceFromKilometers(12.4, UnitSystem.METRIC))
-        // 12.4 km * 0.621371 = 7.704... → "7.7 mi"
-        assertEquals("7.7 mi", UnitFormatter.distanceFromKilometers(12.4, UnitSystem.IMPERIAL))
-    }
-
-    @Test
     fun speedFollowsExerciseDistanceSystem() {
         assertEquals("10.0 km/h", UnitFormatter.speedFromKilometersPerHour(10.0, UnitSystem.METRIC))
         assertEquals("6.2 mph", UnitFormatter.speedFromKilometersPerHour(10.0, UnitSystem.IMPERIAL))
@@ -170,25 +163,5 @@ class UnitFormatterTest {
         assertEquals(TemperatureUnit.CELSIUS, TemperatureUnit.fromRaw("celsius"))
         assertEquals(TemperatureUnit.FAHRENHEIT, TemperatureUnit.fromRaw("fahrenheit"))
         assertEquals(null, TemperatureUnit.fromRaw(""))
-    }
-
-    // --- Pace (#1195): the live-workout distance/pace surface. Must byte-match the Swift formatter. ---
-
-    @Test
-    fun paceFormatsAndConvertsPerUnit() {
-        // 5:00 /km (300 s/km) stays 5:00 /km in metric.
-        assertEquals("5:00 /km", UnitFormatter.paceFromSecPerKm(300.0, UnitSystem.METRIC))
-        // Same pace in imperial is per MILE: 300 / 0.621371 = 482.8 s ≈ 8:03 /mi.
-        assertEquals("8:03 /mi", UnitFormatter.paceFromSecPerKm(300.0, UnitSystem.IMPERIAL))
-        // Seconds pad to two digits.
-        assertEquals("4:05 /km", UnitFormatter.paceFromSecPerKm(245.0, UnitSystem.METRIC))
-    }
-
-    @Test
-    fun paceIsDashWhenUndefined() {
-        // Null (no distance yet) and non-positive are both "—" — never "0:00", which would read as instant.
-        assertEquals("—", UnitFormatter.paceFromSecPerKm(null, UnitSystem.METRIC))
-        assertEquals("—", UnitFormatter.paceFromSecPerKm(0.0, UnitSystem.IMPERIAL))
-        assertEquals("—", UnitFormatter.paceFromSecPerKm(-1.0, UnitSystem.METRIC))
     }
 }

@@ -89,7 +89,7 @@ enum TodayLayoutPrefs {
     /// the saved order is INSERTED at its default-order position relative to the saved sections (before the
     /// first saved section that follows it in the default order; appended when none does) — so every
     /// section always renders, and one added in a later app version surfaces where users expect it instead
-    /// of teleporting to the bottom of an existing saved order. Twin of the Kotlin `decodeOrder`.
+    /// of teleporting to the bottom of an existing saved order. Apple only: Android has no Today layout now.
     static func decodeOrder(_ raw: String) -> [TodaySection] {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return TodaySection.defaultOrder }

@@ -203,20 +203,21 @@ class Whoop5RRSqliteTest {
 
     @After fun close() { db.close() }
     private fun sql(sql: String) { db.createStatement().use { it.execute(sql) } }
-    private fun statement(sql: String, values: Map<String, Any?>) = run {
+    private fun statement(sql: String, values: Map<String, Any?>, on: Connection = db) = run {
         val names = mutableListOf<String>()
         val bound = Regex(":([A-Za-z][A-Za-z0-9]*)").replace(sql) {
             names += it.groupValues[1]; "?"
         }
-        db.prepareStatement(bound).also { stmt ->
+        on.prepareStatement(bound).also { stmt ->
             names.forEachIndexed { index, name ->
                 require(values.containsKey(name)) { "Missing SQL bind: $name" }
                 stmt.setObject(index + 1, values[name])
             }
         }
     }
-    private fun <T> query(sql: String, values: Map<String, Any?> = emptyMap(), map: (ResultSet) -> T): List<T> =
-        statement(sql, values).use { stmt -> stmt.executeQuery().use { rows ->
+    private fun <T> query(sql: String, values: Map<String, Any?> = emptyMap(), on: Connection = db,
+                          map: (ResultSet) -> T): List<T> =
+        statement(sql, values, on).use { stmt -> stmt.executeQuery().use { rows ->
             buildList { while (rows.next()) add(map(rows)) }
         } }
 
@@ -401,6 +402,122 @@ class Whoop5RRSqliteTest {
         val plan = query("EXPLAIN QUERY PLAN $ANALYSIS_FINGERPRINT_SQL") { it.getString("detail") }
         assertEquals(4, plan.count { it.contains("USING COVERING INDEX rrInterval_source_suspect") })
         assertFalse(plan.any { it.contains("SCAN rrInterval") })
+    }
+
+    // "Has this device ever banked a 5/MG-tagged beat" is asked as `+deviceId = :deviceId`. The two
+    // statements below are the plain forms it replaced, kept as the reference for the plan and the answer.
+    private val plainTaggedOwnerProbe = "WHERE deviceId = :deviceId AND srcChannel IN (5, 6, 7)"
+    private val hintedTaggedOwnerProbe = "WHERE +deviceId = :deviceId AND srcChannel IN (5, 6, 7)"
+    private val plainHasWhoop5RrSourceSql = "SELECT EXISTS(SELECT 1 FROM rrInterval $plainTaggedOwnerProbe)"
+    private val plainOwnerTaggedDayFingerprintSql =
+        DAY_STREAM_FINGERPRINT_SQL.replace(hintedTaggedOwnerProbe, plainTaggedOwnerProbe)
+
+    // Every beat of one device through the key, with no bound on ts: the walk the hint removes.
+    private val everyBeatOfTheDevice = "SEARCH rrInterval USING INDEX sqlite_autoindex_rrInterval_1 (deviceId=?)"
+    private val theTaggedRows = "SEARCH rrInterval USING INDEX rrInterval_source_suspect (srcChannel=?)"
+
+    /** Both statements, plain and hinted, planned on [on]: the probe is the one step that differs. */
+    private fun assertOnlyTheTaggedOwnerProbeMoved(on: Connection) {
+        fun plan(sql: String, binds: Map<String, Any?>): List<String> =
+            query("EXPLAIN QUERY PLAN $sql", binds, on) { it.getString("detail") }
+        fun assertMoved(label: String, before: String, after: String, binds: Map<String, Any?>) {
+            val planBefore = plan(before, binds)
+            val planAfter = plan(after, binds)
+            assertEquals("$label, plain: $planBefore", 1, planBefore.count { it == everyBeatOfTheDevice })
+            assertEquals("$label, plain: $planBefore", 0, planBefore.count { it == theTaggedRows })
+            assertEquals("$label, hinted: $planAfter", 0, planAfter.count { it == everyBeatOfTheDevice })
+            assertEquals("$label, hinted: $planAfter", 1, planAfter.count { it == theTaggedRows })
+            assertEquals(label, planBefore.map { if (it == everyBeatOfTheDevice) theTaggedRows else it }, planAfter)
+        }
+        assertMoved("probe", plainHasWhoop5RrSourceSql, HAS_WHOOP5_RR_SOURCE_SQL, mapOf("deviceId" to id))
+        assertMoved("day fingerprint", plainOwnerTaggedDayFingerprintSql, DAY_STREAM_FINGERPRINT_SQL,
+            mapOf("deviceId" to id, "from" to 0L, "to" to 1000L))
+    }
+
+    @Test fun taggedOwnerProbeSearchesTheTaggedRowsNotEveryBeatOfTheDevice() {
+        assertEquals("the reference must be the statement as it was", 1,
+            Regex(Regex.escape(hintedTaggedOwnerProbe)).findAll(DAY_STREAM_FINGERPRINT_SQL).count())
+        assertTrue(HAS_WHOOP5_RR_SOURCE_SQL.contains(hintedTaggedOwnerProbe))
+        assertOnlyTheTaggedOwnerProbeMoved(db)
+    }
+
+    /** The same plans on the schema Room exports for the current version, every table and index of it,
+     *  so the index the hint depends on is the one the app creates and not only this file's DDL. */
+    @Test fun taggedOwnerProbePlanHoldsOnTheExportedRoomSchema() {
+        val asset = "roomSchemas/${WhoopDatabase::class.java.canonicalName}/${WhoopDatabase.SCHEMA_VERSION}.json"
+        val export = org.json.JSONObject(
+            checkNotNull(javaClass.classLoader?.getResourceAsStream(asset)) { "committed Room schema missing: $asset" }
+                .use { it.readBytes().toString(Charsets.UTF_8) })
+        val entities = export.getJSONObject("database").getJSONArray("entities")
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { room ->
+            var sourceIndexCreated = false
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                val table = entity.getString("tableName")
+                fun create(sql: String) = room.createStatement().use { it.execute(sql.replace("\${TABLE_NAME}", table)) }
+                create(entity.getString("createSql"))
+                val indices = entity.optJSONArray("indices") ?: continue
+                for (j in 0 until indices.length()) {
+                    val index = indices.getJSONObject(j)
+                    create(index.getString("createSql"))
+                    if (table == "rrInterval" && index.getString("name") == "rrInterval_source_suspect") {
+                        sourceIndexCreated = true
+                    }
+                }
+            }
+            assertTrue("Room no longer exports rrInterval_source_suspect", sourceIndexCreated)
+            assertOnlyTheTaggedOwnerProbeMoved(room)
+        }
+    }
+
+    @Test fun taggedOwnerProbeAnswersAsThePlainFormDid() {
+        var compared = 0
+        val answers = HashSet<Pair<String, Boolean>>()
+        fun compare(stage: String) {
+            // A device of its own, one that only ever shares the table with a tagged strap, one whose id
+            // reads as a number (the plus drops the column's TEXT affinity; the bind is a String), and
+            // one with no rows at all.
+            for (device in listOf(id, "four", "12345", "absent-device")) {
+                val bind = mapOf("deviceId" to device)
+                val before = query(plainHasWhoop5RrSourceSql, bind) { it.getBoolean(1) }.single()
+                val after = query(HAS_WHOOP5_RR_SOURCE_SQL, bind) { it.getBoolean(1) }.single()
+                assertEquals("$stage, probe for $device", before, after)
+                answers += device to after
+                for ((from, to) in listOf(0L to 1000L, 500L to 600L, 5000L to 9000L)) {
+                    val window = mapOf("deviceId" to device, "from" to from, "to" to to)
+                    val dayBefore = query(plainOwnerTaggedDayFingerprintSql, window) { it.getString(1) }.single()
+                    val dayAfter = query(DAY_STREAM_FINGERPRINT_SQL, window) { it.getString(1) }.single()
+                    assertEquals("$stage, day fingerprint for $device [$from, $to]", dayBefore, dayAfter)
+                    assertTrue(dayAfter, dayAfter.contains("|ownerTagged${if (after) 1 else 0}|"))
+                    compared++
+                }
+            }
+        }
+        compare("empty store")
+        // No tagged row anywhere: legacy, Oura, WHOOP 4 history, realtime and standard channels only.
+        listOf(null, 1, 2, 3, 4, 8, 9, 10).forEachIndexed { i, channel ->
+            insertRr(ts = 100L + i, channel = channel)
+            insertRr(ts = 100L + i, channel = channel, device = "four")
+            insertRr(ts = 100L + i, channel = channel, device = "12345")
+        }
+        compare("no tagged row")
+        assertEquals(setOf(false), answers.map { it.second }.toSet())
+        // A tagged row under ONE device: the others must still answer no.
+        insertRr(ts = 550L, channel = 6)
+        compare("one device tagged with 6")
+        assertTrue(answers.contains(id to true))
+        assertFalse("another device's tag must not answer for this one", answers.contains("four" to true))
+        // A quarantined tagged row counts in both forms (neither filters tsSuspect), outside every window.
+        insertRr(ts = 20_000L, channel = 7, suspect = 1, device = "12345")
+        compare("a suspect tag under the numeric id")
+        assertTrue(answers.contains("12345" to true))
+        for (channel in listOf(5, 7)) {
+            insertRr(ts = 7000L + channel, channel = channel, device = "four")
+            compare("the other device tagged with $channel")
+        }
+        assertTrue(answers.contains("four" to true))
+        assertFalse(answers.contains("absent-device" to true))
+        assertEquals(6 * 4 * 3, compared)
     }
 
     @Test fun legacyWithheldStatusUsesExactScoringWindowAndSourcePolicy() = runBlocking {

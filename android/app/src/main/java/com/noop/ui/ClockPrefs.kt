@@ -14,19 +14,10 @@ import com.noop.analytics.ClockFormatPreference
  * means the device switch rather than the region default.
  */
 object ClockPrefs {
-    /** The stored preference, defaulting to SYSTEM so an upgrade changes nobody's displayed times. */
-    fun preference(context: Context): ClockFormatPreference =
-        ClockFormatPreference.from(
-            NoopPrefs.of(context).getString(NoopPrefs.KEY_CLOCK_FORMAT, null),
-        )
-
-    fun setPreference(context: Context, preference: ClockFormatPreference) {
-        NoopPrefs.of(context).edit()
-            .putString(NoopPrefs.KEY_CLOCK_FORMAT, preference.stored())
-            .apply()
-    }
-
-    /** Resolved: the reader's explicit choice, or the device's own 12/24h switch when they said SYSTEM. */
+    /**
+     * The 12/24-hour clock is the system's (iOS ST-4, Denis 6f27c1c6): the in-app Clock choice (#1821) went
+     * with the old Settings screen, so a stored choice is no longer read and the device's own switch applies.
+     */
     fun uses24Hour(context: Context): Boolean =
-        ClockFormat.uses24Hour(preference(context), DateFormat.is24HourFormat(context))
+        ClockFormat.uses24Hour(ClockFormatPreference.SYSTEM, DateFormat.is24HourFormat(context))
 }

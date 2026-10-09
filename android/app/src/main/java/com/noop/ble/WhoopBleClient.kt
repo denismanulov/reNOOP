@@ -35,6 +35,7 @@ import com.noop.data.StreamPersistence
 import com.noop.protocol.CommandNames
 import com.noop.protocol.Whoop5Ecg
 import com.noop.protocol.Whoop5EcgProbe
+import com.noop.protocol.Whoop4RawImu
 import com.noop.protocol.Whoop5RawImu
 import com.noop.testcentre.ImuSessionFileStore
 import com.noop.data.WhoopRepository
@@ -47,6 +48,7 @@ import com.noop.protocol.wireName
 import com.noop.protocol.CommandNumber
 import com.noop.protocol.FeatureFlagWriteGate
 import com.noop.protocol.R22DisableReport
+import com.noop.protocol.RawStreamSwitch
 import com.noop.protocol.DeviceFamily
 import com.noop.protocol.DeviceConfigReadProbe
 import com.noop.protocol.DeviceConfigReadProbeReport
@@ -305,6 +307,11 @@ data class LiveState(
      *  a connected strap that keeps handing over nothing has this true regardless of live-HR status.
      *  Cleared on disconnect; re-derived from the next offload. Twin of macOS LiveState.sustainedEmptyOffload. */
     val sustainedEmptyOffload: Boolean = false,
+    /** Wall time (ms) another app was last seen pulling this strap's history ([ForeignOffloadDetector]).
+     *  Two apps on one strap split its history, whichever acks a chunk first keeps it, so the shell warns
+     *  once. null until it happens in this process; it is not cleared on disconnect. Twin of Swift
+     *  `LiveState.otherAppSyncingAt`. */
+    val otherAppSyncingAtMs: Long? = null,
 ) {
     /** Set the fresh-packet [rr] AND append the valid intervals onto the bounded [rrRecent] rolling
      *  buffer (oldest fall off first). Non-positive sentinels are dropped from the rolling buffer.
@@ -532,6 +539,12 @@ class WhoopBleClient(
     private val gattOpsFactory: (BluetoothGatt) -> GattOps = ::RealGattOps,
     /** Fire-and-forget notification after a true HISTORY_COMPLETE only. The sink must only enqueue. */
     private val successfulOffloadSink: () -> Unit = {},
+    /**
+     * True while the wearer has this app on screen. Step auto-calibration takes no measurement then (see
+     * [StepAutoCalibrator.offloadSettled]). The default says "on screen", so a client built without the
+     * signal never takes one; [NoopApplication] wires the real one.
+     */
+    private val appOnScreen: () -> Boolean = { true },
 ) {
 
     companion object {
@@ -1030,11 +1043,26 @@ class WhoopBleClient(
         /** 5/MG zero-frame retry: pause before re-requesting history when a session timed out having
          *  produced nothing (the first request after connect can go entirely unanswered). */
         private const val WHOOP5_HISTORY_RETRY_DELAY_MS = 700L
-        /** Debounce between a committed backfill chunk and the on-device scoring pass it schedules. */
+        /** Debounce between a committed backfill chunk and the on-device scoring pass it schedules.
+         *  [PostOffloadScoringHold] then keeps the pass back while the offload is still running. */
         private const val POST_BACKFILL_ANALYZE_DELAY_MS = 1_500L
         /** #174: window after the last offload frame/HISTORY_COMPLETE during which a type-0x2F frame is
          *  treated as trailing-historical, not live. Mirrors macOS deepPacketLiveCooldownSeconds (10s). */
         private const val DEEP_PACKET_LIVE_COOLDOWN_MS = 10_000L
+        /** How long after one "another client is pulling history" verdict the next only refreshes
+         *  [LiveState.otherAppSyncingAtMs], without a second warning or log line. The Swift twin uses 600 s. */
+        internal const val FOREIGN_OFFLOAD_REPEAT_MS = 600_000L
+
+        /**
+         * The strap-log line for one [ForeignOffloadDetector] verdict. It leads with the conclusion and
+         * then states what was counted, so a reader can weigh it: the records are seen on our own link,
+         * which names no sender. Pure, so the wording is pinned by a test.
+         */
+        internal fun foreignOffloadLine(): String =
+            "Another BLE client is pulling this strap's history: ${ForeignOffloadDetector.FRAMES_TO_FLAG} history " +
+                "records arrived outside our own offload within ${ForeignOffloadDetector.WINDOW_MS / 1000} s, none " +
+                "within ${ForeignOffloadDetector.COOLDOWN_MS / 1000} s of our own offload activity. Whichever client " +
+                "acks a chunk first keeps it; the other never stores those hours. Keep one app connected to the strap."
 
         /** ATT MTU to request on connect. The default 23 caps every notification at 20 payload bytes,
          *  so the historical offload fragments across many notifications (slow, more reassembly). 247
@@ -1642,7 +1670,7 @@ class WhoopBleClient(
                 if (!isWhoop5 && pay.size >= 9) {
                     val mv = (pay[7].toInt() and 0xFF) or ((pay[8].toInt() and 0xFF) shl 8)
                     sb.append("\nVoltage: ").append("%.2f V".format(java.util.Locale.US, mv / 1000.0))
-                        .append("  (mV=").append(mv).append(" @07) — the field NOOP already reads\n")
+                        .append("  (mV=").append(mv).append(" @07) — the field reNOOP already reads\n")
                 }
                 // Per-byte diff vs the previous capture — the field-mapping signal.
                 sb.append('\n')
@@ -2007,7 +2035,7 @@ class WhoopBleClient(
         fun futureDatedStrapBanner(strapNewestTs: Long?, wallNowUnix: Long): String? =
             if (!isFutureDatedNewest(strapNewestTs, wallNowUnix)) null
             else "Synced, but your strap's clock is set in the future - its banked history is dated ahead of " +
-                "today, so NOOP can't trust those timestamps and didn't import them (importing them would " +
+                "today, so reNOOP can't trust those timestamps and didn't import them (importing them would " +
                 "misfile your data days or years ahead). Fully charge the strap to 100% and power-cycle it so " +
                 "its clock re-syncs, then reconnect."
 
@@ -3162,6 +3190,16 @@ class WhoopBleClient(
         ioScope.launch {
             try {
                 delay(POST_BACKFILL_ANALYZE_DELAY_MS) // let trailing chunks of the same session land
+                // Then wait for the offload itself to be over (at most ten minutes), so one pass scores
+                // the whole burst instead of a pass starting beside its first chunk and another queuing
+                // behind it. Only this re-score waits; see [PostOffloadScoringHold].
+                PostOffloadScoringHold.logLine(
+                    PostOffloadScoringHold.await(offloadRunning = { _state.value.backfilling }),
+                )?.let { log(it) }
+                // A chunk that asked for a pass while this one was waiting has been answered: its rows
+                // were stored before it asked, so the fingerprint and the pass below both read them. A
+                // chunk that lands from here on sets the flag again and gets the retry in `finally`.
+                analyzeAfterBackfillPending.set(false)
                 val profileStore = ProfileStore.from(context)
                 // #1493: was built longhand here and silently omitted waistCm, so this pass scored VO₂max
                 // with the Uth fallback while the 15-minute pass used the waist-based Nes estimate — the
@@ -3233,6 +3271,10 @@ class WhoopBleClient(
                         // re-folds (see StepsMotionCache).
                         stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(context) },
                         stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(context, it) },
+                        // WHOOP 4.0 step auto-calibration: the same per-day divisors the UI's passes use, so
+                        // this pass and theirs cannot re-score a day back and forth. The manual divisor for
+                        // every day while the opt-in is off (the default).
+                        stepDivisors = NoopPrefs.stepDivisors(context),
                         // Manual "Recalibrate baseline" anchor (noop.hrvBaselineEpoch, whole seconds in a
                         // Long). The analytics layer is Context-free, so read it here and thread it down so
                         // the post-backfill scoring pass honours the recalibration too — not just the UI's
@@ -3494,6 +3536,61 @@ class WhoopBleClient(
      *  historical frame, not the live R22 stream, so it must not be counted as a "live deep packet".
      *  0 = no offload reference yet this session. Mirrors macOS BLEManager.lastOffloadFrameAt. */
     private var lastOffloadFrameAtMs = 0L
+    /** Another app pulling this strap's history over the shared link (see [ForeignOffloadDetector]). It
+     *  only watches inbound frames: nothing it concludes writes to the strap or changes a timer. Never
+     *  reset, like the Swift twin: its cooldown is measured from our own last offload activity. */
+    private val foreignOffload = ForeignOffloadDetector()
+
+    /**
+     * Experimental WHOOP 4.0 step auto-calibration (default off, see [StepCalibrationCoordinator]). The
+     * one command it sends is the raw-stream switch, as a confirmed write so its request is never one of
+     * several queued in one burst, with the payload [RawStreamSwitch] states. Everything it is told
+     * arrives on the main looper ([onMainLooper]); its timers run there too and cannot throw into it.
+     * Swift twins: `BLEManager.rawStreamProbe` and `BLEManager.stepCalibrator`.
+     */
+    private val stepCalibration = StepCalibrationCoordinator(
+        prefs = NoopPrefs.stepCalibrationPrefs(context),
+        sendSwitch = { on -> send(RawStreamSwitch.command, RawStreamSwitch.payload(on), withResponse = true) },
+        steps = { from, to ->
+            if (from > to) emptyList()
+            else runCatching {
+                repository.stepSamples(deviceId, from, to, limit = (to - from + 2).toInt())
+            }.getOrDefault(emptyList())
+        },
+        log = { line -> log(line) },
+        schedule = { delayMs, work -> handler.postDelayed({ stepCalibrationGuarded(work) }, delayMs) },
+        launch = { block ->
+            ioScope.launch(Dispatchers.Main) {
+                try {
+                    block()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    log("Step calibration: check failed (${t.javaClass.simpleName})")
+                }
+            }
+        },
+        isWhoop4 = { familyEstablished && connectedFamily == DeviceFamily.WHOOP4 },
+        isConnected = { _state.value.connected },
+        offloadInFlight = { backfilling },
+        batteryPct = { _state.value.batteryPct },
+        appOnScreen = appOnScreen,
+    )
+
+    /** A step-calibration timer must not be able to take the BLE process down with it. */
+    private fun stepCalibrationGuarded(work: () -> Unit) {
+        try {
+            work()
+        } catch (t: Throwable) {
+            log("Step calibration: timer failed (${t.javaClass.simpleName})")
+        }
+    }
+
+    /** Runs [work] on the main looper: now when already there, else posted. GATT callbacks arrive on
+     *  another thread below Android 9 (see `connectGatt`), and [stepCalibration] is not thread-safe. */
+    private fun onMainLooper(work: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) work() else handler.post(work)
+    }
     /** One-shot per session: SEND_HISTORICAL_DATA already fired (gate + fail-open can both call). */
     private var historicalKickSent = false
     /** 5/MG zero-frame retries used this CONNECTION (max 2 — then the 900s periodic timer owns it). */
@@ -3800,7 +3897,7 @@ class WhoopBleClient(
             log("No Bluetooth LE on this device")
             _state.update { it.copy(
                 scanning = false,
-                statusNote = "This device has no Bluetooth LE. NOOP has to run on a real phone with " +
+                statusNote = "This device has no Bluetooth LE. reNOOP has to run on a real phone with " +
                     "Bluetooth, near your strap. It can't connect from an emulator or virtual device.") }
             return
         }
@@ -3935,8 +4032,8 @@ class WhoopBleClient(
             log("Scan blocked (permission): ${se.message}")
             _state.update { it.copy(
                 scanning = false,
-                statusNote = "NOOP needs the Nearby devices / Bluetooth permission. Allow it in " +
-                    "Settings → Apps → NOOP → Permissions, then tap Connect.") }
+                statusNote = "reNOOP needs the Nearby devices / Bluetooth permission. Allow it in " +
+                    "Settings → Apps → reNOOP → Permissions, then tap Connect.") }
             return
         } catch (t: Throwable) {
             scanning = false
@@ -4839,7 +4936,16 @@ class WhoopBleClient(
                 if (decision.verdict == NapVerdict.NAP && decision.candidate != null &&
                     decision.candidate.end > highWater
                 ) {
-                    val queued = NapStore.enqueue(context, decision.candidate, nowSec)
+                    // A stretch that is already sleep on record is not a nap to review. This hook runs
+                    // on every offload, at night too, and a night is made of quiet stretches of nap
+                    // length. Sessions are read by START time, so reach back a day. The night's session
+                    // is often not written yet at this point; the review screen applies the same rule
+                    // when it is read, which is where those are caught.
+                    val sleep = runCatching {
+                        repository.sleepSessionsMerged(deviceId, decision.candidate.start - 86_400L, decision.candidate.end)
+                    }.getOrDefault(emptyList()).map { it.startTs to it.endTs }
+                    val queued = NapStore.outsideSleep(listOf(decision.candidate), sleep).isNotEmpty() &&
+                        NapStore.enqueue(context, decision.candidate, nowSec)
                     // Advance the mark past this nap's window so the same window isn't re-judged on the next
                     // overlapping offload — whether or not it newly queued (a dup the user already saw or
                     // dismissed is still "past"). NapStore's own dedup is the belt to this braces.
@@ -7497,7 +7603,7 @@ class WhoopBleClient(
                 log("WHOOP 5/MG detected — will send CLIENT_HELLO after subscribing (experimental).")
                 _state.update { it.copy(
                     whoop5Detected = true,
-                    statusNote = "WHOOP 5/MG connected - experimental. After bonding, NOOP brings up live " +
+                    statusNote = "WHOOP 5/MG connected - experimental. After bonding, reNOOP brings up live " +
                         "heart rate from the strap's realtime stream. Deeper metrics (recovery, strain, " +
                         "sleep) for 5/MG are still being figured out. WHOOP 4.0 is fully supported today.",
                 ) }
@@ -8058,6 +8164,12 @@ class WhoopBleClient(
                     // handleFrame's replayedOffload gate, so evaluating it twice bounds-checked + indexed
                     // every offloaded frame for nothing. (The Swift 5/MG inbound loop already hoists this.)
                     val offloadFrame = backfilling && isOffloadFrame(frame, connectedFamily)
+                    // A history record while we run no offload of our own is one piece of evidence that
+                    // a second app is pulling this strap's history. One byte compare per frame, and it
+                    // only counts: the frame goes on through everything below exactly as before.
+                    if (!backfilling && ForeignOffloadDetector.isHistoryRecord(frame, connectedFamily)) {
+                        noteHistoryOutsideOwnOffload()
+                    }
                     stopUnexpectedRealtimeImu(frame, offloadFrame)
                     noteWhoop5R22Telemetry(frame, offloadFrame)  // #174
                     // #47: decode this frame ONCE and thread it to both consumers (the router below and the
@@ -8067,6 +8179,18 @@ class WhoopBleClient(
                     // #1635: while the unbonded probe is listening, this frame is the measurement. Gated
                     // inside the call so a normal link pays one boolean read per frame.
                     noteUnbondedProbeFrame(parsed)
+                    // A step-calibration burst reads the accelerometer block of the WHOOP 4.0 raw IMU
+                    // packets. With no burst running the guard is one stored Boolean, so this costs nothing
+                    // per frame. The decoder checks the frame's integrity itself.
+                    if (stepCalibration.wantsFrames && connectedFamily == DeviceFamily.WHOOP4) {
+                        Whoop4RawImu.accel(frame)?.let { imu -> onMainLooper { stepCalibration.rawImu(imu) } }
+                    }
+                    // The raw-stream switch's acknowledgement. Unlike the probe replies below this one
+                    // drives state (it stops the switch's retries and clears its "stream is on" marker), so
+                    // it is taken only from an intact COMMAND_RESPONSE, never from a bare opcode byte.
+                    if (connectedFamily == DeviceFamily.WHOOP4 && RawStreamSwitch.isAcknowledgement(frame, parsed)) {
+                        onMainLooper { stepCalibration.switchAcknowledged() }
+                    }
                     // A frame replayed as part of the historical offload (type 47/48/… during a backfill)
                     recordGroundTruthImuFrame(frame)
                     // must not drive LIVE-only state (the charging pill). (PR #568 reimpl)
@@ -8435,6 +8559,7 @@ class WhoopBleClient(
                         // it; feeding it only delays each chunk's insert->trim-ack and stalls the strap).
                         if (isOffloadFrame(frame, connectedFamily)) {
                             offloadFramesThisSession++
+                            foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
                             armBackfillTimeout()
                             routeBackfillFrame(frame)
                         }
@@ -9229,6 +9354,10 @@ class WhoopBleClient(
         val realtimeWantNow = screenWantsRealtime || continuousCaptureWantsNow()
         wantsRealtime = realtimeWantNow
         if (realtimeWantNow) { realtimeArmed = true; realtimeArmedThisLink = true; send(CommandNumber.TOGGLE_REALTIME_HR, byteArrayOf(1)) }
+        // Step auto-calibration: if an earlier connection or launch asked for the raw stream and its off
+        // switch was never acknowledged, write it again, alone, 1.5 s from now and until it is answered.
+        // Writes nothing otherwise. Swift does this from `maybeSignalConnectSettled`.
+        onMainLooper { stepCalibration.connectSettled() }
     }
 
     // ====================================================================================
@@ -9774,7 +9903,7 @@ class WhoopBleClient(
             // The R22 SET_CONFIG writes go over the encrypted command channel, so the live-HR-only
             // shortcut (bonded true, encryptedBond false on a 5/MG still owned by the official app,
             // #69/#266) can't carry them. Require the genuine bond, or the writes silently fail (#269).
-            log("Deep-data: needs the full encrypted bond, not the live-HR-only link. Close the official WHOOP app, put the strap in pairing mode, and bond it to NOOP first — ignored."); return
+            log("Deep-data: needs the full encrypted bond, not the live-HR-only link. Close the official WHOOP app, put the strap in pairing mode, and bond it to reNOOP first — ignored."); return
         }
         if (!s.worn) {
             log("Deep-data: the R22 stream is on-wrist only — put the strap ON, then try again."); return
@@ -9830,7 +9959,7 @@ class WhoopBleClient(
         // r22DisableRun != null instead, which is the state that is actually about this operation. (#174)
         val s = _state.value
         if (!s.connected || !s.encryptedBond) {
-            log("Deep-data disable: needs the full encrypted bond, not the live-HR-only link. Close the official WHOOP app, put the strap in pairing mode, and bond it to NOOP first — ignored."); return
+            log("Deep-data disable: needs the full encrypted bond, not the live-HR-only link. Close the official WHOOP app, put the strap in pairing mode, and bond it to reNOOP first — ignored."); return
         }
         if (r22DisableRun != null) {
             log("Deep-data disable: a disable run is already walking its plan — ignored."); return
@@ -10821,6 +10950,9 @@ class WhoopBleClient(
         // not "no banked history / charge to 100%". A fresh offload (count 0) keeps the honest guidance.
         backfiller.begin(connectedFamily, continuedAfterRows = consecutiveAutoContinues > 0)   // family drives the +4 puffin offset for 5/MG (#78)
         backfilling = true
+        // A step-calibration burst in flight ends here: its raw stream would share the air with this
+        // offload. A no-op unless one is running, which needs the opt-in.
+        onMainLooper { stepCalibration.offloadStarted() }
         lastBackfillAtMs = System.currentTimeMillis()   // the BackfillPolicy floor is measured from the last KICK
         ackedChunksThisSession = 0
         decodedChunksThisSession = 0
@@ -10872,6 +11004,28 @@ class WhoopBleClient(
         if (historicalKickSent) return
         historicalKickSent = true
         send(CommandNumber.SEND_HISTORICAL_DATA, byteArrayOf(0), withResponse = true)
+        foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
+    }
+
+    /**
+     * A history record reached us while we run no offload of our own. One record proves nothing (it may
+     * be a trailing flush of our own session); [ForeignOffloadDetector] answers true only for
+     * [ForeignOffloadDetector.FRAMES_TO_FLAG] of them inside its window and outside its cooldown, which
+     * is what this treats as a second app pulling the strap's history. It then stamps
+     * [LiveState.otherAppSyncingAtMs], raises the once-per-process warning and writes one line; a repeat
+     * within [FOREIGN_OFFLOAD_REPEAT_MS] only moves the stamp. Rare-event evidence, so the line is always
+     * on. Nothing here writes to the strap. Twin of Swift `BLEManager.noteHistoryOutsideOwnOffload`.
+     */
+    private fun noteHistoryOutsideOwnOffload() {
+        val now = System.currentTimeMillis()
+        if (!foreignOffload.noteHistoryOutsideOwnOffload(now)) return
+        val last = _state.value.otherAppSyncingAtMs
+        _state.update { it.copy(otherAppSyncingAtMs = now) }
+        if (last != null && now - last < FOREIGN_OFFLOAD_REPEAT_MS) return
+        OtherStrapAppWarning.shared.reportForeignOffload(
+            muted = NoopPrefs.of(context).getBoolean(NoopPrefs.KEY_OTHER_APP_WARNING_MUTED, false),
+        )
+        log(foreignOffloadLine())
     }
 
     /**
@@ -11018,6 +11172,9 @@ class WhoopBleClient(
             whoop5HistoryAttempts++
             backfiller.timeoutFired()
             backfilling = false
+            // This branch ends a session without [exitBackfilling], which is where the other endings
+            // tell the detector, so tell it here: the pause before the retry is still our own offload.
+            foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
             _state.update { it.copy(backfilling = false, syncChunksThisSession = 0) }
             handler.removeCallbacks(backfillTimeoutRunnable)
             backfillDrain.clear()
@@ -11091,6 +11248,7 @@ class WhoopBleClient(
         // any type-0x2F records the strap flushes in the seconds after the session aren't miscounted as
         // the live R22 stream — they're the offload's tail.
         lastOffloadFrameAtMs = System.currentTimeMillis()
+        foreignOffload.noteOwnOffloadActivity(System.currentTimeMillis())
         // Record an honest sync outcome so a cloud-free user can tell sync is working (or stuck):
         // HISTORY_COMPLETE stamps lastSyncAt + clears any error; an idle-watchdog timeout surfaces a
         // non-silent error. A plain disconnect mid-sync leaves both as-is (not a failure — the next
@@ -11303,6 +11461,10 @@ class WhoopBleClient(
             // by default); never auto-writes a sleep session.
             maybeDetectNaps()
         }
+        // Step auto-calibration reads the history this offload just banked. Offloads often end in quick
+        // succession, so it waits a few seconds and runs only if none is in flight by then. It acts on a
+        // true HISTORY_COMPLETE from a WHOOP 4.0 only (the test is inside, where it can be tested).
+        onMainLooper { stepCalibration.offloadEnded(reason) }
         // Success-side summary (#150 forensics): we logged failures (decoded-to-0) but never successes,
         // so a strap log couldn't tell a banking strap from a broken one. Emit the per-session persistence
         // tally whenever anything actually landed — the win-rate signal a log previously lacked. Mirrors
@@ -11315,6 +11477,9 @@ class WhoopBleClient(
             // #1008/#1118: the pre-storage R-R census for this offload, next to the persisted tally so one
             // line pair says what the decoder OFFERED and what the store KEPT. Twin of the Swift emit.
             backfiller.sessionRrEmissionLine()?.let { rrLine -> log(rrLine) }
+            // How this session's time split between the phone and the wait for the strap's next chunk.
+            // Instrumentation only; see [Backfiller.sessionChunkTiming]. Twin of the Swift emit.
+            backfiller.sessionChunkTiming.logLine?.let { timing -> log(timing) }
             // #2019: and the v26 optical census, in the same place, so one block says what the offload
             // banked AND whether those optical windows can be reconstructed at all.
             com.noop.protocol.ppgWaveformCensusLine(
@@ -12187,6 +12352,9 @@ class WhoopBleClient(
         // from one session wedging the live stream after a reconnect (so the keep-alive's link-bounce
         // actually recovers a frozen stream).
         reassembler.reset()
+        // Step auto-calibration: nothing can be written now, and a burst in flight is over. The "stream
+        // may be on" marker is kept, so the next connection switches the stream off.
+        onMainLooper { stepCalibration.disconnected() }
     }
 
     /**

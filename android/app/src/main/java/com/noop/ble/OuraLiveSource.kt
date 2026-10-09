@@ -1754,7 +1754,7 @@ class OuraLiveSource(
         }
         pendingInstallKey = key
         _adoptPhase.value = AdoptPhase.InstallingKey
-        log("Oura: installing NOOP's key on the reset ring")
+        log("Oura: installing reNOOP's key on the reset ring")
         write(cmd)
     }
 
@@ -2632,8 +2632,8 @@ class OuraLiveSource(
          * not succeed on every ring or firmware yet. No "installing key" wording (no install ran here).
          */
         private const val KEY_INSTALL_MESSAGE =
-            "NOOP couldn't pair with this Oura ring. Live data isn't available. The ring is not damaged: " +
-                "re-pair it in the Oura app to set it up again. NOOP adopt is Beta and may not work on " +
+            "reNOOP couldn't pair with this Oura ring. Live data isn't available. The ring is not damaged: " +
+                "re-pair it in the Oura app to set it up again. reNOOP adopt is Beta and may not work on " +
                 "every ring or firmware yet. You can also export from the Oura app and use file import."
 
         /** Honest fallback copy: a key IS installed but it does not match this ring. Same recovery note. */

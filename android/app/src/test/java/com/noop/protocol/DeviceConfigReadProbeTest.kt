@@ -557,7 +557,7 @@ class DeviceConfigReadProbeTest {
             "   1. enable_r22_packets              = '2' (0x32)\n" +
             "   2. whoop_live_hr_in_adv_ind_pkt    — no value (result=UNSUPPORTED(3))\n" +
             "\n" +
-            "Known feature-flag values (names NOOP already writes; values never read before) (1):\n" +
+            "Known feature-flag values (names reNOOP already writes; values never read before) (1):\n" +
             "   1. hr_ch_switching                 = '2' (0x32)\n" +
             "\n" +
             "Candidate oxygen keys — GUESSES, never observed on a wire or in any table (1):\n" +

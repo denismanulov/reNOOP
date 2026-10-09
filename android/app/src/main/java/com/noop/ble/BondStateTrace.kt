@@ -183,7 +183,7 @@ internal fun bondStatePollLine(bondState: Int, sawTransitionLine: Boolean): Stri
     val verdict = when {
         bondState == android.bluetooth.BluetoothDevice.BOND_BONDING && !sawTransitionLine ->
             " — pairing IS underway and no transition line was logged, so the bond-state receiver missed it" +
-                " (a NOOP bug, not the strap)"
+                " (a reNOOP bug, not the strap)"
         bondState == android.bluetooth.BluetoothDevice.BOND_BONDING ->
             " — pairing underway, as the transition line already said"
         bondState == android.bluetooth.BluetoothDevice.BOND_BONDED -> " — paired"

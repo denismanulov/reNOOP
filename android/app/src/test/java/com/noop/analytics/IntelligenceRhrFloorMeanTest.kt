@@ -23,7 +23,7 @@ class IntelligenceRhrFloorMeanTest {
         val line = IntelligenceEngine.rhrFloorMeanLogLine("2026-06-12", 48, bpms)
         assertEquals(
             "rhr day=2026-06-12 floor=48 nightMean=55 inBedSamples=7 " +
-                "(floor = WHOOP-style lowest-sustained = NOOP RHR; mean = sleeping-HR-app number)",
+                "(floor = WHOOP-style lowest-sustained = reNOOP RHR; mean = sleeping-HR-app number)",
             line,
         )
     }
@@ -42,7 +42,7 @@ class IntelligenceRhrFloorMeanTest {
         val line = IntelligenceEngine.rhrFloorMeanLogLine("2026-06-12", 47, emptyList())
         assertEquals(
             "rhr day=2026-06-12 floor=47 nightMean=nil inBedSamples=0 " +
-                "(floor = WHOOP-style lowest-sustained = NOOP RHR; mean = sleeping-HR-app number)",
+                "(floor = WHOOP-style lowest-sustained = reNOOP RHR; mean = sleeping-HR-app number)",
             line,
         )
     }

@@ -23,7 +23,6 @@ object HapticPrefs {
     // picker (a second gate would silently kill a configured action).
     const val BREATHING = "haptics.breathing"
     const val INTERVALS = "haptics.intervals"
-    const val LIVE_SESSION = "haptics.liveSession"
     const val WORKOUT = "haptics.workout"
 
     /** Whether an in-session cue may fire. DEFAULT-ON: an unset key reads true, so no migration is needed —

@@ -60,7 +60,7 @@ object RecapShare {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP weekly recap")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP weekly recap")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share recap"))

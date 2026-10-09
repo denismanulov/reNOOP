@@ -1,13 +1,11 @@
 package com.noop.alarm
 
 import android.app.AlarmManager
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.noop.R
 import com.noop.ui.appLaunchIntent
@@ -98,10 +96,11 @@ object WindDownScheduler {
                 context, 0, appLaunchIntent(context),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle("Time to wind down")
-                .setContentText("A calm hour now helps you hit your wake time well-rested.")
+            val n = com.noop.notif.NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_bedtime,
+                context.getString(R.string.wind_down_notif_title),
+                context.getString(R.string.wind_down_notif_body),
+            )
                 .setContentIntent(open)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -124,17 +123,11 @@ object WindDownScheduler {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Wind-down nudge", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "An optional evening reminder to start winding down before bed."
-                    setShowBadge(false)
-                },
-            )
-        }
+        com.noop.notif.NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_winddown_name, R.string.notif_channel_winddown_desc,
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ) { setShowBadge(false) }
     }
 
     /**

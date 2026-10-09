@@ -458,7 +458,7 @@ enum BodyVitalSigns {
     ///
     /// Returns false on an empty map, which is the "no night yet" case (a fresh install, or a wearer
     /// who has not slept in the strap). That blank is not an over-count and must not claim to be one.
-    /// Twin of the Kotlin `hrvBlankedByOverCount`.
+    /// Apple only: the Kotlin twin went with the Android vitals tile that showed it (Material 3 port).
     static func hrvBlankedByOverCount(hrvOverCountByDay: [String: Double],
                                       todayKey: String) -> Bool {
         guard let newest = hrvOverCountByDay.keys.max() else { return false }

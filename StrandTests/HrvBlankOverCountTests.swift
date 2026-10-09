@@ -7,7 +7,7 @@ import XCTest
 /// the very thing that makes `SleepStager.sessionAvgHRV` return nil, so on the night the caveat was
 /// written for there is no row left to attach it to. The reported log carries that exact pair
 /// (`rrIntegrity=crossSecondOverCount` with `avgHrv=nil`), which is the case pinned first below.
-/// Twin of the Kotlin `HrvBlankOverCountTest`, case for case.
+/// Apple only: the Kotlin twin, case for case, went with the Android tile it tested (Material 3 port).
 final class HrvBlankOverCountTests: XCTestCase {
 
     private let today = "2026-09-19"

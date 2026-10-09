@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sample heart-rate trace of a widget-picker preview (layout/widget_preview_*): a drawn line, not data. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="60dp"
+    android:viewportWidth="200"
+    android:viewportHeight="60">
+    <path
+        android:pathData="M2,46 L14,43 L26,47 L38,42 L50,45 L62,41 L74,44 L86,39 L98,22 L108,10 L118,8 L128,16 L138,34 L148,42 L160,40 L172,45 L184,43 L198,46"
+        android:strokeColor="@color/widget_heart"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.2" />
+</vector>

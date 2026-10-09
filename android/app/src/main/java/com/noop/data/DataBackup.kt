@@ -260,7 +260,7 @@ object DataBackup {
         // connection (WAL allows concurrent readers). Twin of the Apple writeVerifiedBackupZip.
         sqliteQuickCheckFailure(dbFile)?.let { complaint ->
             throw IOException(
-                "Couldn't export: the NOOP database failed its integrity check, so a backup of it " +
+                "Couldn't export: the reNOOP database failed its integrity check, so a backup of it " +
                     "would not restore. Export the WHOOP-format CSV instead to save what's still " +
                     "readable. (SQLite: ${readableComplaint(complaint)})"
             )
@@ -379,7 +379,7 @@ object DataBackup {
         try {
             val read = resolver.openInputStream(uri)?.use { readFully(it, header) }
                 ?: return ImportResult.Failed("Could not open the chosen file.")
-            if (read < 4) return ImportResult.Failed("That file is not a NOOP backup.")
+            if (read < 4) return ImportResult.Failed("That file is not a reNOOP backup.")
         } catch (e: IOException) {
             return ImportResult.Failed("Could not read the chosen file: ${e.message}")
         }
@@ -415,7 +415,7 @@ object DataBackup {
                     )
                 }
                 StageResult.NOT_A_BACKUP -> return ImportResult.Failed(
-                    "That file is not a NOOP backup - it doesn't look like a .noopbak archive or a SQLite database."
+                    "That file is not a reNOOP backup - it doesn't look like a .noopbak archive or a SQLite database."
                 )
             }
         } catch (e: IOException) {
@@ -428,7 +428,7 @@ object DataBackup {
         if (!isValidSqliteHeader(tempSqlite)) {
             tempSqlite.delete()
             tempSettings.delete()
-            return ImportResult.Failed("The backup archive doesn't contain a valid NOOP database.")
+            return ImportResult.Failed("The backup archive doesn't contain a valid reNOOP database.")
         }
 
         // 3b. Origin check (parity with the Apple side's GRDB-origin rejection). The SQLite magic
@@ -443,8 +443,8 @@ object DataBackup {
                 return rejectForeign(
                     tempSqlite,
                     tempSettings,
-                    "This isn't a NOOP backup from this app. It looks like a backup from the Mac or " +
-                        "iOS NOOP app (it carries that platform's migration bookkeeping). Restoring it here " +
+                    "This isn't a reNOOP backup from this app. It looks like a backup from the Mac or " +
+                        "iOS reNOOP app (it carries that platform's migration bookkeeping). Restoring it here " +
                         "would strand your store. To move your history across platforms, export the " +
                         "WHOOP-format CSV on the other device (Settings → Export data) and import that here.",
                 )
@@ -453,8 +453,8 @@ object DataBackup {
                     return rejectForeign(
                         tempSqlite,
                         tempSettings,
-                        "This isn't a NOOP backup from this app. It's missing the database bookkeeping a " +
-                            "NOOP backup carries (it looks like another app's database). Restoring it would " +
+                        "This isn't a reNOOP backup from this app. It's missing the database bookkeeping a " +
+                            "reNOOP backup carries (it looks like another app's database). Restoring it would " +
                             "strand your store.",
                     )
                 }
@@ -496,6 +496,13 @@ object DataBackup {
             tempSettings.delete()
             return ImportResult.Failed("Could not back up the current data: ${e.message}")
         }
+
+        // From here the file under this process's database is going away. Latch that BEFORE the first
+        // byte moves, so the history offload stops acking chunks whose rows it can no longer place in the
+        // store that will be read after the restart (see [LiveStoreReplacement]). The failure branches
+        // below replace the live file a second time (the rollback copy, or removing the damaged file),
+        // so the latch stays set for them.
+        if (LiveStoreReplacement.isLiveStore(dbFile)) LiveStoreReplacement.markReplaced()
 
         // 6. Overwrite the db file with the extracted backup, then drop the stale sidecars.
         try {
@@ -896,6 +903,44 @@ object DataBackup {
         } finally {
             runCatching { db.close() }
         }
+    }
+}
+
+/**
+ * A restore swaps the database file under a running process. [DataBackup.importFrom] closes the Room
+ * singleton first, but everything built before the restore (the repository `NoopApplication` made, and
+ * through it the BLE client and its `Backfiller`) keeps the instance it was handed, so until the process
+ * restarts nothing it writes can be trusted to reach the restored file. Acking an offload chunk in that
+ * state lets the strap drop history nobody kept. On 2026-09-30 the iOS app lost a whole night that way:
+ * it ran on for thirteen hours on a replaced store while a second app on the same strap acked the
+ * history. Twin of Swift `LiveStoreReplacement`.
+ *
+ * The latch is set immediately before the swap and never cleared: a restored store is only safe to write
+ * from a fresh process. `Backfiller` reads it and holds every ack, so the strap keeps its history for the
+ * restarted app. The Backup page restarts reNOOP when a restore returns: at once after a success, and on
+ * dismissing the message after a failure that had already begun the swap. The latch covers the time until
+ * the process is gone, however long that turns out to be.
+ */
+object LiveStoreReplacement {
+    @Volatile
+    private var replaced = false
+
+    /** True once this process has replaced the file under its own open database. */
+    val happened: Boolean get() = replaced
+
+    fun markReplaced() {
+        replaced = true
+    }
+
+    /**
+     * Whether [target] is the database file this process opened ([opened], the file the Room singleton
+     * was built on). A process that never opened the singleton has no connection a swap could strand, and
+     * a test restoring into a throwaway file must not latch the test JVM for good.
+     */
+    fun isLiveStore(target: File, opened: File? = WhoopDatabase.openedFile): Boolean {
+        if (opened == null) return false
+        fun resolved(f: File): File = runCatching { f.canonicalFile }.getOrElse { f.absoluteFile.normalize() }
+        return resolved(target) == resolved(opened)
     }
 }
 

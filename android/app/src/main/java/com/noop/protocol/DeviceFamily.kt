@@ -217,7 +217,7 @@ enum class WhoopGattServiceFamily(
     val isConnectable: Boolean get() = connectableDeviceFamily != null
 
     val diagnosticUnsupportedMessage: String
-        get() = "$displayName detected but unsupported; NOOP will not connect or send commands."
+        get() = "$displayName detected but unsupported; reNOOP will not connect or send commands."
 
     companion object {
         val unsupportedFamilies: List<WhoopGattServiceFamily> =

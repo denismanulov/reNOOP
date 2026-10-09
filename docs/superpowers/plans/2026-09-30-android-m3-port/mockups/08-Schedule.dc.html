@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Расписание сна</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block">
+<style>
+body{margin:0;background:#E9EFE9}
+.scr{--p:#006C4C;--onp:#FFFFFF;--pc:#89F8C7;--onpc:#002114;--sc:#CFE9D9;--onsc:#0A1F16;--srf:#F5FBF5;--on:#171D1A;--onv:#404943;--c1:#EFF5EF;--c2:#E9EFE9;--c3:#E4EAE3;--c4:#DEE4DE;--olv:#BFC9C1;--sleep:#5B4FD8;--sleepc:#E3DFFF;--onsleepc:#16006B;--sun:#B08400;font-family:'Google Sans Flex','Google Sans',Roboto,sans-serif;color:var(--on);background:var(--srf);position:relative;overflow:hidden;box-sizing:border-box}
+.scr.dark{--p:#6CDBAC;--onp:#003826;--pc:#005139;--onpc:#89F8C7;--sc:#354B40;--onsc:#CFE9D9;--srf:#0F1511;--on:#DEE4DE;--onv:#BFC9C1;--c1:#171D1A;--c2:#1B211E;--c3:#252B28;--c4:#303632;--olv:#404943;--sleep:#A9A2FF;--sleepc:#3C2FA8;--onsleepc:#E3DFFF;--sun:#FFD54F}
+.ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:24px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24}
+.ms.f{font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+</style>
+</helmet>
+<div class="scr {{mode}}" style="width: 412px; height: 1360px; display: flex; flex-direction: column">
+
+<header style="display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 4px">
+<a href="05-Sleep.dc.html" aria-label="Назад" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: var(--on)"><span class="ms">arrow_back</span></a>
+<h1 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 400; flex-grow: 1">Расписание сна</h1>
+</header>
+
+<main style="padding: 8px 16px 32px; display: flex; flex-direction: column; gap: 12px">
+
+<section style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; border-radius: 28px; background: var(--c1)">
+<svg width="300" height="300" viewBox="0 0 300 300" aria-label="Отход ко сну 22:30, подъём 07:00, 8 ч 30 мин">
+<circle cx="150" cy="150" r="120" fill="none" stroke-width="44" style="stroke: var(--c3)"></circle>
+<path d="M104.1 39.1 A120 120 0 0 1 265.9 181.1" fill="none" stroke-width="44" stroke-linecap="round" style="stroke: var(--sleepc)"></path>
+<circle cx="104.1" cy="39.1" r="18" style="fill: var(--sleep)"></circle>
+<circle cx="265.9" cy="181.1" r="18" style="fill: var(--sun)"></circle>
+<text x="104.1" y="49.1" text-anchor="middle" style="fill: #fff; font-family: 'Material Symbols Rounded'; font-size: 20px; font-variation-settings: 'FILL' 1">bedtime</text>
+<text x="265.9" y="191.1" text-anchor="middle" style="fill: #fff; font-family: 'Material Symbols Rounded'; font-size: 20px; font-variation-settings: 'FILL' 1">wb_sunny</text>
+<g style="fill: var(--onv); font-size: 14px; font-weight: 500; font-family: inherit" text-anchor="middle"><text x="150" y="68">0</text><text x="236" y="155">6</text><text x="150" y="242">12</text><text x="64" y="155">18</text></g>
+<text x="150" y="146" text-anchor="middle" style="fill: var(--on); font-size: 30px; font-weight: 500; font-family: inherit">8 ч 30 мин</text>
+<text x="150" y="172" text-anchor="middle" style="fill: var(--onv); font-size: 14px; font-family: inherit">каждый день</text>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%">
+<button style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 16px; border-radius: 20px; background: var(--c3)"><span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--sleep)"><span class="ms f" style="font-size: 18px">bedtime</span>Отход ко сну</span><span style="font-size: 32px; line-height: 40px; font-weight: 500">22:30</span></button>
+<button style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 16px; border-radius: 20px; background: var(--c3)"><span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--sun)"><span class="ms f" style="font-size: 18px">alarm</span>Подъём</span><span style="font-size: 32px; line-height: 40px; font-weight: 500">07:00</span></button>
+</div>
+<div role="group" aria-label="Дни" style="display: flex; justify-content: space-between; width: 100%; padding-top: 8px">
+<button aria-pressed="true" style="width: 44px; height: 44px; border-radius: 22px; background: var(--sleep); color: var(--srf); font-size: 14px; font-weight: 600">П</button>
+<button aria-pressed="true" style="width: 44px; height: 44px; border-radius: 22px; background: var(--sleep); color: var(--srf); font-size: 14px; font-weight: 600">В</button>
+<button aria-pressed="true" style="width: 44px; height: 44px; border-radius: 22px; background: var(--sleep); color: var(--srf); font-size: 14px; font-weight: 600">С</button>
+<button aria-pressed="true" style="width: 44px; height: 44px; border-radius: 22px; background: var(--sleep); color: var(--srf); font-size: 14px; font-weight: 600">Ч</button>
+<button aria-pressed="true" style="width: 44px; height: 44px; border-radius: 22px; background: var(--sleep); color: var(--srf); font-size: 14px; font-weight: 600">П</button>
+<button aria-pressed="false" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--olv); font-size: 14px; font-weight: 600">С</button>
+<button aria-pressed="false" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--olv); font-size: 14px; font-weight: 600">В</button>
+</div>
+</section>
+
+<div style="display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-radius: 24px; background: var(--sleepc); color: var(--onsleepc)"><span class="ms f">alarm_on</span><span style="font-size: 16px; font-weight: 500">Будильник через 7 ч 12 мин</span></div>
+
+<div style="display: flex; flex-direction: column; gap: 2px">
+<label style="display: flex; align-items: center; gap: 16px; min-height: 72px; padding: 8px 16px; border-radius: 24px 24px 4px 4px; background: var(--c1)"><span class="ms" style="color: var(--onv)">vibration</span><span style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 16px">Будильник на браслете</span><span style="font-size: 14px; color: var(--onv)">Браслет разбудит беззвучной вибрацией</span></span><span role="switch" aria-checked="true" style="width: 52px; height: 32px; border-radius: 16px; background: var(--p); display: flex; align-items: center; justify-content: flex-end; padding: 0 4px; box-sizing: border-box"><span style="width: 24px; height: 24px; border-radius: 12px; background: var(--onp); color: var(--p); display: flex; align-items: center; justify-content: center"><span class="ms" style="font-size: 16px">check</span></span></span></label>
+<label style="display: flex; align-items: center; gap: 16px; min-height: 72px; padding: 8px 16px; border-radius: 4px; background: var(--c1)"><span class="ms" style="color: var(--onv)">alarm</span><span style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 16px">Резервный будильник на телефоне</span><span style="font-size: 14px; color: var(--onv)">Системный будильник в «Часах»</span></span><span role="switch" aria-checked="true" style="width: 52px; height: 32px; border-radius: 16px; background: var(--p); display: flex; align-items: center; justify-content: flex-end; padding: 0 4px; box-sizing: border-box"><span style="width: 24px; height: 24px; border-radius: 12px; background: var(--onp); color: var(--p); display: flex; align-items: center; justify-content: center"><span class="ms" style="font-size: 16px">check</span></span></span></label>
+<label style="display: flex; align-items: center; gap: 16px; min-height: 72px; padding: 8px 16px; border-radius: 4px; background: var(--c1)"><span class="ms" style="color: var(--onv)">notifications</span><span style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 16px">Напоминание перед сном</span><span style="font-size: 14px; color: var(--onv)">За 30 мин</span></span><span role="switch" aria-checked="false" style="width: 52px; height: 32px; border-radius: 16px; border: 2px solid var(--olv); display: flex; align-items: center; padding: 0 6px; box-sizing: border-box"><span style="width: 16px; height: 16px; border-radius: 8px; background: var(--onv)"></span></span></label>
+<a href="08-Schedule.dc.html" style="display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 8px 16px; border-radius: 4px 4px 24px 24px; background: var(--c1); color: inherit; text-decoration: none"><span class="ms" style="color: var(--onv)">add</span><span style="font-size: 16px; flex-grow: 1">Добавить расписание на выходные</span></a>
+</div>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":412,"height":1360}}'>
+class Component extends DCLogic {
+renderVals() {
+return { mode: (this.props.dark ?? false) ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

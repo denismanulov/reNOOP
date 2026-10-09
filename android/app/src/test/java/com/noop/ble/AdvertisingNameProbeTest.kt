@@ -172,14 +172,15 @@ class AdvertisingNameProbeTest {
         )
     }
 
+    /** The strap-name section lives on Settings > Developer since the Settings rebuild (iOS keeps it there). */
     private fun settingsSource(): String {
         var root = java.io.File(System.getProperty("user.dir") ?: ".").canonicalFile
         repeat(4) {
-            val f = java.io.File(root, "android/app/src/main/java/com/noop/ui/SettingsScreen.kt")
+            val f = java.io.File(root, "android/app/src/main/java/com/noop/ui/settings/SettingsDeveloperScreen.kt")
             if (f.isFile) return f.readText()
             root = root.parentFile ?: root
         }
-        throw IllegalStateException("SettingsScreen.kt not found from ${System.getProperty("user.dir")}")
+        throw IllegalStateException("SettingsDeveloperScreen.kt not found from ${System.getProperty("user.dir")}")
     }
 
     @Test fun theHarvardSetKeepsItsOwnIdentity() {

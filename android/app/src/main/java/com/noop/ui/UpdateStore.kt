@@ -90,55 +90,6 @@ data class UpdateItem(
     }
 }
 
-// MARK: - Today card dismissal keys (shared)
-//
-// The Today info-cards persist their dismissed state under a stable per-card key. The inbox restores
-// a card by clearing that same key, so the key shape lives in ONE place both sides use. Mirrors the
-// Swift `TodayCardDismissal` enum. Stable card ids ("scoresBuilding", "newHere") match macOS/iOS.
-object TodayCardDismissal {
-    const val FILE = "noop_today_cards"
-
-    /** The dismissed-flag pref key for a Today info-card, by stable card id. */
-    fun flagKey(cardId: String): String = "noop.todayCard.$cardId.dismissed"
-
-    private fun prefs(ctx: Context): SharedPreferences =
-        ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-
-    /** Whether [cardId] has been dismissed into the inbox (default false = the card is shown). */
-    fun isDismissed(ctx: Context, cardId: String): Boolean =
-        prefs(ctx).getBoolean(flagKey(cardId), false)
-
-    /** Set/clear the dismissed flag for [cardId]. Restore from the inbox passes false. */
-    fun setDismissed(ctx: Context, cardId: String, dismissed: Boolean) {
-        prefs(ctx).edit().putBoolean(flagKey(cardId), dismissed).apply()
-    }
-}
-
-// MARK: - New-data watermark (shared, #521)
-//
-// The persisted NEWEST day-key (max yyyy-MM-dd in the merged history) the Today inbox has already
-// announced as "New data added". TodayScreen compares the live newest key against this watermark and
-// only posts when it moves STRICTLY forward — so a background recompute's delete-then-reinsert churn
-// (which dips/recovers the row COUNT but not the newest key) never re-announces, and a relaunch over
-// the same history stays silent. Persisted (not Compose `remember`) so it survives process death,
-// mirroring the Swift `@AppStorage("today.lastAnnouncedDayKey")`.
-object NewDataWatermark {
-    private const val FILE = "noop_today_newdata"
-    private const val KEY_NEWEST = "today.lastAnnouncedDayKey"
-
-    private fun prefs(ctx: Context): SharedPreferences =
-        ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-
-    /** The last newest day-key announced, or "" when no baseline exists yet (first ever load). */
-    fun lastAnnouncedKey(ctx: Context): String =
-        prefs(ctx).getString(KEY_NEWEST, "").orEmpty()
-
-    /** Record [key] as the newest day-key seen, so only a strictly-greater key fires a future announce. */
-    fun setLastAnnouncedKey(ctx: Context, key: String) {
-        prefs(ctx).edit().putString(KEY_NEWEST, key).apply()
-    }
-}
-
 // MARK: - UpdateStore
 //
 // The bell's backing store: a single-user, on-device inbox of [UpdateItem]s persisted as a JSON array
@@ -148,7 +99,7 @@ object NewDataWatermark {
 // inbox the UI observes.
 //
 // The item list is a Compose `mutableStateListOf`, so reads in a composable recompose automatically
-// on every mutation — the same snapshot-state idiom `AppearancePrefs`/`ChartStylePrefs` use for a
+// on every mutation — the same snapshot-state idiom [ProfileAvatarStore] uses for a
 // scalar, here over a list.
 //
 // First-run seeding: posts the current What's New (AppChangelog.releases.first) once, tracking
@@ -277,8 +228,8 @@ class UpdateStore private constructor(private val prefs: SharedPreferences) {
         post(
             UpdateItem(
                 kind = UpdateKind.WHATS_NEW,
-                title = if (title.isEmpty()) "What's new in NOOP $version" else title,
-                message = "NOOP $version is here — tap to read what's new.",
+                title = if (title.isEmpty()) "What's new in reNOOP $version" else title,
+                message = "reNOOP $version is here — tap to read what's new.",
                 // #984: this row promised "tap to read what's new" while carrying NO deep link, so the
                 // tap resolved to nothing and only marked it read. Every release since the inbox shipped
                 // has posted an entry that could not be opened.

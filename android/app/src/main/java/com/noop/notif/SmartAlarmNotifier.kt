@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -36,10 +34,11 @@ object SmartAlarmNotifier {
                 appLaunchIntent(context),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.smart_alarm_title))
-                .setContentText(context.getString(R.string.smart_alarm_body))
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_alarm,
+                context.getString(R.string.smart_alarm_title),
+                context.getString(R.string.smart_alarm_body),
+            )
                 .setContentIntent(openApp)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -50,18 +49,13 @@ object SmartAlarmNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Smart alarm",
-                    NotificationManager.IMPORTANCE_HIGH,
-                ).apply {
-                    description = "Your wake-up smart alarm went off on the strap."
-                },
-            )
-        }
+        // The same channel id, name and description as the phone's own wake alarm
+        // (com.noop.alarm.SmartAlarmReceiver): two owners of one channel must name it identically, or
+        // its name in system Settings would flip with whichever posted last.
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_alarm_name, R.string.notif_channel_alarm_desc,
+            NotificationManager.IMPORTANCE_HIGH,
+        )
     }
 }

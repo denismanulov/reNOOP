@@ -293,7 +293,7 @@ fun TestCentreScreen(vm: AppViewModel, onOpenGroundTruthCollector: () -> Unit = 
                     DeveloperToggleRow(
                         title = stringResource(R.string.raw_diag_clear_stale_bond),
                         detail = "When a bonded fast-path connect keeps dropping before it reaches a " +
-                            "session, the phone is holding a pairing the strap no longer honours. NOOP " +
+                            "session, the phone is holding a pairing the strap no longer honours. reNOOP " +
                             "already shows the forget-and-re-pair guide at two failures; with this on it " +
                             "does that step for you at five, once, and only until the strap bonds again. " +
                             "It cannot make a strap that refuses pairing pair. Leave it off unless you " +
@@ -835,7 +835,7 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
     SettingsSectionTC(
         icon = Icons.Filled.Info,
         title = uiString(R.string.l10n_test_centre_screen_diagnostic_tools_04ba4d3f),
-        blurb = "Your strap log, a Charge recalibrate, and the device environment. Nothing leaves the phone unless you share it.",
+        blurb = "Your strap log, a Recovery recalibrate, and the device environment. Nothing leaves the phone unless you share it.",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // Strap log, the same exportLogText share the Settings Diagnostics button uses.
@@ -896,7 +896,7 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
                 ToggleRowTC(
                     title = "Polar debug logging",
                     description = "$identity.\nLogs this identification to the strap log on each connect, " +
-                        "so a Polar bug report shows the model NOOP resolved your strap to.",
+                        "so a Polar bug report shows the model reNOOP resolved your strap to.",
                     checked = polarDebugLogging,
                     onCheckedChange = { polarDebugLogging = it; vm.setPolarDebugLogging(it) },
                 )
@@ -1006,7 +1006,7 @@ private fun ExportCard(vm: AppViewModel, onReport: () -> Unit) {
     SettingsSectionTC(
         icon = Icons.Filled.Upload,
         title = uiString(R.string.l10n_test_centre_screen_export_f3e4fadb),
-        blurb = "Report a bug with your log, or have NOOP drop a daily copy into its export folder.",
+        blurb = "Report a bug with your log, or have reNOOP drop a daily copy into its export folder.",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             NoopButton(
@@ -1160,7 +1160,7 @@ private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             ToggleRowTC(
                 title = uiString(R.string.l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536),
-                description = "When NOOP reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the " +
+                description = "When reNOOP reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the " +
                     "seconds the strap stored no HR), refine the autocorrelation peak with a parabolic sub-lag " +
                     "fit so the estimate is not quantized to roughly 16 bpm steps near a high HR. It only fills " +
                     "seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default.",
@@ -1171,7 +1171,7 @@ private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
                 title = uiString(R.string.l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f),
                 description = "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: " +
                     "it shows whether your 7-night HRV baseline sits above, inside, or below your personal " +
-                    "normal band. It changes nothing else - the Charge ring is identical whether this is on or " +
+                    "normal band. It changes nothing else - the Recovery ring is identical whether this is on or " +
                     "off. This is rough / early testing, not yet validated against varying real data (n=1).",
                 checked = hrvReadiness,
                 onCheckedChange = { hrvReadiness = it; puffin.hrvReadiness = it },

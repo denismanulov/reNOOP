@@ -99,7 +99,7 @@ enum class AiProvider(
      * optional — local servers usually need none.
      */
     CUSTOM(
-        displayName = "Custom (OpenAI-compatible)",
+        displayName = "Custom Server",
         defaultModel = "",
         models = emptyList(),
         endpoint = "",

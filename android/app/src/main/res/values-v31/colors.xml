@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: Material You. The widget surface and its text take the wallpaper's own tones (the
+         system's widget background pairing, accent2 50 under neutral text), so a reNOOP widget sits on
+         the home screen in the same colours as the system's. Data hues stay fixed (values/colors.xml). -->
+    <color name="widget_surface">@android:color/system_accent2_50</color>
+    <color name="widget_on_surface">@android:color/system_neutral1_900</color>
+    <color name="widget_on_surface_variant">@android:color/system_neutral2_700</color>
+    <color name="widget_primary">@android:color/system_accent1_600</color>
+    <color name="widget_chip">@android:color/system_accent2_100</color>
+    <color name="widget_on_chip">@android:color/system_accent2_900</color>
+    <color name="widget_ring_track">@android:color/system_neutral2_100</color>
+    <color name="notification_accent">@android:color/system_accent1_600</color>
+</resources>

@@ -128,7 +128,7 @@ class BondStateTraceTest {
         // answer no longer depends on the component under suspicion.
         val line = bondStatePollLine(android.bluetooth.BluetoothDevice.BOND_BONDING, sawTransitionLine = false)
         assertTrue(line.contains("receiver missed it"))
-        assertTrue(line.contains("a NOOP bug, not the strap"))
+        assertTrue(line.contains("a reNOOP bug, not the strap"))
     }
 
     /**
@@ -147,7 +147,7 @@ class BondStateTraceTest {
         assertTrue("the known 5/MG answer belongs in the line", line.contains("Pairing Not Supported"))
         assertTrue(line.contains("SMP 0x05"))
         assertTrue("name the discriminator", line.contains("HCI capture"))
-        assertFalse(line.contains("NOOP bug"))
+        assertFalse(line.contains("reNOOP bug"))
     }
 
     @Test

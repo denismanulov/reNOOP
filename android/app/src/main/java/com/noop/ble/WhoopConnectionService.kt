@@ -87,6 +87,8 @@ internal data class NotifyDayState(
     val widgetRecovery: Int?,
     val widgetRest: Int?,
     val widgetEffort: Int?,
+    /** The same strain unrounded, for the widget's figure on the 0 to 21 scale. */
+    val widgetEffortStored: Double?,
     val illness: String?,
     val days: List<DailyMetric>,
 )
@@ -130,6 +132,7 @@ internal class NotifyDayStateCache(
             widgetRecovery = anchorRow?.recovery?.roundToInt(),
             widgetRest = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
             widgetEffort = anchorRow?.strain?.roundToInt(),
+            widgetEffortStored = anchorRow?.strain,
             illness = if (illnessEnabled) illnessEvaluator(days) else null,
             days = days,
         )
@@ -289,6 +292,7 @@ class WhoopConnectionService : Service() {
         // The notification "Disconnect" action routes back here as a self-intent.
         if (intent?.action == ACTION_STOP) {
             runCatching { ble.disconnect() }
+            running = null
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -302,6 +306,7 @@ class WhoopConnectionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        running = this
 
         // Listen for the OS Bluetooth radio toggling so turning it off tears the link down at once (#314).
         // Guarded so repeat onStartCommands (every connect / OS restart) don't stack registrations.
@@ -529,6 +534,7 @@ class WhoopConnectionService : Service() {
                             // strain. Widget-only carry, so it shows the same day as Today. (#516/#911)
                             restPct = dayState.widgetRest,
                             effortPct = dayState.widgetEffort,
+                            effort = dayState.widgetEffortStored,
                             heartRate = state.heartRate,
                             // The ACTIVE device's charge (#2075). This service is the widget's
                             // HEARTBEAT, so publishing the WHOOP's field here would have overwritten the
@@ -705,9 +711,24 @@ class WhoopConnectionService : Service() {
     /** Signature of the fields the notification actually renders (#216). The live HR stream emits ~1 Hz
      *  but the notification no longer shows BPM, so we only re-post when one of THESE changes — turning
      *  a per-beat wakeup into a handful of updates a day. */
+    @Volatile
     private var lastNotificationKey: String? = null
 
+    /** The recovery the notification was last asked to render, kept so [repostNotification] can rebuild
+     *  the connection content without waiting for the next live-state tick. */
+    @Volatile
+    private var lastRecoveryPct: Double? = null
+
     private fun postNotification(state: LiveState, recoveryPct: Double? = null) {
+        lastRecoveryPct = recoveryPct
+        // While a workout records with its notification on, this notification IS the workout's: one
+        // ongoing notification, not two (see LiveWorkoutNotifier, which posts it at its own cadence).
+        // Forget what was rendered, so the connection content is posted afresh when the workout hands
+        // the notification back.
+        if (com.noop.notif.LiveWorkoutNotifier.showing) {
+            lastNotificationKey = null
+            return
+        }
         val key = listOf(
             state.connected,
             state.backfilling,
@@ -730,6 +751,10 @@ class WhoopConnectionService : Service() {
     }
 
     private fun buildNotification(state: LiveState, recoveryPct: Double?): Notification {
+        // A recording workout takes this notification over (sport, clock, heart rate, Pause and Finish)
+        // rather than adding a second ongoing one beside it; every path that builds it, the startForeground
+        // calls included, then carries the workout's.
+        com.noop.notif.LiveWorkoutNotifier.notification(this)?.let { return it }
         // #216: deliberately NO live BPM in the title. A per-beat-changing notification forces the
         // foreground service to re-post (and wake the device) ~once a second all day, which is a real
         // battery cost for a number nobody reads off the lock screen. The title now reflects only the
@@ -761,10 +786,7 @@ class WhoopConnectionService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_heart)
-            .setContentTitle(title)
-            .setContentText(detail)
+        return com.noop.notif.NoopNotifications.builder(this, CHANNEL_ID, R.drawable.ic_stat_heart, title, detail)
             .setContentIntent(openApp)
             .addAction(0, getString(R.string.fgs_action_disconnect), stopAction)
             .setOngoing(true)
@@ -829,6 +851,9 @@ class WhoopConnectionService : Service() {
     }
 
     override fun onDestroy() {
+        running = null
+        // A workout still recording loses the notification it was riding on; it puts its own back.
+        com.noop.notif.LiveWorkoutNotifier.onConnectionServiceStopped(this)
         if (bluetoothReceiverRegistered) {
             // unregisterReceiver throws if it was never registered; the flag guards that, and runCatching
             // covers the rare case the OS already reclaimed it.
@@ -847,8 +872,29 @@ class WhoopConnectionService : Service() {
         private val STRESS_RESCORE_INTERVAL_MS = StressWidgetProducer.RESCORE_INTERVAL_MS
 
         private const val CHANNEL_ID = "noop_strap_connection"
-        private const val NOTIF_ID = 4201
+
+        /** The ONE ongoing reNOOP notification. The live workout's notification is posted under this id
+         *  too ([com.noop.notif.LiveWorkoutNotifier]), so a recording workout replaces the connection
+         *  content rather than standing beside it. */
+        internal const val NOTIF_ID = 4201
         const val ACTION_STOP = "com.noop.ble.action.STOP_CONNECTION"
+
+        /** The service while it is in the foreground, for [isRunning] and [repostNotification]. Cleared
+         *  the moment a stop is ASKED for, not when onDestroy arrives: a notification posted in between
+         *  would land after the system removed the service's and stay behind as an ongoing orphan. */
+        @Volatile
+        private var running: WhoopConnectionService? = null
+
+        /** Whether the connection notification is up for something else to hand content back to. */
+        internal val isRunning: Boolean get() = running != null
+
+        /** Post the connection notification now: the live workout handing the notification back when
+         *  it ends, without waiting for the next live-state tick (a quiet strap may not send one). */
+        internal fun repostNotification() {
+            val service = running ?: return
+            service.lastNotificationKey = null
+            runCatching { service.postNotification(service.ble.state.value, service.lastRecoveryPct) }
+        }
 
         /**
          * Promote the process to the foreground so the strap stays connected. Safe to call when
@@ -867,6 +913,7 @@ class WhoopConnectionService : Service() {
 
         /** Drop the foreground promotion. The connection itself is torn down by the caller. */
         fun stop(context: Context) {
+            running = null
             runCatching { context.stopService(Intent(context, WhoopConnectionService::class.java)) }
         }
     }

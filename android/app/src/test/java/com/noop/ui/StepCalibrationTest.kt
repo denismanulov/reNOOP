@@ -36,7 +36,9 @@ class StepCalibrationTest {
 
     @Test
     fun incrementIsFineNearDefaultAndCoarseUpTop() {
-        assertEquals(0.1, ProfileStore.stepScaleIncrement(1.0), EPS)
+        assertEquals(0.01, ProfileStore.stepScaleIncrement(1.0), EPS)
+        assertEquals(0.01, ProfileStore.stepScaleIncrement(1.49), EPS)
+        assertEquals(0.1, ProfileStore.stepScaleIncrement(1.5), EPS)
         assertEquals(0.1, ProfileStore.stepScaleIncrement(1.9), EPS)
         assertEquals(0.5, ProfileStore.stepScaleIncrement(2.0), EPS)
         assertEquals(0.5, ProfileStore.stepScaleIncrement(4.5), EPS)
@@ -54,8 +56,24 @@ class StepCalibrationTest {
 
     @Test
     fun fineGrainAroundTheOnePointZeroDefault() {
-        assertEquals(1.1, ProfileStore.steppedStepScale(1.0, up = true), EPS)
-        assertEquals(0.9, ProfileStore.steppedStepScale(1.0, up = false), EPS)
+        assertEquals(1.01, ProfileStore.steppedStepScale(1.0, up = true), EPS)
+        assertEquals(0.99, ProfileStore.steppedStepScale(1.0, up = false), EPS)
+    }
+
+    /** 2026-10-03: 1,108 ticks against 879 phone-counted steps on a WHOOP 4.0, about 1.26 ticks per step. */
+    @Test
+    fun theMeasuredRatioIsReachableFromTheDefault() {
+        var value = 1.0
+        repeat(26) { value = ProfileStore.steppedStepScale(value, up = true) }
+        assertEquals(1.26, value, EPS)
+    }
+
+    @Test
+    fun bandBoundariesAreSymmetric() {
+        assertEquals(1.5, ProfileStore.steppedStepScale(1.49, up = true), EPS)
+        assertEquals(1.49, ProfileStore.steppedStepScale(1.5, up = false), EPS)
+        assertEquals(1.6, ProfileStore.steppedStepScale(1.5, up = true), EPS)
+        assertEquals(1.9, ProfileStore.steppedStepScale(2.0, up = false), EPS)
     }
 
     @Test
@@ -75,7 +93,8 @@ class StepCalibrationTest {
             taps++
         }
         assertTrue("should reach 24 from 1.0", v >= 24.0)
-        assertTrue("should take well under 60 taps (was $taps)", taps < 60)
+        // 50 taps of 0.01 up to 1.5, then the coarse bands: 80 in all, against ~230 on a flat 0.1 grid.
+        assertTrue("should take well under 100 taps (was $taps)", taps < 100)
     }
 
     @Test

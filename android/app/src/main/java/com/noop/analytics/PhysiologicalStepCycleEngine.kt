@@ -2,6 +2,7 @@ package com.noop.analytics
 
 import com.noop.data.MetricSeriesRow
 import com.noop.data.SleepSession
+import com.noop.data.StepCalibrationStore
 import com.noop.data.WhoopRepository
 import kotlin.math.roundToLong
 
@@ -49,6 +50,20 @@ internal object PhysiologicalStepCycleEngine {
         effortMethod: StrainScorer.Method, profile: UserProfile,
     ): String = "$onset-$endExclusive|$hrWitness|rhr=$restingHr|max=${maxHr ?: "nil"}|$effortMethod|${profile.cacheKey}"
 
+    /**
+     * The divisor a cycle's tick total is scaled by: the wake day's own when step auto-calibration
+     * supplies one, else the pass-wide manual one. Swift computes the same value inline, as
+     * `dayTicksPerStep` in its `DayCycleIntelligenceIntegration`.
+     */
+    internal fun cycleTicksPerStep(
+        wakeDay: String, stepTicksPerStep: Double, stepFactors: StepCalibrationStore.Snapshot?,
+    ): Double = stepFactors?.factor(wakeDay) ?: stepTicksPerStep
+
+    /** A cycle's counter ticks as steps: divided by [ticksPerStep] (floor 0.5) and rounded to a whole step. */
+    internal fun scaledCycleSteps(totalTicks: Int, ticksPerStep: Double): Int =
+        (totalTicks.toDouble() / maxOf(ticksPerStep, 0.5))
+            .roundToLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
     suspend fun compute(
         scoredNights: List<DayResult>,
         editedRows: List<SleepSession>,
@@ -66,6 +81,7 @@ internal object PhysiologicalStepCycleEngine {
         profile: UserProfile,
         maxHROverride: Double?,
         effortMethod: StrainScorer.Method,
+        stepFactors: StepCalibrationStore.Snapshot? = null,
     ): Result {
         if (dayCycleMode == DayCycleMode.MIDNIGHT) {
             return Result(emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap(), null, emptyList())
@@ -346,8 +362,8 @@ internal object PhysiologicalStepCycleEngine {
             }
             val result = cached ?: continue
             if (result.evaluated) {
-                val scaled = (result.count.totalTicks.toDouble() / maxOf(stepTicksPerStep, 0.5))
-                    .roundToLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                val dayTicksPerStep = cycleTicksPerStep(wakeDay, stepTicksPerStep, stepFactors)
+                val scaled = scaledCycleSteps(result.count.totalTicks, dayTicksPerStep)
                 stepsByWakeDay[wakeDay] = scaled
                 stepsTraceSink?.invoke(
                     "stepsCycle wakeDay=$wakeDay status=${if (active) "active" else "closed"} " +
@@ -362,7 +378,7 @@ internal object PhysiologicalStepCycleEngine {
                         "rejectedImplausible=${result.count.rejectedImplausibleTicks} " +
                         "gravitySamples=${result.count.gravitySamplesAvailable} " +
                         "auxSamples=${result.count.auxSamplesAvailable} " +
-                        "ticksPerStep=$stepTicksPerStep " +
+                        "ticksPerStep=$dayTicksPerStep " +
                         "scaledSteps=$scaled",
                 )
             }

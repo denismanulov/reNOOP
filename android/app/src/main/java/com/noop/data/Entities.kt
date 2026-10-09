@@ -738,8 +738,8 @@ data class PpgWaveformSampleEntity(
 /**
  * One Live Session (silent guardian) record (v22 / MIGRATION_15_16). Natural key (deviceId, startTs).
  * `endTs` is null while the session is still in progress. Fields are declared in the SAME order as the
- * Swift WhoopStore `liveSession` schema so the migration SQL matches Room's generated shape. Twin of the
- * Swift `LiveSessionRow`. See docs/superpowers/specs/2026-07-04-live-sessions-design.md.
+ * Swift WhoopStore `liveSession` schema so the migration SQL matches Room's generated shape. See
+ * docs/superpowers/specs/2026-07-04-live-sessions-design.md.
  */
 @Entity(tableName = "liveSession", primaryKeys = ["deviceId", "startTs"])
 data class LiveSessionRow(

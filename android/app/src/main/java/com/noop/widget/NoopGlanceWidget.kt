@@ -1,62 +1,55 @@
 package com.noop.widget
-import com.noop.ui.uiString
 
-import androidx.compose.ui.res.stringResource
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.action.actionStartActivity
-import androidx.glance.action.clickable
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
-import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
-import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.noop.R
-import com.noop.ui.MainActivity
-import java.text.DateFormat
-import java.util.Date
 import com.noop.analytics.ClockFormat
+import com.noop.ui.AppLink
 import com.noop.ui.ClockPrefs
+import com.noop.ui.EffortScale
+import com.noop.ui.UnitPrefs
+import com.noop.ui.uiString
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Home-screen widget: today's three top scores (Rest · Charge · Effort, Charge centred), with live HR
- * and strap battery at a glance (#516). Renders purely from the [WidgetSnapshotStore] SharedPreferences
- * snapshot — no BLE, no DB — so it costs nothing and survives process death. Tapping anywhere opens the
- * app. Each score is honest-null ("—") until NOOP has scored it; it never fabricates a number.
+ * Home-screen widget: today's three scores as rings (Charge · Effort · Rest, the Summary's own order and
+ * hues), with the heart rate and the strap battery under them (#516). Twin of the iOS `NOOPWidget`.
  *
- * Colours are hardcoded mirrors of the Titanium & Gold [com.noop.ui.Palette] (navy surface / textPrimary
- * / textSecondary, and the gold → amber → burnt-orange recovery tiers): Glance composes outside our
- * theme, and the widget is deliberately always-dark like the app.
+ * Renders purely from the [WidgetSnapshotStore] SharedPreferences snapshot — no BLE, no DB — so it costs
+ * nothing and survives process death. Tapping it opens the Summary. Each ring is honest-null (a bare track
+ * around a dash) until NOOP has scored it; it never fabricates a number.
+ *
+ * Material You: the card, its text and the rings' tracks are the system's own tones ([WidgetColors]); only
+ * the three arcs carry the fixed ring hues, which mean the same score on every wallpaper.
  */
 class NoopGlanceWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // A corrupt pref must degrade to the empty-state widget, not throw mid-provide.
-        val snap = runCatching { WidgetSnapshotStore.load(context) }.getOrDefault(WidgetSnapshot())
-        // Follow the app's Light/Dark/System theme (read straight from noop_prefs; the widget runs in a
-        // separate process so it can't see the in-app snapshot state). System resolves off the device's
-        // night-mode config. Any failure degrades to dark (the historical default).
-        val dark = WidgetTheme.isDark(context)
-        provideContent { WidgetContent(snap, dark) }
+        provideContent { WidgetContent(currentWidgetSnapshot()) }
     }
 
     /** Defence-in-depth, NOT a crash fix: Glance 1.1.0's default already contains composition errors
@@ -76,154 +69,146 @@ class NoopGlanceWidget : GlanceAppWidget() {
     }
 }
 
-// Per-scheme widget colours (mirror the app palette; deepened gold/amber/orange on light for contrast
-// on the warm-paper card). The widget is a separate surface, so these are local — not Palette reads.
-private fun widgetSurface(dark: Boolean) = ColorProvider(if (dark) Color(0xFF0A1322) else Color(0xFFF4F1EA))
-private fun widgetTextPrimary(dark: Boolean) = ColorProvider(if (dark) Color(0xFFF4F6F8) else Color(0xFF1A2230))
-private fun widgetTextSecondary(dark: Boolean) = ColorProvider(if (dark) Color(0xFF8A94A4) else Color(0xFF7C8696))
-
-/** Recovery-band colour, the app-wide 67 / 34 cuts (RecoveryScorer.band); deepened on light. Charge and
- *  Rest both read on the recovery band in the app, so they share this. */
-private fun bandColor(recovery: Int, dark: Boolean): ColorProvider = ColorProvider(
-    when {
-        recovery >= 67 -> if (dark) Color(0xFFE8B84B) else Color(0xFFB07D17)
-        recovery >= 34 -> if (dark) Color(0xFFD98A3D) else Color(0xFFC2792E)
-        else -> if (dark) Color(0xFFE0662F) else Color(0xFFC84E1E)
-    },
-)
-
-/** Effort tint — the app's strain colour (Palette.strain066), a distinct teal so Effort doesn't read as
- *  another recovery band. Deepened on light for contrast on the warm-paper card. (#516) */
-private fun effortColor(dark: Boolean): ColorProvider =
-    ColorProvider(if (dark) Color(0xFF4FB6A8) else Color(0xFF2E7D74))
-
 @Composable
-private fun WidgetContent(snap: WidgetSnapshot, dark: Boolean) {
-    val surface = widgetSurface(dark)
-    val textPrimary = widgetTextPrimary(dark)
-    val textSecondary = widgetTextSecondary(dark)
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(surface)
-            .cornerRadius(16.dp)
-            .clickable(actionStartActivity<MainActivity>())
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // The three top scores in one row, Charge centred + enlarged (the app's hero order Rest · Charge ·
-        // Effort). Each cell is honest-null until that score exists — never a fabricated number. (#516)
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalAlignment = Alignment.Bottom,
-        ) {
+private fun WidgetContent(snap: WidgetSnapshot) {
+    WidgetCard(link = AppLink.Today, padding = 12.dp, horizontalAlignment = Alignment.CenterHorizontally) {
+        // The vitals sit on the card's bottom edge and the rings in the middle of the room above them, so
+        // a taller placement spends its spare height around the rings rather than under them.
+        Spacer(GlanceModifier.defaultWeight())
+        // The three scores in the Summary's order. Each cell is honest-null until that score exists.
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            ScoreCell(WidgetRing.Charge, uiString(R.string.metric_title_charge), snap.recoveryPct, GlanceModifier.defaultWeight())
             ScoreCell(
-                label = uiString(R.string.l10n_noop_glance_widget_rest_cbaaa181),
-                pct = snap.restPct,
-                color = snap.restPct?.let { bandColor(it, dark) } ?: textSecondary,
-                valueSize = 22.sp,
-                textSecondary = textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
+                WidgetRing.Effort, uiString(R.string.metric_title_effort), snap.effortPct, GlanceModifier.defaultWeight(),
+                figure = effortFigure(snap),
             )
-            ScoreCell(
-                label = uiString(R.string.l10n_noop_glance_widget_charge_49a8cb83),
-                pct = snap.recoveryPct,
-                color = snap.recoveryPct?.let { bandColor(it, dark) } ?: textSecondary,
-                valueSize = 30.sp,
-                textSecondary = textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
-            )
-            ScoreCell(
-                label = uiString(R.string.l10n_noop_glance_widget_effort_660752e7),
-                pct = snap.effortPct,
-                color = snap.effortPct?.let { effortColor(dark) } ?: textSecondary,
-                valueSize = 22.sp,
-                textSecondary = textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
-            )
+            ScoreCell(WidgetRing.Rest, uiString(R.string.metric_title_rest), snap.restPct, GlanceModifier.defaultWeight())
         }
-        Spacer(modifier = GlanceModifier.height(8.dp))
-        // The ♥ and ⚡ are characters inside the text, not labelled images, so TalkBack reads whatever
-        // the glyph happens to be called - or skips it - and the metric arrives as a bare number with no
-        // name and no unit. The compact widget is not the accessible counterexample it looks like: only
-        // its battery IMAGE ever carried a contentDescription, and its heart-rate line is the same
-        // unlabelled text as this one, fixed alongside it here. (#1799)
-        //
-        // Built here rather than inside the semantics lambda. uiString would resolve there too - it is a
-        // plain function over the Application resources, not a composable - but #571 recorded that the
-        // i18n audit cannot see copy assigned inside a semantics {} lambda, so a literal written there
-        // would pass CI and ship English to every locale. Keeping the lookup outside puts it where the
-        // audit can see it.
-        val hrLabel = uiString(R.string.l10n_noop_glance_widget_heart_rate_410aa15c)
-        val batteryLabel = uiString(R.string.l10n_noop_glance_widget_strap_battery_a6c7f09c)
-        // The stale/live distinction is drawn ONLY by dimming the text below, which is a colour-only
-        // channel: TalkBack, and anyone who cannot perceive the dim, was told a carried-over reading was
-        // current. Marked on the LIVE side rather than the stale one, so a stale value simply carries no
-        // claim instead of needing a word for it - and because "live" already exists in all seven
-        // locales as the Today sync chip, so this adds no new copy to translate.
-        val liveSuffix =
-            if (snap.heartRateStale) "" else " " + uiString(R.string.l10n_today_screen_sync_chip_live_98aadb37)
-        val hrDescription = snap.heartRate
-            ?.let { "$hrLabel ${uiString(R.string.l10n_today_screen_value_bpm_8f3a90c3, it)}$liveSuffix" }
-            ?: hrLabel
-        val batteryDescription = snap.batteryPct
-            ?.let { "$batteryLabel ${uiString(R.string.l10n_today_screen_pct_ee63e247, it)}" }
-            ?: batteryLabel
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = snap.heartRate?.let { "♥ $it" } ?: "♥ - ",
-                // Dim a carried-over reading so a stale HR can't masquerade as a live one.
-                style = TextStyle(color = if (snap.heartRateStale) textSecondary else textPrimary, fontSize = 13.sp),
-                modifier = GlanceModifier.semantics { contentDescription = hrDescription },
-            )
-            Spacer(modifier = GlanceModifier.width(10.dp))
-            Text(
-                text = snap.batteryPct?.let { "⚡ $it%" } ?: "⚡ - ",
-                style = TextStyle(color = textPrimary, fontSize = 13.sp),
-                modifier = GlanceModifier.semantics { contentDescription = batteryDescription },
-            )
-        }
-        Spacer(modifier = GlanceModifier.height(2.dp))
-        Text(
-            text = when {
-                snap.connected -> "Connected"
-                snap.updatedAtMs > 0L ->
-                    java.text.SimpleDateFormat(   // #1821: the reader's chosen clock
-                        ClockFormat.hourMinutePattern(ClockPrefs.uses24Hour(androidx.glance.LocalContext.current)),
-                        java.util.Locale.getDefault(),
-                    ).format(Date(snap.updatedAtMs))
-                else -> "Open NOOP to connect"
-            },
-            style = TextStyle(color = textSecondary, fontSize = 11.sp),
-        )
+        Spacer(GlanceModifier.defaultWeight())
+        WidgetVitalsRow(snap)
     }
 }
 
-/** One score column in the 2x2 widget: a small overline label over a big band-coloured "N%" (or a calm
- *  "—" in the secondary colour while that score is still null, so an unscored cell reads honestly rather
- *  than as a broken zero). (#516) */
+/**
+ * The strain figure when it is NOT the whole percent, which is when the wearer reads strain on the 0 to
+ * 21 scale; null on the app's own 0 to 100 axis, where the cell prints the percent like its neighbours.
+ * Shared by the rings and the compact widget so the two cannot print different numbers.
+ */
 @Composable
-private fun ScoreCell(
-    label: String,
-    pct: Int?,
-    color: ColorProvider,
-    valueSize: androidx.compose.ui.unit.TextUnit,
-    textSecondary: ColorProvider,
-    modifier: GlanceModifier = GlanceModifier,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = label,
-            style = TextStyle(color = textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Medium),
+internal fun effortFigure(snap: WidgetSnapshot): String? {
+    val scale = UnitPrefs.effortScale(LocalContext.current)
+    return if (scale == EffortScale.WHOOP) WidgetCaptions.effort(snap.effortPct, snap.effort, scale) else null
+}
+
+/** One score: its ring with the figure inside, over its caption in the reader's language (WG-5). */
+@Composable
+private fun ScoreCell(ring: WidgetRing, label: String, pct: Int?, modifier: GlanceModifier, figure: String? = null) {
+    // Built OUT here rather than inside a semantics lambda: #571 recorded that the i18n audit cannot see
+    // copy assigned inside one.
+    val noData = uiString(R.string.widget_no_data)
+    // A figure that is not the percent is spoken as itself: "Strain, 4.0", never "Strain, 19%".
+    val spoken = WidgetCaptions.spoken(
+        label, pct?.let { figure ?: uiString(R.string.l10n_today_screen_pct_ee63e247, it) }, noData,
+    )
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        WidgetScoreRing(
+            ring, pct, diameter = 52.dp, figureSize = 16.sp, spoken = spoken,
+            figure = figure ?: WidgetCaptions.score(pct),
         )
-        Text(
-            text = pct?.let { "$it%" } ?: "—",
-            style = TextStyle(color = color, fontSize = valueSize, fontWeight = FontWeight.Bold),
-        )
+        Spacer(GlanceModifier.height(2.dp))
+        // Decorative to TalkBack in effect: the ring above already speaks "Charge, 68%".
+        Text(text = label, style = WidgetType.captionStyle, maxLines = 1)
+    }
+}
+
+/**
+ * The line under the scores: the heart rate, the strap battery, and — once the strap has gone quiet —
+ * when the figures are from. Shared by the rings and the compact widget.
+ *
+ * No connection dot and no "Connected" (audit WG-4): a red/green dot is a colour-only channel, and a
+ * reading too old to stand for the wearer already shows as a dash ([HrDisplay]).
+ */
+@Composable
+internal fun WidgetVitalsRow(snap: WidgetSnapshot) {
+    val context = LocalContext.current
+    val noData = uiString(R.string.widget_no_data)
+    val hrLabel = uiString(R.string.l10n_noop_glance_widget_heart_rate_410aa15c)
+    val batteryLabel = uiString(R.string.l10n_noop_glance_widget_strap_battery_a6c7f09c)
+    // The stale/live distinction is drawn ONLY by dimming the text below, which is a colour-only channel:
+    // TalkBack, and anyone who cannot perceive the dim, was told a carried-over reading was current. Marked
+    // on the LIVE side rather than the stale one, so a stale value simply carries no claim (#1799).
+    val liveSuffix =
+        if (snap.heartRateStale) "" else " " + uiString(R.string.l10n_today_screen_sync_chip_live_98aadb37)
+    val hrSpoken = WidgetCaptions.spoken(
+        hrLabel,
+        snap.heartRate?.let { uiString(R.string.l10n_today_screen_value_bpm_8f3a90c3, it) + liveSuffix },
+        noData,
+    )
+    val batteryText = snap.batteryPct?.let { uiString(R.string.l10n_today_screen_pct_ee63e247, it) }
+    val batterySpoken = WidgetCaptions.spoken(batteryLabel, batteryText, noData)
+    // When the figures are from, shown only once nothing is arriving: while the strap streams, the time
+    // would be "now" on every push and say nothing.
+    val updated = if (!snap.connected && snap.updatedAtMs > 0L) {
+        SimpleDateFormat(   // #1821: the reader's chosen clock
+            ClockFormat.hourMinutePattern(ClockPrefs.uses24Hour(context)), Locale.getDefault(),
+        ).format(Date(snap.updatedAtMs))
+    } else {
+        null
+    }
+    val updatedSpoken = updated?.let { uiString(R.string.l10n_hr_glance_widget_updated_time_1b5feedb, it) }
+
+    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = GlanceModifier.semantics { contentDescription = hrSpoken },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_stat_heart),
+                contentDescription = null,
+                modifier = GlanceModifier.size(12.dp),
+                colorFilter = ColorFilter.tint(WidgetColors.heart),
+            )
+            Spacer(GlanceModifier.width(3.dp))
+            Text(
+                text = WidgetCaptions.heartRate(snap.heartRate),
+                // Dim a carried-over reading so a stale HR can't masquerade as a live one.
+                style = TextStyle(
+                    color = if (snap.heartRateStale || snap.heartRate == null) WidgetColors.onSurfaceVariant
+                    else WidgetColors.onSurface,
+                    fontSize = WidgetType.caption,
+                ),
+                maxLines = 1,
+            )
+        }
+        Spacer(GlanceModifier.defaultWeight())
+        if (updated != null && updatedSpoken != null) {
+            Text(
+                text = updated,
+                style = WidgetType.captionStyle,
+                maxLines = 1,
+                modifier = GlanceModifier.semantics { contentDescription = updatedSpoken },
+            )
+            Spacer(GlanceModifier.defaultWeight())
+        }
+        Row(
+            modifier = GlanceModifier.semantics { contentDescription = batterySpoken },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_widget_strap_battery),
+                contentDescription = null,
+                modifier = GlanceModifier.size(14.dp),
+                colorFilter = ColorFilter.tint(WidgetColors.onSurfaceVariant),
+            )
+            Spacer(GlanceModifier.width(3.dp))
+            Text(
+                text = batteryText ?: WidgetCaptions.DASH,
+                style = TextStyle(
+                    color = if (batteryText == null) WidgetColors.onSurfaceVariant else WidgetColors.onSurface,
+                    fontSize = WidgetType.caption,
+                ),
+                maxLines = 1,
+            )
+        }
     }
 }

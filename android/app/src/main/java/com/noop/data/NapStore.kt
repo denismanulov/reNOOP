@@ -12,9 +12,15 @@ import org.json.JSONObject
  * (→ `WhoopRepository.addManualNap`, the #508 hand-corrected-nap path) or dismisses it. Mirrors the
  * CaffeineLog JSON-list pattern (org.json + the shared "noop_prefs" store); nothing leaves the device.
  *
- * A candidate carries a stable [NapCandidate]-derived id (start|end) so re-detecting the SAME window on a
- * later offload is idempotent — it won't double-queue, and a window the user already dismissed stays
- * dismissed (tracked in a small dismissed-id set, retention-pruned with the queue).
+ * A candidate carries a stable [NapCandidate]-derived id (start|end), and the queue is deduplicated by
+ * OVERLAP, not by that id: the detector re-reads the same stretch of stillness on every offload and its
+ * end moves by seconds or grows by minutes, so an exact-id test queued one nap three times. A window the
+ * user dismissed stays dismissed for anything that overlaps it (tracked in a small dismissed-id set,
+ * retention-pruned with the queue).
+ *
+ * A candidate that overlaps a recorded sleep session is not a nap to review and is dropped
+ * ([outsideSleep]): the detector runs on every offload, night included, and a night is made of quiet
+ * stretches of exactly nap length.
  *
  * All times are wall-clock unix SECONDS. Pure aside from the single SharedPreferences read/write; the
  * detection itself is the pure [com.noop.analytics.NapDetector].
@@ -36,15 +42,56 @@ object NapStore {
      *  Public + pure so the retention/dedup logic is unit-testable without a Context. */
     fun endTsOf(id: String): Long? = id.substringAfter('|', "").toLongOrNull()
 
-    /**
-     * Pure enqueue decision: a freshly-detected [candidate] should be queued only when its window isn't
-     * already pending AND wasn't previously dismissed. Pulled out of [enqueue] so the dedup contract is
-     * unit-testable without SharedPreferences. [pendingIds]/[dismissedIds] are the current id sets.
-     */
-    fun shouldEnqueue(candidate: NapCandidate, pendingIds: Set<String>, dismissedIds: Set<String>): Boolean {
-        val id = idFor(candidate)
-        return id !in dismissedIds && id !in pendingIds
+    /** Start-ts parsed out of an id ("start|end"), or null if malformed. Public + pure, as [endTsOf]. */
+    fun startTsOf(id: String): Long? = id.substringBefore('|', "").toLongOrNull()
+
+    /** Do the windows `[aStart, aEnd]` and `[bStart, bEnd]` share any time? Touching ends do not count. */
+    fun overlaps(aStart: Long, aEnd: Long, bStart: Long, bEnd: Long): Boolean = aStart < bEnd && bStart < aEnd
+
+    /** Does [candidate] overlap the window an [id] names? A malformed id only matches itself. */
+    private fun overlapsId(candidate: NapCandidate, id: String): Boolean {
+        val start = startTsOf(id)
+        val end = endTsOf(id)
+        if (start == null || end == null) return id == idFor(candidate)
+        return overlaps(candidate.start, candidate.end, start, end)
     }
+
+    /**
+     * Pure enqueue decision: a freshly-detected [candidate] should be queued only when its window
+     * overlaps nothing already pending AND nothing previously dismissed. Pulled out of [enqueue] so the
+     * dedup contract is unit-testable without SharedPreferences. [pendingIds]/[dismissedIds] are the
+     * current id sets.
+     */
+    fun shouldEnqueue(candidate: NapCandidate, pendingIds: Set<String>, dismissedIds: Set<String>): Boolean =
+        dismissedIds.none { overlapsId(candidate, it) } && pendingIds.none { overlapsId(candidate, it) }
+
+    /**
+     * The queue after [candidate] arrives, newest window first. Pure.
+     *
+     * - It overlaps a dismissed window: unchanged. The user already said no to that stretch.
+     * - It overlaps nothing pending: added.
+     * - It overlaps something pending: the same stretch read again, so ONE entry stays, the longest
+     *   reading of it (an earlier entry wins a tie). A nap still in progress at one offload is seen
+     *   whole at the next.
+     */
+    fun queueAfter(
+        pending: List<NapCandidate>,
+        candidate: NapCandidate,
+        dismissedIds: Set<String>,
+    ): List<NapCandidate> {
+        if (dismissedIds.any { overlapsId(candidate, it) }) return pending
+        val clashing = pending.filter { overlaps(it.start, it.end, candidate.start, candidate.end) }
+        val kept = if (clashing.isEmpty()) candidate else (clashing + candidate).maxByOrNull { it.durationS }!!
+        return (pending - clashing.toSet() + kept).sortedByDescending { it.start }
+    }
+
+    /**
+     * [candidates] without those that overlap a recorded sleep session. [sleep] is `(start, end)` pairs
+     * in unix seconds, main sleep and naps alike: either way the stretch is already sleep on record and
+     * there is nothing left to ask the user. Pure.
+     */
+    fun outsideSleep(candidates: List<NapCandidate>, sleep: List<Pair<Long, Long>>): List<NapCandidate> =
+        candidates.filterNot { c -> sleep.any { (start, end) -> overlaps(c.start, c.end, start, end) } }
 
     /** Pure retention prune of a dismissed-id set: keep only ids whose window end is at/after [cutoff].
      *  Malformed ids (no parseable end) are dropped. Unit-testable without a Context. */
@@ -94,16 +141,33 @@ object NapStore {
     }
 
     /**
-     * Queue a freshly-detected candidate for review. No-op (returns false) when the window is already
-     * pending OR was previously dismissed — so the same offload window can be re-detected without
+     * Queue a freshly-detected candidate for review. Returns false when the window overlaps one already
+     * pending OR previously dismissed — so the same stretch can be re-detected on every offload without
      * spamming the queue. Returns true when it was newly enqueued.
      */
     fun enqueue(context: Context, candidate: NapCandidate, nowEpochSec: Long = System.currentTimeMillis() / 1000L): Boolean {
         val current = pending(context, nowEpochSec)
-        val pendingIds = current.map { idFor(it) }.toSet()
-        if (!shouldEnqueue(candidate, pendingIds, dismissedIds(context))) return false
-        writePending(context, (listOf(candidate) + current).sortedByDescending { it.start })
-        return true
+        val dismissed = dismissedIds(context)
+        val next = queueAfter(current, candidate, dismissed)
+        if (next != current) writePending(context, next)
+        // "Newly enqueued" means a stretch the queue did not hold; a longer reading of one it did
+        // replaces that entry without counting as new.
+        return shouldEnqueue(candidate, current.map { idFor(it) }.toSet(), dismissed)
+    }
+
+    /**
+     * Drop every pending candidate that overlaps a recorded sleep session and return what is left. Not
+     * recorded as dismissed: the detector applies the same rule, so they cannot come back.
+     */
+    fun dropOverlappingSleep(
+        context: Context,
+        sleep: List<Pair<Long, Long>>,
+        nowEpochSec: Long = System.currentTimeMillis() / 1000L,
+    ): List<NapCandidate> {
+        val current = pending(context, nowEpochSec)
+        val next = outsideSleep(current, sleep)
+        if (next != current) writePending(context, next)
+        return next
     }
 
     /** Remove a candidate from the pending queue WITHOUT marking it dismissed (used after accept). */

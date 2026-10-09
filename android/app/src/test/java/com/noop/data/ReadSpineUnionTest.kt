@@ -15,8 +15,8 @@ import org.junit.Test
  * dashboard read must resolve the UNION of (active id) AND the canonical "my-whoop"/"my-whoop-noop", or the
  * entire import is ORPHANED after a re-add.
  *
- * These exercise the PURE companion seams the merged reads ([daysMerged] / [recentDaysMergedFlow] /
- * [FusionDayAdapter]) are built on, so they run on the JVM with no Room:
+ * These exercise the PURE companion seams the merged reads ([daysMerged] / [recentDaysMergedFlow]) are
+ * built on, so they run on the JVM with no Room:
  *   - [WhoopRepository.importedSourceIdsFor] / [WhoopRepository.computedSourceIdsFor] give the union ids;
  *   - [WhoopRepository.unionByDay] is the per-day active-wins de-dupe;
  *   - [WhoopRepository.mergeDaily] is the imports-win-over-computed cross-bucket merge.

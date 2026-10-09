@@ -601,7 +601,7 @@ class SourceCoordinator(
         // allowKeyInstall wired from it) — the caller connects only after this returns, so the order holds.
         if (OuraInstallKeyStore.consumePendingAdopt(ctx, id)) {
             source.setAdoptIntent(true)
-            straplog("Oura: adopt consent granted - this session may install NOOP's key")
+            straplog("Oura: adopt consent granted - this session may install reNOOP's key")
         }
         // Mirror this source's live adopt outcome + honest needs-pairing message so the wizard can leave its
         // Adopting step on a confirmed streaming (success) or an honest Failed. Reset on teardown.

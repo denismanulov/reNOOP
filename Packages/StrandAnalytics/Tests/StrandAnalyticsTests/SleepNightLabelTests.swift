@@ -1,7 +1,8 @@
 import XCTest
 @testable import StrandAnalytics
 
-/// Swift twin of `SleepHeroLogicTest`. The Kotlin side has had these since the logic was written; the
+/// The Kotlin side had these cases from the day the logic was written (its test went with the old Android
+/// Sleep screen); the
 /// Swift side had none, because the function lived private inside the view — which is why the defect
 /// below went uncaught on this platform until a report arrived.
 final class SleepNightLabelTests: XCTestCase {

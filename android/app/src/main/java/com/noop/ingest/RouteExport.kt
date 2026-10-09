@@ -64,7 +64,7 @@ object RouteExport {
         val times = interpolatedTimes(points.size, startTs, endTs)
         val sb = StringBuilder(256 + points.size * 96)
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<gpx version=\"1.1\" creator=\"NOOP\" ")
+        sb.append("<gpx version=\"1.1\" creator=\"reNOOP\" ")
         sb.append("xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
         sb.append("  <metadata>\n    <time>").append(iso(startTs)).append("</time>\n  </metadata>\n")
         sb.append("  <trk>\n")

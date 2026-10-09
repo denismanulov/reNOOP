@@ -14,10 +14,7 @@ import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StackedBarChart
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
-import com.noop.R
 import org.json.JSONArray
 
 // MARK: - Hosted cards (#today-hosted-cards)
@@ -105,8 +102,6 @@ enum class HostedCard(
  * DATA rather than a callback, because a callback cannot live on an enum and a mapping that lives
  * inside the composable that draws it is unreachable from any test. The failure it guards is silent: a
  * card wired to the wrong destination still renders, still taps, and simply lands somewhere else.
- *
- * Twin of the Swift `HostedCard.route`.
  */
 sealed interface HostedDestination {
     /** Opens nothing. The tap-to-log card, whose buttons ARE its purpose. */
@@ -134,70 +129,10 @@ val HostedCard.destination: HostedDestination
     }
 
 /**
- * Whether the card's content OPENS with a bare section header instead of filling its slot with a card.
- *
- * The Today host wraps every card in a rounded clip so the tap ripple respects the card's corners. That
- * is right for a card that fills the slot, and wrong for these: their first pixel is header TEXT at the
- * slot's top-left, and an 18dp corner cuts hardest at y=0, so the radius ate the first glyph of the
- * overline ("LAST NIGHT" rendering as "AST NIGHT", #2109). The clip is shaped from this instead.
- *
- * Read the card's FIRST EMISSION, following any delegation: NIGHT_DETAIL looks like it opens with a grid
- * and actually opens with `MetricGrid`, whose own first child is a header. A shallow look at the host
- * composable misses that one.
- *
- * Listed rather than defaulted, for the same reason [destination] is: the `when` is exhaustive, so a card
- * added later cannot silently inherit a shape that clips its title. The failure this guards is quiet, a
- * heading that is merely slightly wrong, which is exactly the kind nobody files twice.
- */
-val HostedCard.leadsWithSectionHeader: Boolean
-    get() = when (this) {
-        HostedCard.SLEEP_MARKS, HostedCard.ASLEEP_DURATION, HostedCard.STAGES_VS_TYPICAL,
-        HostedCard.NIGHT_DETAIL, HostedCard.SLEEP_DEBT, HostedCard.STAGES -> true
-        HostedCard.HOURS_VS_NEEDED, HostedCard.CONSISTENCY, HostedCard.STRESS_TODAY,
-        HostedCard.TREND_HRV, HostedCard.TREND_RESTING_HR, HostedCard.TREND_EFFORT -> false
-    }
-
-/**
- * The card's display title, localized. The enum's [title] field stays the English source-of-truth default
- * (used for logging/comparisons); the UI reads this so the editor shows a translated title. Enum
- * constructors can't call [stringResource], so resolution happens here at the render site. Mirrors iOS,
- * where `HostedCard.title` is a `String(localized:)`.
- */
-@Composable
-fun HostedCard.localizedTitle(): String = when (this) {
-    HostedCard.SLEEP_MARKS -> stringResource(R.string.l10n_sleep_screen_sleep_marks_8e9b86f0)
-    HostedCard.ASLEEP_DURATION -> stringResource(R.string.l10n_sleep_screen_asleep_duration_3638413f)
-    HostedCard.STAGES_VS_TYPICAL -> stringResource(R.string.l10n_sleep_screen_stages_vs_typical_28463f24)
-    HostedCard.NIGHT_DETAIL -> stringResource(R.string.l10n_sleep_screen_night_detail_8f271bcf)
-    HostedCard.SLEEP_DEBT -> stringResource(R.string.l10n_sleep_screen_sleep_debt_ledger_8cc9a992)
-    HostedCard.STAGES -> stringResource(R.string.l10n_sleep_screen_stages_c1d33ad5)
-    HostedCard.HOURS_VS_NEEDED -> stringResource(R.string.l10n_sleep_screen_hours_vs_needed_500a0aca)
-    HostedCard.CONSISTENCY -> stringResource(R.string.l10n_sleep_screen_consistency_0ea7b95e)
-    HostedCard.STRESS_TODAY -> stringResource(R.string.hosted_card_stress_title)
-    // The SAME titles the Trends tab gives these charts, so a hosted card is recognisably the card it
-    // came from rather than a second name for the same thing.
-    HostedCard.TREND_HRV -> stringResource(R.string.trends_hrv_full)
-    HostedCard.TREND_RESTING_HR -> stringResource(R.string.trends_resting_hr_full)
-    HostedCard.TREND_EFFORT -> stringResource(R.string.trends_effort)
-}
-
-/**
- * The origin (source tab) label, localized — the editor groups the Available list by this. Resolves off the
- * English [origin] field so a future Trends-origin card localizes automatically; the raw [origin] stays the
- * source of truth for non-UI uses. Reuses the nav tab names, which carry the same text in every locale.
- */
-@Composable
-fun HostedCard.localizedOrigin(): String = when (origin) {
-    "Trends" -> stringResource(R.string.nav_trends)
-    "Stress" -> stringResource(R.string.nav_stress)
-    else -> stringResource(R.string.nav_sleep)
-}
-
-/**
  * Display-only persistence for the Today-hosted card selection. Holds an ORDERED list of the enabled
  * hosted cards as a JSON-encoded array of ids; a card not in the list is not hosted. Stored in
- * SharedPreferences under "today.hostedCards" and whitelisted into .noopbak. Mirrors [DashboardCardPrefs]
- * byte-for-byte EXCEPT the default is EMPTY — hosting is purely additive/opt-in, so a fresh install (and
+ * SharedPreferences under "today.hostedCards" and whitelisted into .noopbak. The
+ * default is EMPTY — hosting is purely additive/opt-in, so a fresh install (and
  * every existing user) hosts nothing until they add a card in Customise. Mirrors iOS HostedCardPrefs.
  */
 object HostedCardPrefs {
@@ -225,7 +160,7 @@ object HostedCardPrefs {
      * Decode the stored string into an ordered list of hosted cards. An empty/unset string yields the
      * EMPTY default (nothing hosted). Accepts both the JSON-array form (canonical) and a legacy
      * comma-joined form. Unknown ids are dropped; duplicates de-duped; returns ONLY the hosted cards in
-     * their saved order. Unlike [DashboardCardPrefs], an all-unknown decode stays EMPTY (never back-fills
+     * their saved order. An all-unknown decode stays EMPTY (never back-fills
      * a default), because there is no sensible non-empty default for an opt-in surface. Mirrors iOS.
      */
     fun decodeEnabled(raw: String?): List<HostedCard> {

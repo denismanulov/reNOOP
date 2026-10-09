@@ -13,12 +13,8 @@ talks to this service, and only after the wearer signs in.
 
 ## What it stores, and the rules it keeps
 
-- **An account:** nickname, display name, four sharing switches, an optional picture. No password,
-  no e-mail, no phone number, no device identifier.
-- **There is no password and no sign-in.** Sign-up takes a nickname and returns a token, and that
-  token is the account's one credential: the phone keeps it (in the Keychain on iOS) and sends it
-  with every call. Whoever holds the token is the account. A phone that loses it cannot get back
-  in, and the nickname stays taken until the account is deleted from a phone that still has it.
+- **An account:** nickname, display name, a scrypt password hash, four sharing switches, an optional
+  picture. No e-mail, no phone number, no device identifier. There is no password reset.
 - **Per day, per account:** the summary below, for the last 35 days. Nothing raw: no heart-rate
   stream, no RR intervals, no route, no journal.
 - **A section that is switched off is not stored.** The server drops it from an upload, and turning a
@@ -29,12 +25,12 @@ talks to this service, and only after the wearer signs in.
 - **Nicknames are found by exact match only.** There is no directory and no prefix search.
 - **Deleting the account** removes the nickname, the picture, every day, every friendship and every
   session in one transaction.
-- The token is random and stored only as a SHA-256 hash. Signing out (`DELETE /v1/session`) ends it
-  for good, since nothing can issue another.
+- Sessions are random bearer tokens stored as SHA-256 hashes, at most ten per account. Changing the
+  password ends every other session.
 
 ## API (version 1)
 
-JSON in, JSON out, UTF-8. Every call except the first four needs `Authorization: Bearer <token>`.
+JSON in, JSON out, UTF-8. Every call except the first five needs `Authorization: Bearer <token>`.
 An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP status.
 
 | Method and path | Body | Answer |
@@ -42,11 +38,13 @@ An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP stat
 | `GET /healthz` | | `{"ok": true}` |
 | `GET /v1/info` | | `{"name", "api": 1, "inviteRequired"}` |
 | `GET /v1/nicks/{nick}` | | `{"nick", "free"}` |
-| `POST /v1/register` | `{"nick", "name"?, "invite"?}` | `201 {"token", "me"}` |
-| `DELETE /v1/session` | | `204`, the token is ended for good |
+| `POST /v1/register` | `{"nick", "password", "name"?, "invite"?}` | `201 {"token", "me"}` |
+| `POST /v1/login` | `{"nick", "password"}` | `{"token", "me"}` |
+| `DELETE /v1/session` | | `204`, this phone is signed out |
 | `GET /v1/me` | | profile with `share` |
 | `PATCH /v1/me` | `{"name"?, "share"?: {"scores"?, "sleep"?, "workouts"?, "hr"?}}` | profile |
-| `POST /v1/me/delete` | | `204` |
+| `POST /v1/me/password` | `{"old", "new"}` | `{"token"}`, every other session ended |
+| `POST /v1/me/delete` | `{"password"}` | `204` |
 | `PUT /v1/me/avatar` | raw JPEG, PNG or WebP, at most 200 KB | profile, `avatarRev` bumped |
 | `DELETE /v1/me/avatar` | | `204` |
 | `PUT /v1/me/days/{YYYY-MM-DD}` | a day (below) | `204`, replaces that day |
@@ -62,9 +60,8 @@ An error is `{"error": "<code>", "message": "<text>"}` with a matching HTTP stat
 
 `relation` is `self`, `friend`, `outgoing`, `incoming` or `none`. Sending a request to someone who
 already asked you is an acceptance. A nickname is 3 to 20 characters of `a-z`, `0-9` and `_`, stored
-lower-case; a leading `@` is accepted and ignored. Sign-up needs only the nickname: the display name
-starts as the nickname and is changed later with `PATCH /v1/me`. An unknown member in a body, a
-`password` included, is a `400`.
+lower-case; a leading `@` is accepted and ignored. A password is 8 to 128 characters. Sign-up needs
+only those two: the display name starts as the nickname and is changed later with `PATCH /v1/me`.
 
 ### A day
 
@@ -102,7 +99,7 @@ The feed leaves out `hr.series`, which is most of a day's bytes; a friend's own 
 
 ## Limits
 
-Sign-up: 5 an hour per address. Nickname
+Sign-up: 5 an hour per address. Sign-in: 10 per ten minutes per nickname, 20 per address. Nickname
 lookups: 30 a minute. Uploads: 120 an hour. 100 friends and 50 unanswered requests per account, 500
 accounts per server unless `FRIENDS_MAX_USERS` says otherwise. Set `FRIENDS_INVITE_CODE` to make
 sign-up ask for a code only your friends know.
@@ -123,33 +120,10 @@ FRIENDS_DB=/var/lib/renoop-friends/friends.db python3 server.py
 | `FRIENDS_TRUST_PROXY` | `1` | Take the client address from the proxy's `X-Forwarded-For` |
 
 `renoop-friends.service` is a systemd unit that runs it as a throwaway user with the database in
-`/var/lib/renoop-friends`, and `Caddyfile.example` puts HTTPS in front. The token travels in a
-header on every call and is all it takes to be an account, so the service must never be reachable
-over plain HTTP from outside.
+`/var/lib/renoop-friends`, and `Caddyfile.example` puts HTTPS in front. Passwords travel in the
+request body, so the service must never be reachable over plain HTTP from outside.
 
-A database made while accounts still had passwords opens as it is. Its `pw_salt` and `pw_hash`
-columns are no longer read or written with anything but an empty value.
-
-Back up with `sqlite3 /var/lib/renoop-friends/friends.db ".backup '/root/friends-backup.db'"`; the
-file is safe to copy while the server runs only through that command.
-
-## How a phone fills a day
-
-Two friends on different platforms read each other's figures side by side, so a day is built one way.
-The reference is `FriendsDayBuilder` in `Packages/StrandAnalytics` (Swift); a second client matches it.
-
-- **A section whose switch is off is not built**, so it is not sent. The server dropping it is the
-  second line, not the first.
-- `recovery` and `sleepScore`: the app's 0 to 100 score, rounded to a whole number. A value outside
-  0 to 100 is left out. `strain`: the stored 0 to 100 value, rounded to one decimal.
-- `sleep`: the night that ended on that local day. Each of `remMin`, `lightMin`, `deepMin` and
-  `awakeMin` is the stage total rounded to a whole minute, and `asleepMin` is the sum of the three
-  rounded sleeping stages, so the parts add up to the total. A night with no time asleep is left out.
-- `workouts`: those that started on that local day, oldest first, the latest 20 when there are more.
-  `durationS` is the recorded duration, else end minus start. A figure outside the server's range is
-  left out of that workout, not clamped.
-- `hr.series`: the mean of each 300-second bin on the Unix clock (`ts // 300 * 300`), rounded half up,
-  stamped at the bin's start, oldest first, at most the newest 300 bins. Samples outside 20 to 250 bpm
-  are not readings. `lastBpm` and `lastTs` are the newest usable sample.
-- A day with nothing in it is not uploaded, and a day whose content has not changed is not sent again.
-- Today and yesterday are sent after each scoring pass and when the Friends tab opens.
+`backup.py` with `renoop-friends-backup.service` and `.timer` writes a consistent copy to
+`/var/backups/renoop-friends` every night and keeps the newest seven. Those copies sit on the same
+disk, so they cover a damaged or emptied database, not a lost server. Never copy the live file by
+hand while the server runs: it is only consistent through SQLite's backup call.

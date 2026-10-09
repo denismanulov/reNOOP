@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark twins of the widget and notification colours in values/colors.xml: the reNOOP mint seed's
+         dark scheme (ui/Theme.kt ReNoopDarkScheme) and the dark data hues of ui/m3/HealthColors.kt. -->
+    <color name="widget_surface">#FF1B211E</color>
+    <color name="widget_on_surface">#FFDEE4DE</color>
+    <color name="widget_on_surface_variant">#FFBFC9C1</color>
+    <color name="widget_primary">#FF6CDBAC</color>
+    <color name="widget_chip">#FF354B40</color>
+    <color name="widget_on_chip">#FFCFE9D9</color>
+    <color name="widget_ring_track">#FF404943</color>
+    <color name="widget_charge">#FF4FDC9A</color>
+    <color name="widget_effort">#FF8AB4FF</color>
+    <color name="widget_rest">#FFC5A6FF</color>
+    <color name="widget_heart">#FFFF8FB1</color>
+    <color name="widget_stress">#FF5FD4E8</color>
+    <color name="notification_accent">#FF6CDBAC</color>
+    <color name="notification_workout">#FF8BDA86</color>
+</resources>

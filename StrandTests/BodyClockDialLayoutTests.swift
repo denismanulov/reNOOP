@@ -12,7 +12,7 @@ import XCTest
 /// longer than its stroke is wide. That is the part of "does this look right" a test can honestly own.
 /// Whether the result READS well still needs eyes on a device.
 ///
-/// Twin of the Kotlin `BodyClockDialLayoutTest`, same numbers, since the two dials are drawn to one spec.
+/// The Android dial was drawn to the same spec with the same numbers until that screen was removed.
 final class BodyClockDialLayoutTests: XCTestCase {
 
     /// A band is the radial span a drawn element occupies, from the dial centre outwards.

@@ -1,7 +1,6 @@
 package com.noop.ui
 
 import com.noop.R
-import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -9,6 +8,7 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,30 +18,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDefaults
@@ -55,10 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -67,42 +60,47 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.notif.CallAlertController
 import com.noop.notif.CallAlertSource
+import com.noop.ui.m3.ListGroup
+import com.noop.ui.m3.ListRow
+import com.noop.ui.m3.M3Switch
+import com.noop.ui.m3.RowIcon
+import com.noop.ui.m3.SwitchRow
+import com.noop.ui.settings.SettingsPage
+import com.noop.ui.settings.ValueRow
+import com.noop.ui.settings.clockLabel
+import com.noop.ui.sleep.ClockPicker
 import java.util.Calendar
 
-// MARK: - NotificationsSettingsScreen
+// MARK: - NotificationsSettingsScreen (Settings > Notifications > Wrist alerts)
 //
-// Android port of NotificationSettingsView.swift. Choose which apps tap your wrist and
-// how (per-app buzz pattern), with a master switch and overnight quiet hours.
-//
-// macOS resolves real installed apps via LaunchServices/NSWorkspace. Android restricts
-// package visibility (API 30+) and there is no equivalent "notification-capable app"
-// query, so we ship a curated catalog of common notification apps grouped exactly like
-// the Mac screen. Preferences persist in SharedPreferences (the Android counterpart to
-// UserDefaults); when the background bridge ships it reads the same prefs.
-//
-// Delivery requires a NotificationListenerService with Notification Access granted — the
-// behaviour card deep-links to Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS for that.
+// Which apps tap the wrist and how (a buzz pattern per app), calls, the phone's timers and alarms, and
+// when not to buzz. Android restricts package visibility (API 30+) and has no "notification-capable app"
+// query, so the page lists a curated catalogue of common apps plus an "All other apps" switch. The
+// preferences persist in SharedPreferences and are read by the notification listener; delivery needs
+// Notification Access, which the first group opens. Drawn like every other Settings page (a large
+// collapsing bar, segmented list groups); an app or the calls row is a two-target row, as Pixel Settings
+// draws one: its switch turns it on or off, and the row opens its buzz pattern while it is on.
 
 // MARK: - Domain model (mirrors NotificationSettingsStore.swift)
 
 /** Haptic pattern fired on the strap; only the repeat count varies. */
-internal enum class BuzzPattern(val label: String, val loops: Int) {
-    Single("Single", 1),
-    Double("Double", 2),
-    Triple("Triple", 3),
-    Long("Long", 5),
+internal enum class BuzzPattern(@StringRes val labelRes: Int, val loops: Int) {
+    Single(R.string.settings_wrist_pattern_single, 1),
+    Double(R.string.settings_wrist_pattern_double, 2),
+    Triple(R.string.settings_wrist_pattern_triple, 3),
+    Long(R.string.settings_wrist_pattern_long, 5),
 }
 
 /** Grouping for the settings screen, with its header icon + default pattern. */
 internal enum class NotifCategory(
-    val title: String,
+    @StringRes val titleRes: Int,
     val icon: ImageVector,
     val defaultPattern: BuzzPattern,
 ) {
-    Email("Email", Icons.Filled.Email, BuzzPattern.Double),
-    Messaging("Messaging", Icons.AutoMirrored.Filled.Chat, BuzzPattern.Single),
-    Meetings("Meetings", Icons.Filled.Videocam, BuzzPattern.Triple),
-    Calendar("Calendar & Reminders", Icons.Filled.CalendarMonth, BuzzPattern.Double),
+    Email(R.string.settings_wrist_cat_email, Icons.Filled.Email, BuzzPattern.Double),
+    Messaging(R.string.settings_wrist_cat_messaging, Icons.AutoMirrored.Filled.Chat, BuzzPattern.Single),
+    Meetings(R.string.settings_wrist_cat_meetings, Icons.Filled.Videocam, BuzzPattern.Triple),
+    Calendar(R.string.settings_wrist_cat_calendar, Icons.Filled.CalendarMonth, BuzzPattern.Double),
 }
 
 /** A notification-capable app NOOP can mirror to the wrist. `id` is the persistence key. */
@@ -223,12 +221,16 @@ internal object NotifPrefs {
 
 // MARK: - Screen
 
+private enum class QuietDialog { FROM, TO }
+
 @Composable
-fun NotificationsSettingsScreen(vm: AppViewModel) {
+fun NotificationsSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    val is24h = ClockPrefs.uses24Hour(context)
     val live by vm.live.collectAsStateWithLifecycle()
 
-    // Header settings, seeded from prefs once and written through on change.
+    // Seeded from prefs once and written through on change.
     var masterEnabled by remember { mutableStateOf(NotifPrefs.getBool(context, NotifPrefs.MASTER, false)) }
     var onlyWhenWorn by remember { mutableStateOf(NotifPrefs.getBool(context, NotifPrefs.WORN, true)) }
     var allOtherApps by remember { mutableStateOf(NotifPrefs.getBool(context, NotifPrefs.ALL_OTHER, false)) }
@@ -240,11 +242,6 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
     var voipCallsEnabled by remember { mutableStateOf(NotifPrefs.getBool(context, NotifPrefs.CALLS_VOIP, false)) }
     var alarmTimerEnabled by remember { mutableStateOf(NotifPrefs.getBool(context, NotifPrefs.ALARM_TIMER, false)) }
     var callsPattern by remember { mutableStateOf(NotifPrefs.callPattern(context)) }
-    // Scheduled report notifications (#517) — opt-in, default OFF. SharedPreferences isn't reactive, so
-    // each Switch mirrors into local state and writes straight through to NoopPrefs.
-    var morningReport by remember { mutableStateOf(NoopPrefs.morningReportEnabled(context)) }
-    var postWorkoutReport by remember { mutableStateOf(NoopPrefs.postWorkoutReportEnabled(context)) }
-    var strainTargetReport by remember { mutableStateOf(NoopPrefs.strainTargetEnabled(context)) }
     var phonePermissionDenied by remember { mutableStateOf(false) }
     val phonePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -253,8 +250,9 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
         phonePermissionDenied = !granted
         NotifPrefs.setBool(context, NotifPrefs.CALLS_PHONE, granted)
     }
+    var dialog by remember { mutableStateOf<QuietDialog?>(null) }
 
-    // Per-app enabled state, seeded from prefs so the UI is reactive within the session.
+    // Per-app state, seeded from prefs so the page is reactive within the session.
     val enabledState: SnapshotStateMap<String, Boolean> = remember {
         mutableStateMapOf<String, Boolean>().apply {
             notifCatalog.forEach { put(it.id, NotifPrefs.appEnabled(context, it.id)) }
@@ -265,601 +263,319 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
             notifCatalog.forEach { put(it.id, NotifPrefs.appPattern(context, it)) }
         }
     }
-    val enabledCount = enabledState.values.count { it }
 
-    ScreenScaffold(
-        title = uiString(R.string.l10n_notifications_settings_screen_notifications_753a22b2),
-        subtitle = "Buzz your strap when these apps notify you. Everything runs on this device.",
-    ) {
-        // MARK: Master card
-        AlertSection(
-            icon = Icons.Filled.NotificationsActive,
-            title = uiString(R.string.l10n_notifications_settings_screen_wrist_alerts_75581d51),
-            blurb = "When on, NOOP taps your wrist for the apps you pick below, so you can leave " +
-                "your phone and still feel what matters.",
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(uiString(R.string.l10n_notifications_settings_screen_enable_wrist_alerts_462b9e0f), style = NoopType.body, color = Palette.textPrimary)
-                Spacer(Modifier.weight(1f))
-                NoopSwitch(
-                    checked = masterEnabled,
-                    onChange = {
-                        masterEnabled = it
-                        NotifPrefs.setBool(context, NotifPrefs.MASTER, it)
-                    },
-                    label = uiString(R.string.l10n_notifications_settings_screen_enable_wrist_alerts_462b9e0f),
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+    SettingsPage(title = stringResource(R.string.l10n_notifications_settings_screen_wrist_alerts_75581d51), onBack = onBack) {
+        // The master switch, the system page that grants Notification Access, and a test buzz.
+        item {
+            ListGroup(
+                footer = stringResource(R.string.l10n_notifications_settings_screen_wrist_delivery_needs_notification_access_so_2a14e784),
             ) {
-                StatePill(strapPillTitle(live), tone = strapPillTone(live), pulsing = live.connected)
-                StatePill(
-                    "$enabledCount app${if (enabledCount == 1) "" else "s"} on",
-                    tone = if (enabledCount > 0) StrandTone.Positive else StrandTone.Neutral,
-                    showsDot = false,
-                )
-                Spacer(Modifier.weight(1f))
-                PillButton(
-                    label = uiString(R.string.l10n_notifications_settings_screen_test_buzz_deeab5ae),
-                    icon = Icons.Filled.GraphicEq,
-                    enabled = live.bonded,
-                    onClick = { vm.buzz(loops = 2) },
-                )
-            }
-
-            DeliveryNote()
-        }
-
-        CallsCard(
-            masterEnabled = masterEnabled,
-            callsEnabled = callsEnabled,
-            phoneCallsEnabled = phoneCallsEnabled,
-            voipCallsEnabled = voipCallsEnabled,
-            pattern = callsPattern,
-            bonded = live.bonded,
-            permissionDenied = phonePermissionDenied,
-            onCallsEnabled = {
-                callsEnabled = it
-                NotifPrefs.setBool(context, NotifPrefs.CALLS_MASTER, it)
-                if (!it) CallAlertController.stopAll()
-            },
-            onPhoneCallsEnabled = { value ->
-                if (!value) {
-                    phoneCallsEnabled = false
-                    phonePermissionDenied = false
-                    NotifPrefs.setBool(context, NotifPrefs.CALLS_PHONE, false)
-                    CallAlertController.stopSource(CallAlertSource.PHONE)
-                    return@CallsCard
-                }
-                val granted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.READ_PHONE_STATE,
-                ) == PackageManager.PERMISSION_GRANTED
-                if (granted) {
-                    phoneCallsEnabled = true
-                    phonePermissionDenied = false
-                    NotifPrefs.setBool(context, NotifPrefs.CALLS_PHONE, true)
-                } else {
-                    phonePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                }
-            },
-            onVoipCallsEnabled = {
-                voipCallsEnabled = it
-                NotifPrefs.setBool(context, NotifPrefs.CALLS_VOIP, it)
-                if (!it) CallAlertController.stopSource(CallAlertSource.VOIP)
-            },
-            onPattern = {
-                callsPattern = it
-                NotifPrefs.setCallPattern(context, it)
-            },
-            onTest = { vm.buzz(loops = callsPattern.loops) },
-        )
-
-        // #1115 follow-up: buzz the strap when the phone's native Clock fires a timer or alarm
-        // (CATEGORY_ALARM, any clock app). Android-only — iOS can't observe another app's notifications.
-        AlertSection(
-            icon = Icons.Filled.Alarm,
-            title = uiString(R.string.notif_timer_alarm_title),
-            blurb = "Buzz your wrist when your phone's Clock app finishes a timer or rings an alarm.",
-        ) {
-            Column(modifier = Modifier.alphaIf(if (masterEnabled) 1f else Palette.disabledOpacity)) {
-                FormToggleRow(
-                    label = uiString(R.string.notif_timer_alarm_title),
-                    help = "Requires wrist alerts (above) to be on. Buzzes once when a timer/alarm notification fires.",
-                    checked = alarmTimerEnabled,
-                    enabled = masterEnabled,
-                    onChange = {
-                        alarmTimerEnabled = it
-                        NotifPrefs.setBool(context, NotifPrefs.ALARM_TIMER, it)
-                    },
-                )
-            }
-        }
-
-        // #926: the "every pattern buzzes the same on a 5/MG" note that used to sit here is GONE — the
-        // limitation it described is fixed. overallLoop (byte 11 of the maverick haptic body) is now
-        // written as `loops - 1` in WhoopBleClient.maverickHapticBody, hardware-confirmed on a real
-        // 5/MG, so all four patterns are distinct on that family too. Leaving the note would be worse
-        // than never having had it: a caption telling the user their setting does nothing, next to a
-        // control that now works.
-
-        // MARK: Category cards
-        activeCategories.forEach { cat ->
-            CategoryCard(
-                category = cat,
-                apps = appsIn(cat),
-                masterEnabled = masterEnabled,
-                bonded = live.bonded,
-                enabledState = enabledState,
-                patternState = patternState,
-                onToggle = { app, value ->
-                    enabledState[app.id] = value
-                    NotifPrefs.setAppEnabled(context, app.id, value)
-                },
-                onPattern = { app, pattern ->
-                    patternState[app.id] = pattern
-                    NotifPrefs.setAppPattern(context, app.id, pattern)
-                },
-                onTest = { app -> vm.buzz(loops = (patternState[app.id] ?: app.category.defaultPattern).loops) },
-            )
-        }
-
-        // MARK: Behaviour card
-        AlertSection(
-            icon = Icons.Filled.Tune,
-            title = uiString(R.string.l10n_notifications_settings_screen_behaviour_171ca038),
-            blurb = "Fine-tune when alerts reach your wrist.",
-        ) {
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_only_buzz_when_worn_6211cee3),
-                help = "Skip alerts when the strap is off your wrist.",
-                checked = onlyWhenWorn,
-                onChange = {
-                    onlyWhenWorn = it
-                    NotifPrefs.setBool(context, NotifPrefs.WORN, it)
-                },
-            )
-            RowDivider()
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_all_other_apps_51a8af2c),
-                help = "Also buzz for apps that aren't in the lists above (e.g. BeReal). Android " +
-                    "doesn't let NOOP see every installed app, so this is how you cover the rest. " +
-                    "Can be chatty; quiet hours and \"only when worn\" still apply.",
-                checked = allOtherApps,
-                onChange = {
-                    allOtherApps = it
-                    NotifPrefs.setBool(context, NotifPrefs.ALL_OTHER, it)
-                },
-            )
-            RowDivider()
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_quiet_hours_706b24d0),
-                help = "Mute wrist alerts overnight.",
-                checked = quietHoursEnabled,
-                onChange = {
-                    quietHoursEnabled = it
-                    NotifPrefs.setBool(context, NotifPrefs.QUIET, it)
-                },
-            )
-            if (quietHoursEnabled) {
-                RowDivider()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(uiString(R.string.l10n_notifications_settings_screen_from_3f66052a), style = NoopType.body, color = Palette.textPrimary)
-                    TimeChip(
-                        minutes = quietStartMinutes,
-                        accessibilityLabel = "Quiet hours start",
-                        onPicked = {
-                            quietStartMinutes = it
-                            NotifPrefs.setInt(context, NotifPrefs.QUIET_START, it)
+                item { shape ->
+                    SwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_enable_wrist_alerts_462b9e0f),
+                        checked = masterEnabled,
+                        onCheckedChange = {
+                            masterEnabled = it
+                            NotifPrefs.setBool(context, NotifPrefs.MASTER, it)
                         },
                     )
-                    Text("to", style = NoopType.body, color = Palette.textSecondary)
-                    TimeChip(
-                        minutes = quietEndMinutes,
-                        accessibilityLabel = "Quiet hours end",
-                        onPicked = {
-                            quietEndMinutes = it
-                            NotifPrefs.setInt(context, NotifPrefs.QUIET_END, it)
+                }
+                item { shape ->
+                    ListRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_open_notification_access_658fd30f),
+                        titleColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
                         },
                     )
-                    Spacer(Modifier.weight(1f))
+                }
+                item { shape ->
+                    ListRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_test_buzz_deeab5ae),
+                        titleColor = MaterialTheme.colorScheme.primary,
+                        enabled = live.bonded,
+                        onClick = { vm.buzz(loops = 2) },
+                    )
                 }
             }
         }
 
-        // MARK: Daily reports (#517) — phone notifications, not wrist buzzes. Opt-in, default OFF, no AI.
-        AlertSection(
-            icon = Icons.Filled.NotificationsActive,
-            title = uiString(R.string.l10n_notifications_settings_screen_daily_reports_c1a22a74),
-            blurb = "Optional phone notifications, off by default. These arrive after your strap syncs " +
-                "and NOOP scores the data, so they land soon after, not the exact second you wake or " +
-                "finish a workout. Everything is worked out on this phone.",
-        ) {
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_morning_recap_45ec05c5),
-                help = "After last night is processed, a notification with your Charge and Rest. Posts " +
-                    "once a day, after your strap has synced the night.",
-                checked = morningReport,
-                onChange = {
-                    morningReport = it
-                    NoopPrefs.setMorningReportEnabled(context, it)
-                },
-            )
-            RowDivider()
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_post_workout_summary_13e488f5),
-                help = "When a new workout syncs in, a notification with its Effort, duration and average " +
-                    "heart rate. Shows up after the session reaches NOOP on the next sync.",
-                checked = postWorkoutReport,
-                onChange = {
-                    postWorkoutReport = it
-                    NoopPrefs.setPostWorkoutReportEnabled(context, it)
-                    // Seed the frontier to the newest existing workout when turning ON, so enabling it
-                    // doesn't immediately fire a summary for a session already in history.
-                    if (it) vm.seedWorkoutReportFrontier()
-                },
-            )
-            RowDivider()
-            // #593: NOOP's own optimal-strain-reached nudge (not WHOOP's copy).
-            FormToggleRow(
-                label = uiString(R.string.l10n_notifications_settings_screen_optimal_strain_reached_2862ec2b),
-                help = "Once a day, a notification when your Effort reaches the low end of today's optimal " +
-                    "strain range (from your recovery). Posts after your strap syncs and NOOP scores the day.",
-                checked = strainTargetReport,
-                onChange = {
-                    strainTargetReport = it
-                    NoopPrefs.setStrainTargetEnabled(context, it)
-                },
-            )
-        }
-    }
-}
-
-// MARK: - Strap status (mirrors the three-state mapping from the Mac screen)
-
-private fun strapPillTitle(live: com.noop.ble.LiveState): String = when {
-    live.connected -> "Strap connected"
-    live.bonded -> "Strap idle"
-    else -> "Strap not connected"
-}
-
-private fun strapPillTone(live: com.noop.ble.LiveState): StrandTone = when {
-    live.connected -> StrandTone.Positive
-    live.bonded -> StrandTone.Warning
-    else -> StrandTone.Critical
-}
-
-@Composable
-private fun CallsCard(
-    masterEnabled: Boolean,
-    callsEnabled: Boolean,
-    phoneCallsEnabled: Boolean,
-    voipCallsEnabled: Boolean,
-    pattern: BuzzPattern,
-    bonded: Boolean,
-    permissionDenied: Boolean,
-    onCallsEnabled: (Boolean) -> Unit,
-    onPhoneCallsEnabled: (Boolean) -> Unit,
-    onVoipCallsEnabled: (Boolean) -> Unit,
-    onPattern: (BuzzPattern) -> Unit,
-    onTest: () -> Unit,
-) {
-    val contentAlpha = if (masterEnabled) 1f else Palette.disabledOpacity
-    AlertSection(
-        icon = Icons.Filled.Call,
-        title = uiString(R.string.l10n_notifications_settings_screen_calls_0a19b7e2),
-        blurb = "Tap your wrist for incoming phone calls and strict best-effort VoIP calls.",
-    ) {
-        Column(modifier = Modifier.alphaIf(contentAlpha)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(uiString(R.string.l10n_notifications_settings_screen_buzz_on_incoming_calls_625804a1), style = NoopType.body, color = Palette.textPrimary)
-                    Text(
-                        uiString(R.string.l10n_notifications_settings_screen_uses_the_same_quiet_hours_and_03badcac),
-                        style = NoopType.footnote,
-                        color = Palette.textTertiary,
+        // Calls (the phone and, best effort, the calling apps), and the phone clock.
+        item {
+            ListGroup(header = stringResource(R.string.l10n_notifications_settings_screen_calls_0a19b7e2)) {
+                item { shape ->
+                    PatternSwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_buzz_on_incoming_calls_625804a1),
+                        switchLabel = stringResource(R.string.l10n_notifications_settings_screen_buzz_on_incoming_calls_625804a1),
+                        checked = callsEnabled,
+                        enabled = masterEnabled,
+                        pattern = callsPattern,
+                        canTest = masterEnabled && live.bonded,
+                        onToggle = {
+                            callsEnabled = it
+                            NotifPrefs.setBool(context, NotifPrefs.CALLS_MASTER, it)
+                            if (!it) CallAlertController.stopAll()
+                        },
+                        onPattern = {
+                            callsPattern = it
+                            NotifPrefs.setCallPattern(context, it)
+                        },
+                        onTest = { vm.buzz(loops = callsPattern.loops) },
                     )
                 }
                 if (callsEnabled) {
-                    PatternMenu(pattern = pattern, enabled = masterEnabled, appName = "calls", onSelect = onPattern)
-                    TestIconButton(enabled = masterEnabled && bonded, appName = "calls", onClick = onTest)
-                }
-                NoopSwitch(
-                    checked = callsEnabled,
-                    onChange = onCallsEnabled,
-                    enabled = masterEnabled,
-                    label = uiString(R.string.l10n_notifications_settings_screen_buzz_on_incoming_calls_625804a1),
-                )
-            }
-            if (callsEnabled) {
-                RowDivider()
-                FormToggleRow(
-                    label = uiString(R.string.l10n_notifications_settings_screen_phone_calls_b79420d9),
-                    help = "Needs Phone permission; NOOP never reads numbers or call logs.",
-                    checked = phoneCallsEnabled,
-                    enabled = masterEnabled,
-                    onChange = onPhoneCallsEnabled,
-                )
-                if (permissionDenied) {
-                    Text(
-                        uiString(R.string.l10n_notifications_settings_screen_phone_permission_was_denied_so_phone_db0ebdd8),
-                        style = NoopType.footnote,
-                        color = Palette.statusCritical,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-                    )
-                }
-                RowDivider()
-                FormToggleRow(
-                    label = uiString(R.string.l10n_notifications_settings_screen_voip_calls_96c5a102),
-                    help = "Detects call-style notifications from known calling apps.",
-                    checked = voipCallsEnabled,
-                    enabled = masterEnabled,
-                    onChange = onVoipCallsEnabled,
-                )
-            }
-        }
-    }
-}
-
-// MARK: - Delivery note (Notification Access requirement + deep link)
-
-@Composable
-private fun DeliveryNote() {
-    val context = LocalContext.current
-    val shape = RoundedCornerShape(10.dp)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Palette.surfaceInset)
-            .border(1.dp, Palette.accent.copy(alpha = 0.22f), shape)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(
-                Icons.Filled.Info,
-                contentDescription = null,
-                tint = Palette.accent,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                uiString(R.string.l10n_notifications_settings_screen_wrist_delivery_needs_notification_access_so_2a14e784),
-                style = NoopType.footnote,
-                color = Palette.textSecondary,
-            )
-        }
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .clickable {
-                    runCatching {
-                        context.startActivity(
-                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    item { shape ->
+                        SwitchRow(
+                            shape = shape,
+                            title = stringResource(R.string.l10n_notifications_settings_screen_phone_calls_b79420d9),
+                            subtitle = stringResource(
+                                if (phonePermissionDenied) {
+                                    R.string.l10n_notifications_settings_screen_phone_permission_was_denied_so_phone_db0ebdd8
+                                } else {
+                                    R.string.settings_wrist_phone_calls_desc
+                                },
+                            ),
+                            checked = phoneCallsEnabled,
+                            enabled = masterEnabled,
+                            onCheckedChange = { value ->
+                                if (!value) {
+                                    phoneCallsEnabled = false
+                                    phonePermissionDenied = false
+                                    NotifPrefs.setBool(context, NotifPrefs.CALLS_PHONE, false)
+                                    CallAlertController.stopSource(CallAlertSource.PHONE)
+                                } else {
+                                    val granted = ContextCompat.checkSelfPermission(
+                                        context, Manifest.permission.READ_PHONE_STATE,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (granted) {
+                                        phoneCallsEnabled = true
+                                        phonePermissionDenied = false
+                                        NotifPrefs.setBool(context, NotifPrefs.CALLS_PHONE, true)
+                                    } else {
+                                        phonePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                    item { shape ->
+                        SwitchRow(
+                            shape = shape,
+                            title = stringResource(R.string.l10n_notifications_settings_screen_voip_calls_96c5a102),
+                            checked = voipCallsEnabled,
+                            enabled = masterEnabled,
+                            onCheckedChange = {
+                                voipCallsEnabled = it
+                                NotifPrefs.setBool(context, NotifPrefs.CALLS_VOIP, it)
+                                if (!it) CallAlertController.stopSource(CallAlertSource.VOIP)
+                            },
                         )
                     }
                 }
-                .padding(horizontal = 2.dp, vertical = 2.dp)
-                .semantics { contentDescription = uiString(R.string.l10n_notifications_settings_screen_open_notification_access_settings_93fcd1bf) },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                contentDescription = null,
-                tint = Palette.accent,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(uiString(R.string.l10n_notifications_settings_screen_open_notification_access_658fd30f), style = NoopType.caption, color = Palette.accent)
+                // #1115: the phone clock finishing a timer or ringing an alarm (a CATEGORY_ALARM
+                // notification from any clock app). Android only.
+                item { shape ->
+                    SwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.notif_timer_alarm_title),
+                        subtitle = stringResource(R.string.settings_wrist_timer_alarm_desc),
+                        checked = alarmTimerEnabled,
+                        enabled = masterEnabled,
+                        onCheckedChange = {
+                            alarmTimerEnabled = it
+                            NotifPrefs.setBool(context, NotifPrefs.ALARM_TIMER, it)
+                        },
+                    )
+                }
+            }
         }
-    }
-}
 
-// MARK: - Category card (rows of apps, dimmed/disabled when master is off)
+        // The apps, by kind.
+        activeCategories.forEach { category ->
+            item {
+                ListGroup(header = stringResource(category.titleRes)) {
+                    appsIn(category).forEach { app ->
+                        item { shape ->
+                            val pattern = patternState[app.id] ?: app.category.defaultPattern
+                            PatternSwitchRow(
+                                shape = shape,
+                                title = app.name,
+                                switchLabel = stringResource(R.string.l10n_notifications_settings_screen_app_name_wrist_alerts_dd3540fa, app.name),
+                                leading = { RowIcon(app.glyph) },
+                                checked = enabledState[app.id] ?: false,
+                                enabled = masterEnabled,
+                                pattern = pattern,
+                                canTest = masterEnabled && live.bonded,
+                                onToggle = {
+                                    enabledState[app.id] = it
+                                    NotifPrefs.setAppEnabled(context, app.id, it)
+                                },
+                                onPattern = {
+                                    patternState[app.id] = it
+                                    NotifPrefs.setAppPattern(context, app.id, it)
+                                },
+                                onTest = { vm.buzz(loops = pattern.loops) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
-@Composable
-private fun CategoryCard(
-    category: NotifCategory,
-    apps: List<NotifApp>,
-    masterEnabled: Boolean,
-    bonded: Boolean,
-    enabledState: SnapshotStateMap<String, Boolean>,
-    patternState: SnapshotStateMap<String, BuzzPattern>,
-    onToggle: (NotifApp, Boolean) -> Unit,
-    onPattern: (NotifApp, BuzzPattern) -> Unit,
-    onTest: (NotifApp) -> Unit,
-) {
-    val contentAlpha = if (masterEnabled) 1f else Palette.disabledOpacity
-    AlertSection(icon = category.icon, title = category.title) {
-        Column(modifier = Modifier.alphaIf(contentAlpha)) {
-            apps.forEachIndexed { idx, app ->
-                AppRow(
-                    app = app,
-                    enabled = enabledState[app.id] ?: false,
-                    pattern = patternState[app.id] ?: app.category.defaultPattern,
-                    interactive = masterEnabled,
-                    bonded = bonded,
-                    onToggle = { onToggle(app, it) },
-                    onPattern = { onPattern(app, it) },
-                    onTest = { onTest(app) },
-                )
-                if (idx < apps.size - 1) RowDivider()
+        // When to buzz and when not to.
+        item {
+            ListGroup(header = stringResource(R.string.l10n_notifications_settings_screen_behaviour_171ca038)) {
+                item { shape ->
+                    SwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_only_buzz_when_worn_6211cee3),
+                        checked = onlyWhenWorn,
+                        onCheckedChange = {
+                            onlyWhenWorn = it
+                            NotifPrefs.setBool(context, NotifPrefs.WORN, it)
+                        },
+                    )
+                }
+                // #168: Android cannot list every installed app, so this is how the rest are covered.
+                item { shape ->
+                    SwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_all_other_apps_51a8af2c),
+                        subtitle = stringResource(R.string.settings_wrist_other_apps_desc),
+                        checked = allOtherApps,
+                        onCheckedChange = {
+                            allOtherApps = it
+                            NotifPrefs.setBool(context, NotifPrefs.ALL_OTHER, it)
+                        },
+                    )
+                }
+                item { shape ->
+                    SwitchRow(
+                        shape = shape,
+                        title = stringResource(R.string.l10n_notifications_settings_screen_quiet_hours_706b24d0),
+                        checked = quietHoursEnabled,
+                        onCheckedChange = {
+                            quietHoursEnabled = it
+                            NotifPrefs.setBool(context, NotifPrefs.QUIET, it)
+                        },
+                    )
+                }
+                if (quietHoursEnabled) {
+                    item { shape ->
+                        ValueRow(
+                            shape,
+                            stringResource(R.string.l10n_notifications_settings_screen_from_3f66052a),
+                            clockLabel(quietStartMinutes, is24h, locale),
+                        ) { dialog = QuietDialog.FROM }
+                    }
+                    item { shape ->
+                        ValueRow(shape, stringResource(R.string.settings_to), clockLabel(quietEndMinutes, is24h, locale)) {
+                            dialog = QuietDialog.TO
+                        }
+                    }
+                }
             }
         }
     }
+
+    when (dialog) {
+        QuietDialog.FROM -> ClockPicker(
+            title = stringResource(R.string.l10n_notifications_settings_screen_from_3f66052a),
+            hour = quietStartMinutes / 60,
+            minute = quietStartMinutes % 60,
+            is24h = is24h,
+            onPick = { h, m ->
+                dialog = null
+                quietStartMinutes = h * 60 + m
+                NotifPrefs.setInt(context, NotifPrefs.QUIET_START, quietStartMinutes)
+            },
+            onDismiss = { dialog = null },
+        )
+        QuietDialog.TO -> ClockPicker(
+            title = stringResource(R.string.settings_to),
+            hour = quietEndMinutes / 60,
+            minute = quietEndMinutes % 60,
+            is24h = is24h,
+            onPick = { h, m ->
+                dialog = null
+                quietEndMinutes = h * 60 + m
+                NotifPrefs.setInt(context, NotifPrefs.QUIET_END, quietEndMinutes)
+            },
+            onDismiss = { dialog = null },
+        )
+        null -> Unit
+    }
 }
 
+/**
+ * A two-target row: the switch turns the alert on or off; the row itself turns it on while it is off, and
+ * while it is on opens the buzz pattern (the four patterns, the current one ticked, then a test buzz). The
+ * supporting line names the pattern in words, so TalkBack reads what the row opens.
+ */
 @Composable
-private fun AppRow(
-    app: NotifApp,
+private fun PatternSwitchRow(
+    shape: Shape,
+    title: String,
+    switchLabel: String,
+    checked: Boolean,
     enabled: Boolean,
     pattern: BuzzPattern,
-    interactive: Boolean,
-    bonded: Boolean,
+    canTest: Boolean,
     onToggle: (Boolean) -> Unit,
     onPattern: (BuzzPattern) -> Unit,
     onTest: () -> Unit,
+    leading: (@Composable () -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            // An enabled app reads as a selected row: a soft accentMuted wash behind it.
-            .clip(RoundedCornerShape(10.dp))
-            .then(if (enabled) Modifier.background(Palette.accentMuted) else Modifier)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // App glyph in a rounded inset tile (stand-in for the real macOS app icon).
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Palette.surfaceInset),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(app.glyph, contentDescription = null, tint = Palette.textSecondary, modifier = Modifier.size(18.dp))
-        }
-
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(app.name, style = NoopType.body, color = Palette.textPrimary)
-            Text(
-                if (enabled) "Buzzes your wrist" else "Off",
-                style = NoopType.footnote,
-                color = if (enabled) Palette.accent else Palette.textTertiary,
-            )
-        }
-
-        if (enabled) {
-            PatternMenu(
-                pattern = pattern,
-                enabled = interactive,
-                appName = app.name,
-                onSelect = onPattern,
-            )
-            TestIconButton(enabled = interactive && bonded, appName = app.name, onClick = onTest)
-        }
-
-        NoopSwitch(
-            checked = enabled,
-            onChange = onToggle,
-            enabled = interactive,
-            label = uiString(R.string.l10n_notifications_settings_screen_app_name_wrist_alerts_dd3540fa, app.name),
-        )
-    }
-}
-
-// MARK: - Pattern menu (DropdownMenu replacing the macOS Menu)
-
-@Composable
-private fun PatternMenu(
-    pattern: BuzzPattern,
-    enabled: Boolean,
-    appName: String,
-    onSelect: (BuzzPattern) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
+    var menu by remember { mutableStateOf(false) }
     Box {
-        Row(
-            modifier = Modifier
-                .clip(shape)
-                .background(Palette.surfaceInset)
-                .border(1.dp, Palette.hairline, shape)
-                .clickable(enabled = enabled) { expanded = true }
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-                .semantics { contentDescription = uiString(R.string.l10n_notifications_settings_screen_buzz_pattern_for_appname_905a31bd, appName) },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            Icon(
-                Icons.Filled.GraphicEq,
-                contentDescription = null,
-                tint = Palette.textSecondary,
-                modifier = Modifier.size(12.dp),
-            )
-            Text(pattern.label, style = NoopType.caption, color = Palette.textSecondary)
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(Palette.surfaceOverlay),
-        ) {
+        ListRow(
+            shape = shape,
+            title = title,
+            subtitle = if (checked) {
+                stringResource(R.string.settings_wrist_pattern_value, stringResource(pattern.labelRes))
+            } else null,
+            leading = leading,
+            enabled = enabled,
+            onClick = { if (checked) menu = true else onToggle(true) },
+            trailing = {
+                M3Switch(
+                    checked = checked,
+                    onCheckedChange = onToggle,
+                    enabled = enabled,
+                    modifier = Modifier.semantics { contentDescription = switchLabel },
+                )
+            },
+        )
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             BuzzPattern.entries.forEach { p ->
                 DropdownMenuItem(
-                    text = {
-                        Text(
-                            p.label,
-                            style = NoopType.body,
-                            color = if (p == pattern) Palette.accent else Palette.textPrimary,
-                        )
+                    text = { Text(stringResource(p.labelRes)) },
+                    leadingIcon = {
+                        if (p == pattern) Icon(Icons.Filled.Check, contentDescription = null) else Spacer(Modifier.size(24.dp))
                     },
-                    onClick = {
-                        onSelect(p)
-                        expanded = false
-                    },
+                    onClick = { menu = false; onPattern(p) },
                 )
             }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.l10n_notifications_settings_screen_test_buzz_deeab5ae)) },
+                leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                enabled = canTest,
+                onClick = { menu = false; onTest() },
+            )
         }
     }
 }
 
-// MARK: - Test buttons
-
-@Composable
-private fun TestIconButton(enabled: Boolean, appName: String, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(8.dp)
-    val tint = if (enabled) Palette.accent else Palette.textTertiary
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(shape)
-            .background(Palette.accent.copy(alpha = if (enabled) 0.12f else 0.04f))
-            .border(1.dp, tint.copy(alpha = 0.30f), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { contentDescription = uiString(R.string.l10n_notifications_settings_screen_test_appname_buzz_dbae5be3, appName) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
-    }
-}
-
-@Composable
-private fun PillButton(label: String, icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(50)
-    val tint = if (enabled) Palette.accent else Palette.textTertiary
-    Row(
-        modifier = Modifier
-            .clip(shape)
-            .background(Palette.accent.copy(alpha = if (enabled) 0.12f else 0.04f))
-            .border(1.dp, tint.copy(alpha = 0.30f), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
-        Text(label, style = NoopType.caption, color = tint)
-    }
-}
-
-// MARK: - Time chip (TimePickerDialog → HH:mm). Reused by the Automations smart-alarm time too.
+// MARK: - Time chip (TimePickerDialog → HH:mm), the legacy-styled chip the Test Centre still uses.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -948,93 +664,3 @@ internal fun TimeChip(
         }
     }
 }
-
-// MARK: - Section card (icon + title header, optional blurb, content)
-
-@Composable
-private fun AlertSection(
-    icon: ImageVector,
-    title: String,
-    blurb: String? = null,
-    overline: String = "Alerts",
-    content: @Composable () -> Unit,
-) {
-    NoopCard(padding = 20.dp, tint = Palette.accent) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Overline(overline)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(icon, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(18.dp))
-                    Text(title, style = NoopType.title2, color = Palette.textPrimary)
-                }
-            }
-            if (blurb != null) {
-                Text(blurb, style = NoopType.subhead, color = Palette.textSecondary)
-            }
-            content()
-        }
-    }
-}
-
-// MARK: - Label + help + switch row (mirrors FormToggleRow)
-
-@Composable
-private fun FormToggleRow(
-    label: String,
-    help: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, style = NoopType.body, color = Palette.textPrimary)
-            Text(help, style = NoopType.footnote, color = Palette.textTertiary)
-        }
-        Spacer(Modifier.width(16.dp))
-        NoopSwitch(checked = checked, onChange = onChange, enabled = enabled, label = label)
-    }
-}
-
-// MARK: - Shared bits
-
-@Composable
-private fun NoopSwitch(
-    checked: Boolean,
-    onChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-    label: String,
-) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onChange,
-        enabled = enabled,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Palette.surfaceBase,
-            checkedTrackColor = Palette.accent,
-            uncheckedThumbColor = Palette.textSecondary,
-            uncheckedTrackColor = Palette.surfaceInset,
-            uncheckedBorderColor = Palette.hairline,
-        ),
-        modifier = Modifier.semantics { contentDescription = label },
-    )
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .padding(vertical = 4.dp)
-            .background(Palette.hairline),
-    )
-}
-
-/** Apply a uniform alpha to a subtree (dims disabled category content). */
-private fun Modifier.alphaIf(value: Float): Modifier = this.alpha(value)

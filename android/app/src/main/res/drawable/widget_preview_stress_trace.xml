@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sample stress curve of a widget-picker preview (layout/widget_preview_*): a drawn line, not data. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="60dp"
+    android:viewportWidth="200"
+    android:viewportHeight="60">
+    <path
+        android:pathData="M2,44 L22,38 L42,30 L62,34 L82,22 L102,14 L122,24 L142,36 L162,40 L182,32 L198,36"
+        android:strokeColor="@color/widget_stress"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.2" />
+</vector>

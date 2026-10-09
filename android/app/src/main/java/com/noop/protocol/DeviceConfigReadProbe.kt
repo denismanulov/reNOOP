@@ -567,7 +567,7 @@ class DeviceConfigReadProbeReport(
         sb.append(
             section(
                 Group.KNOWN_FLAG,
-                "Known feature-flag values (names NOOP already writes; values never read before)",
+                "Known feature-flag values (names reNOOP already writes; values never read before)",
                 "(none — the verb that would carry them did not answer)",
             ),
         )

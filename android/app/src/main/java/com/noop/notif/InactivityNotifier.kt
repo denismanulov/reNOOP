@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -31,9 +29,9 @@ object InactivityNotifier {
         // Mirror the iOS master gate: the engine already honours it before buzzing, re-check anyway.
         if (!NotifPrefs.getBool(context, NotifPrefs.MASTER, false)) return
         val body = if (minutes > 0) {
-            "You've been seated for about $minutes min. Time to move."
+            context.getString(R.string.inactivity_body_minutes, minutes)
         } else {
-            "Time to move. You've been seated a while."
+            context.getString(R.string.inactivity_body)
         }
         // Defensive: never let a notify() throw (revoked POST_NOTIFICATIONS, OEM quirk) crash the offload.
         runCatching {
@@ -44,10 +42,11 @@ object InactivityNotifier {
                 appLaunchIntent(context),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
-                .setContentTitle(context.getString(R.string.inactivity_title))
-                .setContentText(body)
+            val n = NoopNotifications.builder(
+                context, CHANNEL_ID, R.drawable.ic_stat_move,
+                context.getString(R.string.inactivity_title),
+                body,
+            )
                 .setContentIntent(openApp)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -58,18 +57,10 @@ object InactivityNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Inactivity reminder",
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                ).apply {
-                    description = "A nudge to move after a long sedentary stretch."
-                },
-            )
-        }
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_inactivity_name, R.string.notif_channel_inactivity_desc,
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
     }
 }

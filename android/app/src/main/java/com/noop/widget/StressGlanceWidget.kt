@@ -1,6 +1,7 @@
 package com.noop.widget
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -9,12 +10,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.Image
-import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
-import androidx.glance.action.actionStartActivity
-import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -22,7 +19,6 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
-import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxHeight
@@ -33,13 +29,11 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.noop.R
 import com.noop.analytics.DaytimeStress
-import com.noop.ui.MainActivity
+import com.noop.ui.AppLink
 import com.noop.ui.uiString
 import java.text.DateFormat
 import java.util.Date
@@ -48,7 +42,7 @@ import java.util.Date
  * Home-screen widget: today's stress as the intraday curve the Stress screen draws (#2040).
  *
  * Renders purely from the [WidgetSnapshotStore] snapshot, like its siblings, so it costs nothing at
- * draw time and survives process death. Tapping opens the app.
+ * draw time and survives process death. Tapping it opens the Day Stress page, on the Summary.
  *
  * The curve is an IMAGE for the same reason the heart-rate trace is: Glance compiles to RemoteViews,
  * which cannot draw. [StressTrace] decides where the ink goes and [StressTraceRenderer] puts it on a
@@ -61,9 +55,7 @@ import java.util.Date
 class StressGlanceWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = runCatching { WidgetSnapshotStore.load(context) }.getOrDefault(WidgetSnapshot())
-        val dark = WidgetTheme.isDark(context)
-        provideContent { StressWidgetContent(snap, dark) }
+        provideContent { StressWidgetContent(currentWidgetSnapshot()) }
     }
 
     /** Same defence as its siblings: swap Glance's built-in error layout for ours. The widget heals on
@@ -81,29 +73,9 @@ class StressGlanceWidget : GlanceAppWidget() {
     }
 }
 
-// Local widget colours, mirroring the siblings rather than reading Palette: Glance composes outside the
-// app theme, so every widget in this package carries its own copy on purpose.
-private fun stressSurfaceColor(dark: Boolean) = if (dark) Color(0xFF0A1322) else Color(0xFFF4F1EA)
-
-private fun stressSurface(dark: Boolean) = ColorProvider(stressSurfaceColor(dark))
-private fun stressTextPrimary(dark: Boolean) = ColorProvider(if (dark) Color(0xFFF4F6F8) else Color(0xFF1A2230))
-private fun stressTextSecondary(dark: Boolean) = ColorProvider(if (dark) Color(0xFF8A94A4) else Color(0xFF7C8696))
-
-/**
- * The screen's three-stop ramp, as raw colours the renderer can paint with.
- *
- * These are the same blue / green / amber the Stress screen samples across 0-3, kept as local literals
- * for the reason every colour in this package is one: Glance composes outside the app theme, so the
- * widget cannot read `Palette`. A widget drawing a different ramp from the screen it mirrors would
- * make the same hour look like two different readings.
- */
-private fun stressCalm(dark: Boolean) = if (dark) Color(0xFF4C8DFF) else Color(0xFF2D6FE0)
-private fun stressSteady(dark: Boolean) = if (dark) Color(0xFF3ECF8E) else Color(0xFF1FA971)
-private fun stressTense(dark: Boolean) = if (dark) Color(0xFFE0A62F) else Color(0xFFC8861E)
-
-/** Card padding, both sides. The chart and the axis under it must subtract the SAME figure or the
+/** Card padding, one side. The chart and the axis under it must subtract the SAME figure or the
  *  labels drift out of line with the curve they annotate. */
-private const val STRESS_CARD_PADDING_DP = 28f
+private const val STRESS_CARD_PADDING_DP = 16f
 
 /** The level scale column plus its gap. One number, read by both the chart and its axis. */
 private const val STRESS_SCALE_WIDTH_DP = 14f
@@ -116,28 +88,20 @@ private const val STRESS_CHART_TARGET_DP = 92f
 
 /** The chart width for a given widget width, the one place that arithmetic happens. */
 private fun stressChartWidthDp(widthDp: Float): Float =
-    (widthDp - STRESS_CARD_PADDING_DP - STRESS_SCALE_COLUMN_DP).coerceAtLeast(24f)
+    (widthDp - 2 * STRESS_CARD_PADDING_DP - STRESS_SCALE_COLUMN_DP).coerceAtLeast(24f)
 
 @Composable
-private fun StressWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
+private fun StressWidgetContent(snap: WidgetSnapshot) {
     val size = LocalSize.current
     val stats = StressTrace.stats(snap.stressSeries)
 
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(stressSurface(dark))
-            .cornerRadius(16.dp)
-            .padding(14.dp)
-            .clickable(actionStartActivity<MainActivity>()),
-    ) {
+    WidgetCard(link = AppLink.Stress, padding = STRESS_CARD_PADDING_DP.dp) {
         Text(
             text = uiString(R.string.l10n_stress_screen_stress_bad33342),
-            style = TextStyle(
-                color = stressTextPrimary(dark), fontSize = 13.sp, fontWeight = FontWeight.Medium,
-            ),
+            style = WidgetType.titleStyle,
+            maxLines = 1,
         )
-        Spacer(GlanceModifier.height(6.dp))
+        Spacer(GlanceModifier.height(4.dp))
 
         // Built OUT here, not inside the semantics lambda: the i18n audit cannot see copy assigned
         // inside one, so a literal written there would ship English to every locale (#571).
@@ -163,38 +127,43 @@ private fun StressWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
 
         Row(verticalAlignment = Alignment.Vertical.Bottom) {
             Text(
-                text = latest?.let { StressTrace.formatLevel(it) } ?: "—",
-                style = TextStyle(
-                    color = stressTextPrimary(dark), fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                text = latest?.let { StressTrace.formatLevel(it) } ?: WidgetCaptions.DASH,
+                style = WidgetType.figure(
+                    32.sp, if (latest == null) WidgetColors.onSurfaceVariant else WidgetColors.onSurface,
                 ),
+                maxLines = 1,
                 modifier = GlanceModifier.semantics { contentDescription = spoken },
             )
             if (latest != null) {
                 Spacer(GlanceModifier.width(4.dp))
                 Text(
                     text = ofThree,
-                    style = TextStyle(color = stressTextSecondary(dark), fontSize = 12.sp),
+                    style = WidgetType.captionStyle,
+                    modifier = GlanceModifier.padding(bottom = 5.dp),
                 )
             } else {
                 Spacer(GlanceModifier.width(6.dp))
                 Text(
                     text = emptyReason,
-                    style = TextStyle(color = stressTextSecondary(dark), fontSize = 12.sp),
+                    style = WidgetType.captionStyle,
+                    modifier = GlanceModifier.padding(bottom = 5.dp),
                 )
             }
             if (stats != null) {
                 Spacer(GlanceModifier.width(10.dp))
-                // A chip, not loose text: it is a summary OF the chart, and the tinted rounded ground
+                // A chip, not loose text: it is a summary OF the chart, and the tonal rounded ground
                 // separates it from the scale label beside it.
                 val peakTime = DateFormat.getTimeInstance(DateFormat.SHORT)
                     .format(Date(stats.peak.ts * 1000))
                 Text(
                     text = uiString(R.string.trends_complete_04771532, StressTrace.formatLevel(stats.peak.level ?: 0.0), peakTime),
-                    style = TextStyle(color = stressTextPrimary(dark), fontSize = 11.sp),
+                    style = TextStyle(color = WidgetColors.onChip, fontSize = WidgetType.caption),
+                    maxLines = 1,
                     modifier = GlanceModifier
-                        .background(ColorProvider(stressTense(dark).copy(alpha = 0.18f)))
+                        .padding(bottom = 4.dp)
+                        .background(WidgetColors.chip)
                         .cornerRadius(10.dp)
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
         }
@@ -203,14 +172,14 @@ private fun StressWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
         // scorable hour, would otherwise reserve the height and show a blank rectangle, and a void
         // reads as broken where a shorter widget reads as new.
         if (stats != null) {
-            Spacer(GlanceModifier.height(8.dp))
-            StressTraceImage(snap, dark, widthDp = size.width.value,
+            Spacer(GlanceModifier.height(6.dp))
+            StressTraceImage(snap, widthDp = size.width.value,
                              modifier = GlanceModifier.defaultWeight())
-            StressTimeAxis(snap, dark)
+            StressTimeAxis(snap)
         }
 
         if (snap.updatedAtMs > 0) {
-            Spacer(GlanceModifier.height(4.dp))
+            Spacer(GlanceModifier.height(2.dp))
             val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(snap.updatedAtMs))
             Row(
                 modifier = GlanceModifier.fillMaxWidth(),
@@ -222,7 +191,8 @@ private fun StressWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
                     } else {
                         uiString(R.string.l10n_hr_glance_widget_updated_time_1b5feedb, time)
                     },
-                    style = TextStyle(color = stressTextSecondary(dark), fontSize = 10.sp),
+                    style = WidgetType.captionStyle,
+                    maxLines = 1,
                 )
             }
         }
@@ -240,7 +210,6 @@ private fun StressWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
 @Composable
 private fun StressTraceImage(
     snap: WidgetSnapshot,
-    dark: Boolean,
     widthDp: Float,
     // Weighted by the CALLER: Glance scopes defaultWeight() to Row/ColumnScope, so a composable cannot
     // claim its own share of the parent from in here.
@@ -254,38 +223,6 @@ private fun StressTraceImage(
     val hPx = (STRESS_CHART_TARGET_DP * density).toInt().coerceAtLeast(1)
     val wPx = HrTrace.widestAtHeight((chartWidthDp * density).toInt(), hPx)
 
-    // Measured for the same reason the heart-rate trace is: this is a BITMAP rather than a few KB of
-    // text, and the widget cost counters are what make "the widget drains the battery" decidable.
-    val startedNs = System.nanoTime()
-    val bmp = runCatching {
-        StressTraceRenderer.render(
-            segments = StressTrace.segments(snap.stressSeries, wPx.toFloat(), hPx.toFloat()),
-            movingSpans = StressTrace.movingSpans(snap.stressSeries, wPx.toFloat()),
-            highPoints = StressTrace.highPoints(snap.stressSeries, wPx.toFloat(), hPx.toFloat()),
-            widthPx = wPx,
-            heightPx = hPx,
-            calmColor = stressCalm(dark).toArgb(),
-            steadyColor = stressSteady(dark).toArgb(),
-            tenseColor = stressTense(dark).toArgb(),
-            backgroundColor = stressSurfaceColor(dark).toArgb(),
-            // Composited for the same reason the marks are: the bitmap has no alpha channel, so the
-            // translucency has to be resolved against the card before it is handed over.
-            fillTopColor = stressSteady(dark).copy(alpha = 0.35f)
-                .compositeOver(stressSurfaceColor(dark)).toArgb(),
-            // Composited against the card rather than passed as a translucent colour: the bitmap is
-            // RGB_565 and has no alpha to fade into, so an alpha here would have drawn solid.
-            markColor = stressTextSecondary(dark).getColor(context)
-                .copy(alpha = 0.5f).compositeOver(stressSurfaceColor(dark)).toArgb(),
-            strokePx = 2f * density,
-        )
-    }.getOrNull()
-    if (bmp != null) {
-        WidgetTelemetry.noteRender(
-            bytes = wPx * hPx * HrTrace.BYTES_PER_PIXEL,
-            elapsedMs = (System.nanoTime() - startedNs) / 1_000_000,
-        )
-    }
-
     // Scale FIRST, then the chart: the Stress screen puts the 0-3 labels down the left edge, and a
     // widget that mirrors a screen should not mirror it back to front. (The heart-rate widget puts its
     // scale on the right, which is right for a trace whose numbers are read off the end.)
@@ -296,27 +233,70 @@ private fun StressTraceImage(
         ) {
             val ticks = StressTrace.levelTicks()
             ticks.forEachIndexed { i, tick ->
-                Text(
-                    text = tick.toString(),
-                    style = TextStyle(color = stressTextSecondary(dark), fontSize = 10.sp),
-                )
+                Text(text = tick.toString(), style = WidgetType.captionStyle, maxLines = 1)
                 if (i < ticks.size - 1) Spacer(GlanceModifier.defaultWeight())
             }
         }
         Spacer(GlanceModifier.width(6.dp))
         Box(modifier = GlanceModifier.fillMaxHeight().defaultWeight()) {
-            if (bmp != null) {
-                Image(
-                    provider = ImageProvider(bmp),
-                    contentDescription = null,
-                    modifier = GlanceModifier.fillMaxSize(),
-                    // FillBounds, not the default Fit: the width is drawn with headroom so it
-                    // downscales, and Fit would letterbox that headroom back into dead space.
-                    contentScale = ContentScale.FillBounds,
-                )
+            WidgetChartImage(GlanceModifier.fillMaxSize()) { dark ->
+                renderStressTrace(context, snap, wPx, hPx, density, dark)
             }
         }
     }
+}
+
+/**
+ * One drawing of the curve, for the light or the dark card, on that card's own surface colour (the bitmap
+ * is RGB_565 and has no alpha to show the card through).
+ *
+ * One hue, the Stress page's own: that page now draws the day's hours in the metric's hue rather than on
+ * the old blue-green-amber ramp, and a widget drawing a different colour from the screen it mirrors would
+ * make the same hour look like two different readings. The renderer still takes a three-stop ramp; it is
+ * handed the one hue for each stop.
+ *
+ * Measured for the same reason the heart-rate trace is: this is a BITMAP rather than a few KB of text, and
+ * the widget cost counters are what make "the widget drains the battery" decidable.
+ */
+private fun renderStressTrace(
+    context: Context,
+    snap: WidgetSnapshot,
+    wPx: Int,
+    hPx: Int,
+    density: Float,
+    dark: Boolean,
+): Bitmap? {
+    val hue = Color(WidgetTheme.color(context, R.color.widget_stress, dark))
+    val ground = Color(WidgetTheme.color(context, R.color.widget_surface, dark))
+    val mark = Color(WidgetTheme.color(context, R.color.widget_on_surface_variant, dark))
+    val startedNs = System.nanoTime()
+    val bmp = runCatching {
+        StressTraceRenderer.render(
+            segments = StressTrace.segments(snap.stressSeries, wPx.toFloat(), hPx.toFloat()),
+            movingSpans = StressTrace.movingSpans(snap.stressSeries, wPx.toFloat()),
+            highPoints = StressTrace.highPoints(snap.stressSeries, wPx.toFloat(), hPx.toFloat()),
+            widthPx = wPx,
+            heightPx = hPx,
+            calmColor = hue.toArgb(),
+            steadyColor = hue.toArgb(),
+            tenseColor = hue.toArgb(),
+            backgroundColor = ground.toArgb(),
+            // Composited for the same reason the marks are: the bitmap has no alpha channel, so the
+            // translucency has to be resolved against the card before it is handed over.
+            fillTopColor = hue.copy(alpha = 0.35f).compositeOver(ground).toArgb(),
+            // Composited against the card rather than passed as a translucent colour: the bitmap is
+            // RGB_565 and has no alpha to fade into, so an alpha here would have drawn solid.
+            markColor = mark.copy(alpha = 0.5f).compositeOver(ground).toArgb(),
+            strokePx = 2f * density,
+        )
+    }.getOrNull()
+    if (bmp != null) {
+        WidgetTelemetry.noteRender(
+            bytes = wPx * hPx * HrTrace.BYTES_PER_PIXEL,
+            elapsedMs = (System.nanoTime() - startedNs) / 1_000_000,
+        )
+    }
+    return bmp
 }
 
 /**
@@ -328,7 +308,7 @@ private fun StressTraceImage(
  * so a 12-hour device reads as one; a widget is not the place to impose a clock convention.
  */
 @Composable
-private fun StressTimeAxis(snap: WidgetSnapshot, dark: Boolean) {
+private fun StressTimeAxis(snap: WidgetSnapshot) {
     val ticks = StressTrace.timeTicks(snap.stressSeries)
     // One instant names one instant, and a single label pinned to the left edge reads as a stray
     // rather than an axis, so the axis only appears once there is a span to label.
@@ -338,10 +318,7 @@ private fun StressTimeAxis(snap: WidgetSnapshot, dark: Boolean) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
         Spacer(GlanceModifier.width(STRESS_SCALE_COLUMN_DP.dp))
         ticks.forEachIndexed { i, ts ->
-            Text(
-                text = fmt.format(Date(ts * 1000)),
-                style = TextStyle(color = stressTextSecondary(dark), fontSize = 9.sp),
-            )
+            Text(text = fmt.format(Date(ts * 1000)), style = WidgetType.captionStyle, maxLines = 1)
             if (i < ticks.size - 1) Spacer(GlanceModifier.defaultWeight())
         }
     }

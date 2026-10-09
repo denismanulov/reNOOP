@@ -282,8 +282,7 @@ final class ProfileStore: ObservableObject {
     /// - `2.0–5.0` → 0.5
     /// - `≥ 5.0` → 1.0   (ballpark the ~24× overcount in ~19 taps)
     ///
-    /// The Android twin (`ProfileStore.stepScaleIncrement` in `SettingsScreen.kt`) has not adopted the
-    /// 0.01 band and still steps by 0.1 below 2.0.
+    /// Android twin: `ProfileStore.stepScaleIncrement` (`ui/ProfileStore.kt`).
     static func stepScaleIncrement(for value: Double) -> Double {
         switch value {
         case ..<1.5: return 0.01

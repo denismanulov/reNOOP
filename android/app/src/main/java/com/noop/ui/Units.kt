@@ -60,25 +60,6 @@ enum class EffortScale(val raw: String) {
 }
 
 /**
- * How the Trends charts are drawn — line vs bar. A purely cosmetic, display-only toggle: the plotted
- * data is identical on both settings, only the mark geometry changes. Default is the classic line.
- * Distinct from [ChartStyle] (which picks the colour ramp); this picks the shape. Mirrors the macOS
- * [TrendChartStyle].
- */
-enum class TrendChartStyle(val raw: String) {
-    /** The classic gradient-stroked line with a soft area fill (the long-standing look). */
-    LINE("line"),
-
-    /** Vertical bars from the axis baseline, one per sample. */
-    BAR("bar");
-
-    companion object {
-        /** An unset/unknown value resolves to the classic line. */
-        fun fromRaw(raw: String?): TrendChartStyle = entries.firstOrNull { it.raw == raw } ?: LINE
-    }
-}
-
-/**
  * Which sleep window the nightly HRV is measured over (#141). NOOP historically averages RMSSD across the
  * WHOLE night (every stage); WHOOP/Polar/etc. sample the last slow-wave-sleep window, which reads lower.
  * This lets a user match that. It CHANGES the computed avgHrv (not display-only), so a switch re-scores +
@@ -108,45 +89,6 @@ enum class HrvWindow(val raw: String) {
         fun fromRaw(raw: String?): HrvWindow = entries.firstOrNull { it.raw == raw } ?: WHOLE_NIGHT
     }
 }
-
-/**
- * How the Sleep tab draws the night's stage timeline (#sleep-chart-style). Display-only — no metric or
- * stored value changes; it only picks which chart renders. Default [CLASSIC] so nobody's view changes
- * unless they opt in.
- */
-enum class SleepChartStyle(val raw: String) {
-    /** The long-standing per-stage-rows timeline (Awake/Light/Deep/REM each on their own track). */
-    CLASSIC("classic"),
-
-    /** A single stepped hypnogram FILLED to the baseline, in NOOP's sleep colours. Needs the night's real
-     *  timestamped segments, else falls back to CLASSIC. */
-    FILLED("filled"),
-
-    /** The same filled chart drawn in Garmin's blue/magenta ramp. */
-    GARMIN_FILLED("garminFilled"),
-
-    /** The stepped chart drawn as a slim RIBBON (a uniform band at each stage level, not filled to the
-     *  baseline), in Oura's cream/blue ramp. */
-    RIBBON("ribbon");
-
-    /** Whether the stepped chart fills to the baseline (Fill / Garmin Fill) or draws a slim ribbon. */
-    val isFilled: Boolean get() = this == FILLED || this == GARMIN_FILLED
-
-    /** The stage-colour ramp this style draws with. */
-    val stagePalette: SleepStagePalette
-        get() = when (this) {
-            CLASSIC, FILLED -> SleepStagePalette.NOOP
-            GARMIN_FILLED -> SleepStagePalette.GARMIN
-            RIBBON -> SleepStagePalette.OURA
-        }
-
-    companion object {
-        fun fromRaw(raw: String?): SleepChartStyle = entries.firstOrNull { it.raw == raw } ?: CLASSIC
-    }
-}
-
-/** Which stage-colour ramp a sleep chart draws with. Twin of the Swift `SleepStagePalette`. */
-enum class SleepStagePalette { NOOP, OURA, GARMIN }
 
 /**
  * Reads the display preferences and resolves backwards-compatible fallbacks. SharedPreferences isn't
@@ -202,18 +144,6 @@ object UnitPrefs {
         NoopPrefs.of(context).edit().putString(KEY_EFFORT_SCALE, scale.raw).apply()
     }
 
-    /** SharedPreferences key for the Trends chart style. Mirrors macOS @AppStorage("trend.chart.style"). */
-    const val KEY_TREND_CHART_STYLE = "trend.chart.style"
-
-    /** The Trends chart style (default line). Read once into Compose state like the other prefs. */
-    fun trendChartStyle(context: Context): TrendChartStyle =
-        TrendChartStyle.fromRaw(NoopPrefs.of(context).getString(KEY_TREND_CHART_STYLE, null))
-
-    /** Persist the Trends chart style. */
-    fun setTrendChartStyle(context: Context, style: TrendChartStyle) {
-        NoopPrefs.of(context).edit().putString(KEY_TREND_CHART_STYLE, style.raw).apply()
-    }
-
     /** SharedPreferences key for the nightly-HRV window (#141). Mirrors macOS @AppStorage("hrv.window"). */
     const val KEY_HRV_WINDOW = "hrv.window"
 
@@ -226,17 +156,6 @@ object UnitPrefs {
         NoopPrefs.of(context).edit().putString(KEY_HRV_WINDOW, window.raw).apply()
     }
 
-    /** SharedPreferences key for the Sleep tab's stage-chart style (#sleep-chart-style). */
-    const val KEY_SLEEP_CHART_STYLE = "sleep.chart.style"
-
-    /** The Sleep stage-chart style (default CLASSIC per-stage rows). Display-only. */
-    fun sleepChartStyle(context: Context): SleepChartStyle =
-        SleepChartStyle.fromRaw(NoopPrefs.of(context).getString(KEY_SLEEP_CHART_STYLE, null))
-
-    /** Persist the Sleep stage-chart style. Display-only — no re-score. */
-    fun setSleepChartStyle(context: Context, style: SleepChartStyle) {
-        NoopPrefs.of(context).edit().putString(KEY_SLEEP_CHART_STYLE, style.raw).apply()
-    }
 }
 
 /**
@@ -281,30 +200,6 @@ object UnitFormatter {
                 "${(meters * 1.09361).roundToInt()} yd"
             }
         }
-    }
-
-    /**
-     * Average pace for display: "m:ss /km" (metric) or "m:ss /mi" (imperial). "—" when pace is undefined
-     * (null or ≤ 0, i.e. no distance yet). [secPerKm] is the seconds-per-kilometre the GPS session
-     * publishes. Byte-identical to the Swift `UnitFormatter.paceFromSecPerKm`. (#1195)
-     */
-    fun paceFromSecPerKm(secPerKm: Double?, system: UnitSystem): String {
-        if (secPerKm == null || secPerKm <= 0) return "—"
-        val (secs, label) = when (system) {
-            UnitSystem.IMPERIAL -> (secPerKm / MILES_PER_KILOMETER) to "/mi"
-            UnitSystem.METRIC -> secPerKm to "/km"
-        }
-        val s = secs.roundToInt()
-        return "${s / 60}:${(s % 60).toString().padStart(2, '0')} $label"
-    }
-
-    /**
-     * Format a distance given in KILOMETRES (e.g. the Workouts "Total Distance" sum), with one decimal
-     * and a unit label. Metric: "12.4 km". Imperial: "7.7 mi".
-     */
-    fun distanceFromKilometers(km: Double, system: UnitSystem): String = when (system) {
-        UnitSystem.METRIC -> oneDecimal(km) + " km"
-        UnitSystem.IMPERIAL -> oneDecimal(kmToMiles(km)) + " mi"
     }
 
     /** Unit label only, for sites that format the number separately. "km" / "mi". */

@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -91,12 +89,12 @@ object ScheduledReportPolicy {
      *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). */
     fun morningCopy(chargePct: Int?, restPct: Int?): Pair<String, String>? {
         val parts = ArrayList<String>(2)
-        chargePct?.let { parts.add("Charge $it") }
-        restPct?.let { parts.add("Rest $it") }
+        chargePct?.let { parts.add("Recovery $it") }
+        restPct?.let { parts.add("Sleep $it") }
         if (parts.isEmpty()) return null
         val title = "Good morning: last night's recap"
         val body = parts.joinToString(" · ") +
-            ". Recovery from your strap, scored after it synced this morning."
+            ". From your strap, scored after it synced this morning."
         return title to body
     }
 
@@ -112,7 +110,7 @@ object ScheduledReportPolicy {
     ): Pair<String, String> {
         val title = "Workout logged: $sportLabel"
         val pieces = ArrayList<String>(3)
-        pieces.add("Effort $effortDisplay/$effortMaxLabel")
+        pieces.add("Strain $effortDisplay/$effortMaxLabel")
         pieces.add(durationLabel)
         avgHr?.let { pieces.add("avg $it bpm") }
         val body = pieces.joinToString(" · ") + ". Summarised after your strap synced."
@@ -211,11 +209,8 @@ object ScheduledReportNotifier {
             appLaunchIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val n = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_heart)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        val icon = if (id == WORKOUT_NOTIF_ID) R.drawable.ic_stat_workout else R.drawable.ic_stat_report
+        val n = NoopNotifications.builder(context, CHANNEL_ID, icon, title, body)
             .setContentIntent(openApp)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -225,19 +220,11 @@ object ScheduledReportNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Daily reports",
-                    NotificationManager.IMPORTANCE_LOW,
-                ).apply {
-                    description = "A morning recap and post-workout summary, after your strap syncs."
-                },
-            )
-        }
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_reports_name, R.string.notif_channel_reports_desc,
+            NotificationManager.IMPORTANCE_LOW,
+        )
     }
 }
 

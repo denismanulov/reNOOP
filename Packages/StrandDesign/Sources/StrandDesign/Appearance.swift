@@ -25,8 +25,8 @@ public enum ChartStyle: String, CaseIterable, Identifiable, Sendable {
     public static func resolve(_ raw: String) -> ChartStyle { ChartStyle(rawValue: raw) ?? .titanium }
 }
 
-/// Which stage-colour ramp a sleep chart draws with: NOOP's own tokens, Oura's ramp, or Garmin's. Twin of
-/// the Kotlin `SleepStagePalette`.
+/// Which stage-colour ramp a sleep chart draws with: NOOP's own tokens, Oura's ramp, or Garmin's. Apple
+/// only: Android dropped its in-app sleep-chart styles with the Material 3 port.
 public enum SleepStagePalette: String, Sendable { case noop, oura, garmin }
 
 /// Applies the chart style: sets the global `StrandPalette.chartStyle` (read by the data-ramp

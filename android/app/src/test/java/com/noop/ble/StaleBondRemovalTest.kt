@@ -102,10 +102,9 @@ class StaleBondRemovalTest {
         assertFalse("Test Centre must not grow a disabled block the way Settings did",
                     testCentre.contains("if (false"))
 
-        // And it must NOT have been added to the retained-but-dead Settings copy: a row that never
-        // shipped there needs no compatibility copy, and one would only be more to delete later.
-        assertFalse("the dead Settings block must not gain new switches",
-                    uiSource("SettingsScreen.kt").contains("clearStaleBond"))
+        // And Settings > Developer must not grow a second copy: Test Centre is the one home for it.
+        assertFalse("Settings > Developer must not gain a second copy of the switch",
+                    uiSource("settings/SettingsDeveloperScreen.kt").contains("clearStaleBond"))
     }
 
     private fun uiSource(name: String): String {

@@ -36,8 +36,7 @@ class HostedCardPrefsTest {
      * Every hosted card opens the thing it mirrors, and the tap-to-log card opens nothing.
      *
      * Worth pinning because the failure is silent: a card wired to the wrong destination still renders,
-     * still taps, and simply lands somewhere else. Nothing about the screen looks wrong. Twin of the
-     * Swift `testEachHostedCardOpensItsOwnTab`.
+     * still taps, and simply lands somewhere else. Nothing about the screen looks wrong.
      */
     @Test
     fun eachHostedCardOpensItsOwnThing() {

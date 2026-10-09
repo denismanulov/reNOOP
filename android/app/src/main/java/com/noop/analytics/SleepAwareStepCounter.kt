@@ -95,8 +95,8 @@ object SleepAwareStepCounter {
     /**
      * Page-safe form for database windows larger than an in-memory query limit. The caller determines
      * [hasActivityClasses] once for the complete window (for example with an EXISTS query) and keeps one
-     * accumulator for every ascending page. The previous counter sample and an unfinished in-sleep gait
-     * bout survive page boundaries, so paging cannot change the answer.
+     * accumulator for every ascending page. The previous counter sample, the time the counter last moved
+     * and an unfinished in-sleep gait bout survive page boundaries, so paging cannot change the answer.
      *
      * Pages may overlap at their boundary: timestamps already consumed are ignored. Calling [finish]
      * closes the last gait bout and makes the accumulator immutable.
@@ -107,6 +107,7 @@ object SleepAwareStepCounter {
     ) {
         private val sessions = sleepSessions.sortedBy { it.start }
         private var previous: StepSample? = null
+        private var lastMovedTs: Long? = null
         private var outside = 0
         private var awakeGap = 0
         private var sleepBout = 0
@@ -133,14 +134,21 @@ object SleepAwareStepCounter {
                 val prior = previous
                 if (prior != null && current.ts <= prior.ts) continue
                 previous = current
-                if (prior == null) continue
+                if (prior == null) {
+                    lastMovedTs = current.ts
+                    continue
+                }
 
                 val delta = (current.counter - prior.counter) and 0xFFFF
+                // Read the last-moved time BEFORE this sample updates it: the gate judges this increment
+                // against the flat run that preceded it.
+                val movedTs = lastMovedTs ?: prior.ts
+                if (delta != 0) lastMovedTs = current.ts
                 if (!StepsCounter.shouldCountDelta(current.activityClass, hasActivityClasses)) {
                     rejectedClass += delta
                     continue
                 }
-                if (!StepsCounter.isPlausibleDelta(prior.ts, current.ts, delta)) {
+                if (!StepsCounter.isPlausibleDelta(prior.ts, current.ts, movedTs, delta)) {
                     rejectedImplausible += delta
                     continue
                 }

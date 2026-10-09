@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * Byte-twin of the Swift `TodayVitalCardTests` respiratory cases (#1331). Pins `lastRespRow` — the
+ * Written as the byte-twin of the Swift respiratory cases of #1331. Pins `lastRespRow` — the
  * STALENESS-BOUNDED resolver the classic Today dashboard's Respiratory card now reads, instead of the
  * unbounded whole-row vitals carry that printed one CSV import's last value for a fortnight.
  */

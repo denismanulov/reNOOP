@@ -156,7 +156,7 @@ object RawSensorExport {
             val file = File(dir, "noop-raw-sensors.csv")
             // Stream straight to disk through an 8 KB buffer — never hold the whole CSV as a String (#406).
             val counts = file.bufferedWriter().use { w ->
-                w.append("# NOOP raw sensor export · last 24h · long-format CSV\n")
+                w.append("# reNOOP raw sensor export · last 24h · long-format CSV\n")
                 w.append("# App: ${BuildConfig.VERSION_NAME} (${BuildConfig.TIER}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n")
                 w.append("# One row per decoded sample; only the row's `stream` columns are filled. Times are UTC.\n")
                 writeCsv(w, repo, deviceId, now - 86_400, now)
@@ -166,7 +166,7 @@ object RawSensorExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP raw sensor export")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP raw sensor export")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Export raw sensor data"))

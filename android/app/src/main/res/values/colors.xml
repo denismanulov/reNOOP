@@ -8,4 +8,28 @@
     <color name="text_primary">#FFF4F7F5</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Home-screen widgets (com.noop.widget) and notifications (com.noop.notif).
+         Surface and text roles: the reNOOP mint seed scheme here (ui/Theme.kt ReNoopLightScheme), its dark
+         twin in values-night, and the wallpaper's own Material You tones on Android 12+ (values-v31,
+         values-night-v31). They are resources rather than values resolved in the app's process so the
+         launcher re-resolves them itself when the system theme or the wallpaper changes.
+         Data hues (rings, heart, stress): the fixed hues of ui/m3/HealthColors.kt, light here and dark in
+         values-night; WidgetColorResourcesTest pins the two copies together. -->
+    <color name="widget_surface">#FFEFF5EF</color>
+    <color name="widget_on_surface">#FF171D1A</color>
+    <color name="widget_on_surface_variant">#FF404943</color>
+    <color name="widget_primary">#FF006C4C</color>
+    <color name="widget_chip">#FFCFE9D9</color>
+    <color name="widget_on_chip">#FF0A1F16</color>
+    <color name="widget_ring_track">#FFDBE5DD</color>
+    <color name="widget_charge">#FF187E4F</color>
+    <color name="widget_effort">#FF286ADA</color>
+    <color name="widget_rest">#FF7848DA</color>
+    <color name="widget_heart">#FFC8356B</color>
+    <color name="widget_stress">#FF00788A</color>
+    <!-- The accent a notification's small icon is drawn in. -->
+    <color name="notification_accent">#FF006C4C</color>
+    <!-- The live-workout notification: the fitness green of the recording screen's clock. -->
+    <color name="notification_workout">#FF2B752F</color>
 </resources>

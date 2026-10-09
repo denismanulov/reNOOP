@@ -13,4 +13,5 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
+    android:previewLayout="@layout/widget_preview_stress"
     android:initialLayout="@layout/glance_default_loading_layout" />

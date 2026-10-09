@@ -2,6 +2,7 @@ package com.noop.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -20,9 +21,9 @@ import java.io.File
  * each call site's control flow, deliberately: it cannot be fooled by a loop that is gated in a helper,
  * and it fails loudly the moment a NEW animating file appears ungated, which is the case worth catching.
  *
- * One-shot animations are out of scope on purpose. `CountUpText`, `staggeredAppear` and the 160 ms
- * `liquidPress` tween settle and stop, so they are not the cost battery saver is asking to avoid, and the
- * Apple change this mirrors gated only its `TimelineView`s. They keep asking `rememberReduceMotion` alone.
+ * One-shot animations are out of scope on purpose: a tween that settles and stops is not the cost
+ * battery saver is asking to avoid, and the Apple change this mirrors gated only its `TimelineView`s.
+ * Those keep asking `rememberReduceMotion` alone.
  *
  * Fails rather than skips when it cannot find the source, for the reason
  * [com.noop.data.HrFrontierQueryShapeTest] documents: a guard whose absence reads as a pass is not a guard.
@@ -62,19 +63,15 @@ class PoseStillCoverageTest {
     /**
      * Frame loops that are DIRECT MANIPULATION, not idle animation, and must keep running in battery saver.
      *
-     * `TodayScreen.kt` drives drag-reorder auto-scroll from `withFrameNanos`, deliberately time-based so a
-     * 120 Hz panel does not scroll twice as fast. It runs only `while (sectionDrag.key != null)` — while the
-     * user's finger is down. Quieting it would not save idle power (there is no idle: the user is dragging);
-     * it would break the interaction by stripping the auto-scroll out from under them.
-     *
-     * `SleepScreen.kt` runs the byte-identical drag-reorder auto-scroll loop (#sleep-layout, the Sleep-tab
-     * twin of Today's), gated the same way on `while (sleepSectionDrag.key != null)` — the same direct-
-     * manipulation case, exempt for the same reason. Its only `withFrameNanos` IS that loop.
+     * Empty today. Its one entry was the old Sleep screen's drag-reorder auto-scroll, a `withFrameNanos`
+     * loop that ran only while the user's finger was down; that screen is gone and no file runs such a loop
+     * now. Quieting one would not save idle power (there is no idle: the user is dragging); it would break
+     * the interaction by stripping the auto-scroll out from under them.
      *
      * The distinction this file draws is idle-vs-driven, not animated-vs-still. Anything added here needs a
      * reason of that shape.
      */
-    private val directManipulation = setOf("TodayScreen.kt", "SleepScreen.kt")
+    private val directManipulation = emptySet<String>()
 
     private fun animatingFiles(): List<File> =
         uiDir().walkTopDown()
@@ -102,17 +99,19 @@ class PoseStillCoverageTest {
         )
     }
 
-    /** The gate combines all three live signals. Losing one is silent, so pin their exact census here. */
+    /**
+     * The gate combines the two live system signals. Losing one is silent, so pin their exact census here.
+     * The in-app "Reduce motion in NOOP" switch is retired (iOS ST-4): the system setting applies, so a
+     * stored value must not keep a screen still with no switch left to undo it.
+     */
     @Test
-    fun poseStillGateCombinesAllThreeLiveSignals() {
+    fun poseStillGateCombinesTheLiveSystemSignals() {
         val motion = File(uiDir(), "NoopMotion.kt")
         assertTrue("NoopMotion.kt missing", motion.isFile)
         val code = stripComments(motion.readText()).replace(Regex("\\s+"), " ")
         assertTrue(
-            "rememberPoseStill must OR system motion, battery saver, and the in-app preference: $code",
-            code.contains(
-                "fun rememberPoseStill(): Boolean = rememberReduceMotion() || rememberPowerSaveMode() || rememberQuietMotion()",
-            ),
+            "rememberPoseStill must OR system motion and battery saver: $code",
+            code.contains("fun rememberPoseStill(): Boolean = rememberReduceMotion() || rememberPowerSaveMode()"),
         )
         assertTrue(
             "battery saver must be read from PowerManager.isPowerSaveMode",
@@ -122,13 +121,9 @@ class PoseStillCoverageTest {
             "and kept live — a read-once value would strand the screen animating after the user flips it",
             code.contains("ACTION_POWER_SAVE_MODE_CHANGED"),
         )
-        assertTrue(
-            "the in-app preference must use the cross-platform key",
-            code.contains("NoopPrefs.KEY_QUIET_MOTION"),
-        )
-        assertTrue(
-            "and stay live without leaving the screen",
-            code.contains("registerOnSharedPreferenceChangeListener"),
+        assertFalse(
+            "the retired in-app preference must not be read any more",
+            code.contains("KEY_QUIET_MOTION"),
         )
     }
 }

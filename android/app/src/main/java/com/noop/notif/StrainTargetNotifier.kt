@@ -1,11 +1,9 @@
 package com.noop.notif
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
@@ -96,11 +94,7 @@ object StrainTargetNotifier {
             appLaunchIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val n = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_heart)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        val n = NoopNotifications.builder(context, CHANNEL_ID, R.drawable.ic_stat_report, title, body)
             .setContentIntent(openApp)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -110,18 +104,10 @@ object StrainTargetNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-            mgr.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Daily reports",
-                    NotificationManager.IMPORTANCE_LOW,
-                ).apply {
-                    description = "A morning recap and post-workout summary, after your strap syncs."
-                },
-            )
-        }
+        NoopNotifications.ensureChannel(
+            context, CHANNEL_ID,
+            R.string.notif_channel_reports_name, R.string.notif_channel_reports_desc,
+            NotificationManager.IMPORTANCE_LOW,
+        )
     }
 }

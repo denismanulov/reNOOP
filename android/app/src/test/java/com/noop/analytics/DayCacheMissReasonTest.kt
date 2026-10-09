@@ -81,7 +81,7 @@ class DayCacheMissReasonTest {
         // reader will see rather than the function's branches.
         // `configDropped` carries the field that moved, e.g. `configDropped(hrvBaseline)`, so the bare
         // token is a prefix rather than the whole key. See [DayCacheConfigFieldTest].
-        val tokens = setOf("none", "shape", "owner", "hr", "rrAlias5", "streams", "absent",
+        val tokens = setOf("none", "shape", "owner", "hr", "rrAlias5", "stepDiv", "streams", "absent",
                            "configDropped(<field>)")
         assertTrue(tokens.contains("absent"))
         assertTrue(tokens.any { it.startsWith("configDropped") })

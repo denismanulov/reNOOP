@@ -36,7 +36,7 @@ public func hrGapRuns(segments: [String]) -> [ClosedRange<Int>] {
 /// and that is the break. No tolerance for "just one missing": a five-minute hole is still five minutes
 /// of invention, and the stress trace made the same call when it stopped drawing through unscored hours.
 ///
-/// Byte-identical twin of the Kotlin `hrGapSegmentIds`.
+/// Apple only: the Kotlin twin went with the Android chart that drew it (Material 3 port).
 public func hrGapSegments(bucketTs: [Int], bucketSeconds: Int) -> [String] {
     var segment = 0
     return bucketTs.enumerated().map { i, ts in

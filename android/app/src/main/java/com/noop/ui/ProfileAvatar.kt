@@ -35,12 +35,13 @@ import java.io.File
 
 // MARK: - Profile picture (optional, on-device avatar)
 //
-// An OPTIONAL profile photo, kept entirely on this phone — never uploaded (NOOP is offline). The
+// An OPTIONAL profile photo, kept on this phone. Nothing here uploads it; the one place it can leave the
+// phone is the Friends tab's profile, where the wearer chooses to use it as their picture there. The
 // picked image's bytes are downscaled to ~256px, re-encoded as a small JPEG, and written to a single
 // file in the app-private filesDir; only the file path + an "is set" flag live in SharedPreferences.
 //
 // macOS/iOS parity note: the iOS side keeps the avatar in its ProfileStore as Data on disk. Compose
-// has no OS-reactive store, so — exactly like `AppearancePrefs` / `ChartStylePrefs` in PaletteTokens.kt
+// has no OS-reactive store, so — exactly like [CoachEnabledStore]
 // — the decoded [ImageBitmap] is held in SNAPSHOT state. Every `ProfileAvatarStore.bitmap` read (the
 // Today header avatar, the Settings avatar) recomposes the moment the photo is set or cleared.
 
@@ -107,6 +108,16 @@ object ProfileAvatarStore {
         prefs(app).edit().putBoolean(KEY_HAS_AVATAR, true).apply()
         bitmap = scaled.asImageBitmap()
         return true
+    }
+
+    /**
+     * The stored photo's JPEG bytes, or null with no photo set. Read by the Friends profile when the
+     * wearer asks for this photo to be their picture there. Does file IO: call it off the main thread.
+     */
+    fun storedJpeg(ctx: Context): ByteArray? {
+        val file = avatarFile(ctx)
+        if (!prefs(ctx).getBoolean(KEY_HAS_AVATAR, false) || !file.exists()) return null
+        return runCatching { file.readBytes() }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 
     /** Remove the photo: delete the file, clear the flag, and drop the live [bitmap] back to null. */

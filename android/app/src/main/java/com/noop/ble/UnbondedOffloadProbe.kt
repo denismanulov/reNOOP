@@ -636,6 +636,6 @@ internal fun unbondedProbeAnsweredLine(): String =
  * answers it directly, which is why it is the stage before the transfer rather than after it.
  */
 internal fun unbondedProbeBacklogCaveatLine(): String =
-    "Unbonded offload probe: note that this strap has never been clocked by NOOP, and an un-clocked 5/MG" +
+    "Unbonded offload probe: note that this strap has never been clocked by reNOOP, and an un-clocked 5/MG" +
         " does not save sensor data to flash — so GET_DATA_RANGE may legitimately report little or nothing" +
         " banked. That would mean history works from now on, not that the probe failed (#1635)."

@@ -10,9 +10,9 @@ import WhoopStore
 /// nothing, against 96.4 °F on a 94.4 °F mean, which reads as a fever. Both numbers are needed and
 /// neither is sufficient.
 ///
-/// `BodyVitalReading.stateCaption` is pure, so the ordering is asserted directly. Twin of Kotlin
-/// `SkinTempAbsoluteDisplayTest`, which asserts the same two properties through its own pure seams
-/// (`latestSkinAbsoluteC` / `skinTempSecondaryNote`) because Android's builder resolves resources and
+/// `BodyVitalReading.stateCaption` is pure, so the ordering is asserted directly. The Android test of
+/// the same name, removed with the tile it tested, asserted the same two properties through pure seams
+/// (the absolute lookup and the secondary note) because Android's builder resolves resources and
 /// cannot run in a JVM test.
 final class SkinTempAbsoluteDisplayTests: XCTestCase {
 

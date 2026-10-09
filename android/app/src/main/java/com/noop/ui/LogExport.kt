@@ -136,7 +136,7 @@ object LogExport {
 
             val dynamic = com.noop.testcentre.AndroidDiagnostics.dynamicLines(context)
             val header = buildString {
-                appendLine("NOOP strap log (scheduled debug export)")
+                appendLine("reNOOP strap log (scheduled debug export)")
                 appendLine(com.noop.testcentre.AndroidDiagnostics.appIdentityLine)
                 // #453: the rolling BODY is scrubbed by WhoopBleClient.log(), but these HEADER lines never pass
                 // through it - and they carry device ids, which embed a BLE address for a re-added or second
@@ -251,7 +251,7 @@ object LogExport {
         mirrorToRollingBuffer(logText)
         val dynamic = com.noop.testcentre.AndroidDiagnostics.dynamicLines(context)
         val header = buildString {
-            appendLine("NOOP strap log")
+            appendLine("reNOOP strap log")
             appendLine(com.noop.testcentre.AndroidDiagnostics.appIdentityLine)
             // #453: the rolling BODY is scrubbed by WhoopBleClient.log(), but these HEADER lines never pass
             // through it - and they carry device ids, which embed a BLE address for a re-added or second
@@ -293,7 +293,7 @@ object LogExport {
         // frames can reach the writer at all.
         if (captureHasFrames(main.length(), prev.length()).not()) return null
         val header = buildString {
-            appendLine("# NOOP 5/MG raw backfill capture (JSONL; one frame per line)")
+            appendLine("# reNOOP 5/MG raw backfill capture (JSONL; one frame per line)")
             appendLine("# App: ${BuildConfig.VERSION_NAME} (${BuildConfig.TIER}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("# NOTE: contains raw biometric frames (heart rate, R-R, skin temp, motion) and the strap's console text. Share only if you're comfortable with that.")
         }
@@ -326,7 +326,7 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, out))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP detailed capture log")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP detailed capture log")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share captured log"))
@@ -344,7 +344,7 @@ object LogExport {
         // so a toggle switched on with nothing yet logged would share a header and no log under it.
         if (captureHasFrames(main.length(), prev.length()).not()) return null
         val header = buildString {
-            appendLine("# NOOP detailed capture — rolling strap log (PII-scrubbed at source)")
+            appendLine("# reNOOP detailed capture — rolling strap log (PII-scrubbed at source)")
             appendLine("# App: ${BuildConfig.VERSION_NAME} (${BuildConfig.TIER}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
         }
         val dir = File(context.cacheDir, "logs").apply { mkdirs() }
@@ -367,7 +367,7 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, file))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP strap log")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP strap log")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share strap log"))
@@ -483,7 +483,7 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, out))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP 5/MG protocol capture")
+                putExtra(Intent.EXTRA_SUBJECT, "reNOOP 5/MG protocol capture")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share 5/MG capture"))

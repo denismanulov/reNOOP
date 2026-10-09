@@ -8,8 +8,8 @@ import kotlin.math.max
  * 4.0 and a 5/MG) for one user. Reuses the existing per-metric tolerances ([MetricArbitrationPolicy.tolerance])
  * to say whether the two straps AGREE, differ a little, or conflict — for a "compare my straps" card in the
  * Devices window. NEVER mixes the two into one score (scores stay single-owner-per-day, invariant I2); it
- * only describes how they line up, both values kept visible. Pure + deterministic. Twin of Swift
- * `StrapComparison`.
+ * only describes how they line up, both values kept visible. Pure + deterministic. Android only now: the
+ * Swift twin went with the iOS screen that used it.
  */
 object StrapComparison {
 

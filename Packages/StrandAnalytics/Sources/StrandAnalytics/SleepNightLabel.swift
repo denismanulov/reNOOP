@@ -13,7 +13,7 @@ import Foundation
 /// into a `String` helper here would quietly drop them out of the catalogue. The Kotlin twin can share
 /// both halves because Android localises through resource ids instead.
 ///
-/// Kotlin twin: `calendarNightsAgo`.
+/// Android had a twin of this until its Sleep screen was rebuilt for the Material 3 port.
 public enum SleepNightLabel {
 
     /// How many nights back the carousel entry at `offset` is FROM TODAY.

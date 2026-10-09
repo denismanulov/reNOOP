@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget-picker preview (Android 12+ previewLayout): the widget as it looks with sample figures, so the
+     picker shows the widget itself rather than the app icon. Static, never updated; the figures are
+     samples and the words are the widget's own resources. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_surface"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:text="@string/coach_brief_widget_title"
+        android:textColor="@color/widget_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/coach_brief_widget_enable"
+        android:textColor="@color/widget_on_surface"
+        android:textSize="14sp" />
+</LinearLayout>

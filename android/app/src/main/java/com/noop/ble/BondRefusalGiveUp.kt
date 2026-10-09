@@ -74,14 +74,14 @@ class BondRefusalGiveUp(
             "Bond epitaph: the strap [$opaqueId] refused the encrypted bond ${refusals}x in a row with no " +
                 "successful bond - giving up auto-reconnect to stop hammering it. It is almost certainly " +
                 "held by the official WHOOP app or a stale phone pairing. Free it (close the WHOOP app, put " +
-                "the strap in pairing mode, forget it in Bluetooth settings) then reconnect in NOOP."
+                "the strap in pairing mode, forget it in Bluetooth settings) then reconnect in reNOOP."
 
         /**
          * #747: the honest user-facing hint shown when auto-reconnect pauses. Tells them WHY it stopped and
          * how to get going again. Pure; no em-dash. Byte-identical to the Swift `BondRefusalGiveUp.pausedHint`.
          */
         fun pausedHint(): String =
-            "NOOP stopped retrying because your strap keeps refusing to pair. It is likely still held by the " +
+            "reNOOP stopped retrying because your strap keeps refusing to pair. It is likely still held by the " +
                 "official WHOOP app, or your phone is holding an old pairing. Close the WHOOP app, put the " +
                 "strap in pairing mode (tap until the LEDs flash blue), and if it is listed in your Bluetooth " +
                 "settings choose Forget This Device. Then tap Connect to try again."
@@ -104,7 +104,7 @@ class BondRefusalGiveUp(
          */
         fun helloSuppressedHint(): String =
             "The secure handshake with your strap never completes, and the attempt itself is what drops t" +
-            "he link. NOOP has switched it off for this strap so live heart rate keeps streaming. History" +
+            "he link. reNOOP has switched it off for this strap so live heart rate keeps streaming. History" +
             " sync stays unavailable until it pairs, and so do motion, skin temperature, SpO₂ and respira" +
             "tory rate, so sleep is staged from heart rate alone. Some straps have paired again after bei" +
             "ng put in pairing mode. Tap until the LEDs flash blue, then tap Connect."
@@ -137,7 +137,7 @@ class BondRefusalGiveUp(
          * take, without asserting why. Pure; no em-dash.
          */
         fun pausedHintHandshakeUnanswered(): String =
-            "NOOP stopped retrying because the secure handshake with your strap never completes: the " +
+            "reNOOP stopped retrying because the secure handshake with your strap never completes: the " +
                 "strap does not answer, and the link drops a few seconds later. Auto-reconnect is paused " +
                 "so it stops draining both batteries. Tap Connect to try again, and if it keeps happening " +
                 "please share your strap log."

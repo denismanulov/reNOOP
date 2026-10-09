@@ -1,5 +1,8 @@
 package com.noop.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.noop.analytics.AnalyticsEngine
 import com.noop.analytics.SleepStageTotals
 import com.noop.data.DailyMetric
@@ -181,41 +184,6 @@ internal fun napSleepMinutesByDay(
             .sumOf { decodedAsleepMinutes(it.stagesJSON, it.effectiveStartTs) }
     }
 
-/**
- * The day's main-night bridged SPAN (onset -> wake), the same window [mainSleepGroup] bridges into one
- * continuous night. The ONE canonical bed/wake read every glance screen (Coupled, Today's HR band) should
- * show -- never a screen-local "freshest" or "longest single block" heuristic, which can silently disagree
- * with each other and with the Sleep tab hero on a night stored as more than one block (#294). null only
- * when `blocks` has nothing bridgeable. Mirrors iOS SleepView.mainNightSpan.
- */
-internal fun mainSleepSpan(blocks: List<SleepSession>, habitualMidsleepSec: Long? = null): Pair<Long, Long>? {
-    val group = mainSleepGroup(blocks, habitualMidsleepSec)
-    val first = group.firstOrNull() ?: return null
-    val last = group.lastOrNull() ?: return null
-    return first.effectiveStartTs to last.endTs
-}
-
-/**
- * The trailing [limit] nights' bridged bed→wake SPANS — one per local calendar day of wake, grouped the
- * SAME way [navDays] groups the browsable day list (`localDayString(it.endTs)`), then resolved through
- * the SAME bridged selector ([mainSleepSpan]) the hero uses. Before this, [SleepConsistencyCard] iterated
- * raw sessions directly: a briefly-interrupted / biphasic night's night-tail fragment (bridged into the
- * hero's ONE night) still drew as its OWN low bar, got counted as an extra "night", and skewed the bed/wake
- * SD and consistency score (#699). A day whose only blocks are naps (no bridgeable main sleep) drops out via
- * `mapNotNull`, matching [mainSleepSpan]'s null. Ascending by day, oldest first (matches the prior
- * `sleeps.takeLast(limit)` ordering assumption).
- */
-internal fun consistencyNightSpans(
-    sleeps: List<SleepSession>,
-    habitualMidsleepSec: Long? = null,
-    limit: Int = 14,
-): List<Pair<Long, Long>> =
-    sleeps.groupBy { localDayString(it.endTs) }
-        .toSortedMap()
-        .values
-        .mapNotNull { blocks -> mainSleepSpan(blocks.sortedBy { it.effectiveStartTs }, habitualMidsleepSec) }
-        .takeLast(limit)
-
 /** Longest a leading block can be and still be treated as a spurious pre-sleep awake stub (lying in bed
  *  before sleep). Generous (a few hours) because the reporter's stub ran 21:41 → 00:27 — ~2h45m of pre-sleep
  *  awake — so a tight cap missed it (#736). The real guard against swallowing a genuine first sleep fragment
@@ -297,3 +265,13 @@ private fun sumGroupStages(group: List<SleepSession>): StageMins? {
  *  gate the audit flagged. Mirrors the engine's `TimeZone.getDefault().getOffset(...)`. (#547) */
 internal fun uiTzOffsetSec(): Long =
     TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000L
+
+/**
+ * A request from another tab to show the night that ended on a "yyyy-MM-dd" wake day: the Summary's Sleep
+ * card and its Rest ring open the Sleep tab on the picked day's night (iOS `TabRoute.sleepNight`). The
+ * Sleep tab consumes it once its nights are loaded, then clears it. Snapshot state, so a Sleep tab already
+ * on screen reacts too.
+ */
+internal object SleepNightRequest {
+    var wakeDay by mutableStateOf<String?>(null)
+}

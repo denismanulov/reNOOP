@@ -1,10 +1,7 @@
 package com.noop.widget
-import com.noop.ui.uiString
 
-import androidx.compose.ui.res.stringResource
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -12,41 +9,31 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
-import androidx.glance.action.actionStartActivity
-import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
-import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
-import androidx.glance.layout.padding
-import androidx.glance.layout.width
+import androidx.glance.layout.size
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
-import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.noop.R
-import com.noop.ui.MainActivity
-import java.text.DateFormat
-import java.util.Date
-import com.noop.analytics.ClockFormat
-import com.noop.ui.ClockPrefs
+import com.noop.ui.AppLink
+import com.noop.ui.uiString
 
-/** Compact home-screen widget: Rest, Charge and Effort icon cells plus live HR and strap battery. */
+/**
+ * Compact home-screen widget: Charge, Effort and Rest as a glyph over its figure, with the heart rate and
+ * the strap battery under them. The one-row companion of [NoopGlanceWidget], for a home screen with no
+ * room for rings; the same snapshot, the same order and hues, and the same tap to the Summary.
+ */
 class NoopCompactGlanceWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = runCatching { WidgetSnapshotStore.load(context) }.getOrDefault(WidgetSnapshot())
-        val dark = WidgetTheme.isDark(context)
-        provideContent { CompactWidgetContent(snap, dark) }
+        provideContent { CompactWidgetContent(currentWidgetSnapshot()) }
     }
 
     override fun onCompositionError(
@@ -62,135 +49,64 @@ class NoopCompactGlanceWidget : GlanceAppWidget() {
     }
 }
 
-private fun compactWidgetSurface(dark: Boolean) =
-    ColorProvider(if (dark) Color(0xFF0A1322) else Color(0xFFF4F1EA))
-private fun compactWidgetTextPrimary(dark: Boolean) =
-    ColorProvider(if (dark) Color(0xFFF4F6F8) else Color(0xFF1A2230))
-private fun compactWidgetTextSecondary(dark: Boolean) =
-    ColorProvider(if (dark) Color(0xFF8A94A4) else Color(0xFF7C8696))
-
-private fun compactBandColor(recovery: Int, dark: Boolean): ColorProvider = ColorProvider(
-    when {
-        recovery >= 67 -> if (dark) Color(0xFFE8B84B) else Color(0xFFB07D17)
-        recovery >= 34 -> if (dark) Color(0xFFD98A3D) else Color(0xFFC2792E)
-        else -> if (dark) Color(0xFFE0662F) else Color(0xFFC84E1E)
-    },
-)
-
-private fun compactEffortColor(dark: Boolean): ColorProvider =
-    ColorProvider(if (dark) Color(0xFF4FB6A8) else Color(0xFF2E7D74))
-
 @Composable
-private fun CompactWidgetContent(snap: WidgetSnapshot, dark: Boolean) {
-    val surface = compactWidgetSurface(dark)
-    val textPrimary = compactWidgetTextPrimary(dark)
-    val textSecondary = compactWidgetTextSecondary(dark)
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(surface)
-            .cornerRadius(16.dp)
-            .clickable(actionStartActivity<MainActivity>())
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalAlignment = Alignment.Bottom,
-        ) {
+private fun CompactWidgetContent(snap: WidgetSnapshot) {
+    WidgetCard(link = AppLink.Today, padding = 10.dp, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             CompactScoreCell(
-                label = uiString(R.string.l10n_noop_compact_glance_widget_rest_cbaaa181),
-                iconRes = R.drawable.ic_widget_rest,
-                pct = snap.restPct,
-                color = snap.restPct?.let { compactBandColor(it, dark) } ?: textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
+                uiString(R.string.metric_title_charge), R.drawable.ic_widget_charge, snap.recoveryPct,
+                WidgetColors.charge, GlanceModifier.defaultWeight(),
             )
             CompactScoreCell(
-                label = uiString(R.string.l10n_noop_compact_glance_widget_charge_49a8cb83),
-                iconRes = R.drawable.ic_widget_charge,
-                pct = snap.recoveryPct,
-                color = snap.recoveryPct?.let { compactBandColor(it, dark) } ?: textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
+                uiString(R.string.metric_title_effort), R.drawable.ic_widget_effort, snap.effortPct,
+                WidgetColors.effort, GlanceModifier.defaultWeight(),
+                figure = effortFigure(snap),
             )
             CompactScoreCell(
-                label = uiString(R.string.l10n_noop_compact_glance_widget_effort_660752e7),
-                iconRes = R.drawable.ic_widget_effort,
-                pct = snap.effortPct,
-                color = snap.effortPct?.let { compactEffortColor(dark) } ?: textSecondary,
-                modifier = GlanceModifier.defaultWeight(),
+                uiString(R.string.metric_title_rest), R.drawable.ic_widget_rest, snap.restPct,
+                WidgetColors.rest, GlanceModifier.defaultWeight(),
             )
         }
-        Spacer(modifier = GlanceModifier.height(6.dp))
-        // Same glyph-in-the-text problem as the standard widget: TalkBack gets a bare number with no
-        // name and no unit. The battery Image below has carried a contentDescription all along; this
-        // line never did. (#1799)
-        val hrLabel = uiString(R.string.l10n_noop_compact_glance_widget_heart_rate_410aa15c)
-        // Live-marked, not stale-marked, for the reason spelled out on the standard widget: the dimming
-        // below is colour-only, and "live" already exists in every locale so this needs no new copy.
-        val liveSuffix =
-            if (snap.heartRateStale) "" else " " + uiString(R.string.l10n_today_screen_sync_chip_live_98aadb37)
-        val hrDescription = snap.heartRate
-            ?.let { "$hrLabel ${uiString(R.string.l10n_today_screen_value_bpm_8f3a90c3, it)}$liveSuffix" }
-            ?: hrLabel
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = snap.heartRate?.let { "♥ $it" } ?: "♥ - ",
-                // Dim a carried-over reading so a stale HR can't masquerade as a live one.
-                style = TextStyle(color = if (snap.heartRateStale) textSecondary else textPrimary, fontSize = 13.sp),
-                modifier = GlanceModifier.semantics { contentDescription = hrDescription },
-            )
-            Spacer(modifier = GlanceModifier.width(10.dp))
-            Image(
-                provider = ImageProvider(R.drawable.ic_widget_strap_battery),
-                contentDescription = uiString(R.string.l10n_noop_compact_glance_widget_strap_battery_a6c7f09c),
-                modifier = GlanceModifier.width(14.dp).height(14.dp),
-                colorFilter = ColorFilter.tint(textPrimary),
-            )
-            Spacer(modifier = GlanceModifier.width(3.dp))
-            Text(
-                text = snap.batteryPct?.let { "$it%" } ?: "-",
-                style = TextStyle(color = textPrimary, fontSize = 13.sp),
-            )
-        }
-        Spacer(modifier = GlanceModifier.height(1.dp))
-        Text(
-            text = when {
-                snap.connected -> "Connected"
-                snap.updatedAtMs > 0L ->
-                    java.text.SimpleDateFormat(   // #1821: the reader's chosen clock
-                        ClockFormat.hourMinutePattern(ClockPrefs.uses24Hour(androidx.glance.LocalContext.current)),
-                        java.util.Locale.getDefault(),
-                    ).format(Date(snap.updatedAtMs))
-                else -> "Open NOOP to connect"
-            },
-            style = TextStyle(color = textSecondary, fontSize = 11.sp),
-        )
+        Spacer(GlanceModifier.defaultWeight())
+        WidgetVitalsRow(snap)
     }
 }
 
+/**
+ * One score: its glyph in the score's hue over the figure in the card's text colour. The hue names the
+ * score and the glyph names it again for anyone the hue does not reach; the figure itself stays in the
+ * primary text colour, where it keeps its contrast on every wallpaper. Spoken as one element.
+ */
 @Composable
 private fun CompactScoreCell(
     label: String,
     iconRes: Int,
     pct: Int?,
-    color: ColorProvider,
-    modifier: GlanceModifier = GlanceModifier,
+    hue: ColorProvider,
+    modifier: GlanceModifier,
+    figure: String? = null,
 ) {
+    val spoken = WidgetCaptions.spoken(
+        label,
+        pct?.let { figure ?: uiString(R.string.l10n_today_screen_pct_ee63e247, it) },
+        uiString(R.string.widget_no_data),
+    )
     Column(
-        modifier = modifier,
+        modifier = modifier.semantics { contentDescription = spoken },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Image(
             provider = ImageProvider(iconRes),
-            contentDescription = label,
-            modifier = GlanceModifier.width(18.dp).height(18.dp),
-            colorFilter = ColorFilter.tint(color),
+            contentDescription = null,
+            modifier = GlanceModifier.size(16.dp),
+            colorFilter = ColorFilter.tint(if (pct == null) WidgetColors.onSurfaceVariant else hue),
         )
         Text(
-            text = pct?.let { "$it%" } ?: "—",
-            style = TextStyle(color = color, fontSize = 21.sp, fontWeight = FontWeight.Bold),
+            text = figure ?: WidgetCaptions.score(pct),
+            style = WidgetType.figure(
+                20.sp, if (pct == null) WidgetColors.onSurfaceVariant else WidgetColors.onSurface,
+            ),
+            maxLines = 1,
         )
     }
 }

@@ -462,43 +462,6 @@ class WorkoutEditingTest {
     )
 
     @Test
-    fun filter_inactiveWhenEmptyPassesEverythingUntouched() {
-        val rows = listOf(
-            fullRow(100, 3700, "Running", "whoop"),
-            fullRow(5000, 8600, "Cycling", "manual"),
-        )
-        val f = WorkoutFilter()
-        assertFalse(f.isActive)
-        assertEquals(rows, f.apply(rows))
-    }
-
-    @Test
-    fun filter_sportSourceAndSearchCompose() {
-        val run = fullRow(100, 3700, "Running", "whoop")
-        val manualRun = fullRow(5000, 8600, "Running", "manual")
-        val cycle = fullRow(9000, 12000, "Cycling", "manual")
-        val detected = fullRow(13000, 14000, "detected", "my-whoop-noop")
-        val rows = listOf(run, manualRun, cycle, detected)
-
-        assertEquals(listOf(run, manualRun), WorkoutFilter(sport = "Running").apply(rows))
-        // "detected" folds to "Activity" for the sport facet.
-        assertEquals(listOf(detected), WorkoutFilter(sport = "Activity").apply(rows))
-        assertEquals(listOf(manualRun, cycle), WorkoutFilter(sourceClass = WorkoutSource.MANUAL).apply(rows))
-        assertEquals(
-            listOf(manualRun),
-            WorkoutFilter(sport = "Running", sourceClass = WorkoutSource.MANUAL).apply(rows),
-        )
-        assertEquals(listOf(cycle), WorkoutFilter(search = "cyc").apply(rows))
-        assertEquals(listOf(run, manualRun), WorkoutFilter(search = "  RUN ").apply(rows))
-        assertEquals(
-            listOf(run),
-            WorkoutFilter(sport = "Running", sourceClass = WorkoutSource.WHOOP, search = "run").apply(rows),
-        )
-    }
-
-    // MARK: - Merge (#64)
-
-    @Test
     fun merge_eligibilityGatesOnManualOrDetected() {
         val manual = fullRow(100, 3700, "Running", "manual")
         val detected = fullRow(100, 3700, "detected", "my-whoop-noop")
