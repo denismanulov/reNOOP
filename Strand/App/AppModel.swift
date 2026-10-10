@@ -684,6 +684,8 @@ final class AppModel: ObservableObject {
             ouraNightBand: { [weak self] in self?.ouraNightBand() })   // item 27
         coordinator.start()
         self.deviceRegistry = registry
+        // Friends (fork feature): which strap is worn, so the friends account can be bound to it.
+        FriendsStore.shared.strapIdentity = { [weak registry] in FriendsStrap.identity(registry: registry) }
         // #1303: adoption re-points the strap onto its stable `whoop-<serial>` id inside BLEManager (which
         // holds only the non-observable store), so mirror it onto the OBSERVABLE registry here or the
         // Devices screen and the source coordinator keep watching an id that no longer exists.

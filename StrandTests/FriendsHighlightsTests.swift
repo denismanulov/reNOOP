@@ -11,7 +11,7 @@ final class FriendsHighlightsTests: XCTestCase {
         let days = workouts.enumerated().map { index, list in
             FriendFeedDay(day: "2026-10-0\(8 - index)", summary: FriendsDay(workouts: list))
         }
-        return FriendProfile(nick: nick, name: nick.capitalized, days: days)
+        return FriendProfile(id: nick, name: nick.capitalized, days: days)
     }
 
     /// A workout that ended `ago` seconds before `now` and ran for half an hour.
@@ -40,13 +40,13 @@ final class FriendsHighlightsTests: XCTestCase {
         let max = person("max", [[workout(endedAgo: 600, sport: "Cycling"), workout(endedAgo: 30_000, sport: "Walking")]])
         let found = FriendsHighlights.recent(friends: [anna, max], now: now)
         XCTAssertEqual(found.map(\.workout.sport), ["Cycling", "Running", "Walking", "Yoga"])
-        XCTAssertEqual(found.map(\.nick), ["max", "anna", "max", "anna"])
+        XCTAssertEqual(found.map(\.personID), ["max", "anna", "max", "anna"])
     }
 
     func testTwoFriendsEndingTogetherKeepAStableOrder() {
         let found = FriendsHighlights.recent(
             friends: [person("zoe", [[workout(endedAgo: 100)]]), person("anna", [[workout(endedAgo: 100)]])], now: now)
-        XCTAssertEqual(found.map(\.nick), ["anna", "zoe"])
+        XCTAssertEqual(found.map(\.personID), ["anna", "zoe"])
     }
 
     func testAWorkoutListedTwiceIsShownOnce() {
@@ -63,8 +63,8 @@ final class FriendsHighlightsTests: XCTestCase {
     }
 
     func testFriendsWithNothingToShow() {
-        let silent = FriendProfile(nick: "kate", name: "Kate", days: nil)
-        let rested = FriendProfile(nick: "oleg", name: "Oleg",
+        let silent = FriendProfile(id: "kate", name: "Kate", days: nil)
+        let rested = FriendProfile(id: "oleg", name: "Oleg",
                                    days: [FriendFeedDay(day: "2026-10-08", summary: FriendsDay(recovery: 80))])
         XCTAssertTrue(FriendsHighlights.recent(friends: [silent, rested], now: now).isEmpty)
         XCTAssertTrue(FriendsHighlights.recent(friends: [], now: now).isEmpty)

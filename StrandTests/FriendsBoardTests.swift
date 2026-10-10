@@ -10,11 +10,11 @@ final class FriendsBoardTests: XCTestCase {
                         recovery: Int? = nil, strain: Double? = nil, sleep: Int? = nil,
                         sharesScores: Bool = true) -> FriendProfile {
         let days = day.map { [FriendFeedDay(day: $0, summary: FriendsDay(recovery: recovery, strain: strain, sleepScore: sleep))] }
-        return FriendProfile(nick: nick, name: name ?? nick.capitalized,
+        return FriendProfile(id: nick, name: name ?? nick.capitalized,
                              share: FriendsShare(scores: sharesScores), days: days)
     }
 
-    private func order(_ rows: [FriendsBoardRow]) -> [String] { rows.map(\.person.nick) }
+    private func order(_ rows: [FriendsBoardRow]) -> [String] { rows.map(\.person.id) }
 
     func testByAScoreTheHighestLeadsAndTheWearerIsAmongFriends() {
         let rows = FriendsBoard.rows(me: person("me", recovery: 58),
@@ -108,7 +108,7 @@ final class FriendsBoardTests: XCTestCase {
 
     func testSleepIsFollowedByTheTimeAsleepAndRecoveryByNothing() {
         let night = FriendsDay.Sleep(startTs: 0, endTs: 0, asleepMin: 488)
-        let me = FriendProfile(nick: "me", name: "Me", share: FriendsShare(),
+        let me = FriendProfile(id: "me", name: "Me", share: FriendsShare(),
                                days: day(FriendsDay(recovery: 70, sleepScore: 59, sleep: night)))
         XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .sleep, todayKey: today).first?.detail,
                        .asleep(minutes: 488))
@@ -123,7 +123,7 @@ final class FriendsBoardTests: XCTestCase {
             ("seconds round to the minute", [FriendsDay.Workout(startTs: 0, sport: "Yoga", durationS: 1_530)], 26)
         ]
         for c in cases {
-            let me = FriendProfile(nick: "me", name: "Me", share: FriendsShare(),
+            let me = FriendProfile(id: "me", name: "Me", share: FriendsShare(),
                                    days: day(FriendsDay(strain: 31.9, workouts: c.workouts)))
             XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .strain, todayKey: today).first?.detail,
                            .workouts(minutes: c.minutes), c.name)
@@ -133,7 +133,7 @@ final class FriendsBoardTests: XCTestCase {
     func testASectionAPersonDoesNotShareIsNotGuessedAt() {
         let night = FriendsDay.Sleep(startTs: 0, endTs: 0, asleepMin: 400)
         let summary = FriendsDay(strain: 40, sleepScore: 80, sleep: night, workouts: [workout(minutes: 30)])
-        let quiet = FriendProfile(nick: "kate", name: "Kate", share: FriendsShare(sleep: false, workouts: false),
+        let quiet = FriendProfile(id: "kate", name: "Kate", share: FriendsShare(sleep: false, workouts: false),
                                   days: day(summary))
         let me = person("me", strain: 10, sleep: 10)
         for sort in [FriendsSort.sleep, .strain] {

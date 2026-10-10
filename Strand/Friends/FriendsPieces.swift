@@ -43,29 +43,29 @@ struct FriendAvatar: View {
     /// The wearer's own photo; read only when `own`.
     var imageData: Data?
     /// Whose picture to fetch and at which revision; revision 0 is an account without one.
-    var nick = ""
+    var id = ""
     var rev = 0
 
     @State private var fetched: Data?
 
-    init(name: String, size: CGFloat, own: Bool = false, imageData: Data? = nil, nick: String = "", rev: Int = 0) {
+    init(name: String, size: CGFloat, own: Bool = false, imageData: Data? = nil, id: String = "", rev: Int = 0) {
         self.name = name; self.size = size; self.own = own; self.imageData = imageData
-        self.nick = nick; self.rev = rev
+        self.id = id; self.rev = rev
     }
 
     init(person: FriendProfile, size: CGFloat, own: Bool = false, imageData: Data? = nil) {
-        self.init(name: person.name, size: size, own: own, imageData: imageData, nick: person.nick, rev: person.avatarRev)
+        self.init(name: person.name, size: size, own: own, imageData: imageData, id: person.id, rev: person.avatarRev)
     }
 
     private var picture: Data? {
-        own ? imageData : (fetched ?? FriendsAvatars.cached(nick: nick, rev: rev))
+        own ? imageData : (fetched ?? FriendsAvatars.cached(id: id, rev: rev))
     }
 
     var body: some View {
         SummaryAvatar(imageData: picture, initials: FriendsFormat.initials(name), size: size)
             .accessibilityHidden(true)
-            .task(id: "\(nick):\(rev):\(own)") {
-                fetched = own ? nil : await FriendsAvatars.load(nick: nick, rev: rev)
+            .task(id: "\(id):\(rev):\(own)") {
+                fetched = own ? nil : await FriendsAvatars.load(id: id, rev: rev)
             }
     }
 }
@@ -76,21 +76,15 @@ struct FriendNameStack: View {
     @Environment(\.dynamicTypeSize) private var dts
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(verbatim: person.name)
-                .font(StrandFont.headline)
-                .foregroundStyle(StrandPalette.textPrimary)
-                .lineLimit(dts.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(0.85)
-            Text(verbatim: "@" + person.nick)
-                .font(StrandFont.pro(15))
-                .foregroundStyle(StrandPalette.textSecondary)
-                .lineLimit(1)
-        }
+        Text(verbatim: person.name)
+            .font(StrandFont.headline)
+            .foregroundStyle(StrandPalette.textPrimary)
+            .lineLimit(dts.isAccessibilitySize ? 2 : 1)
+            .minimumScaleFactor(0.85)
     }
 }
 
-/// One person as Find My lists People: the monogram, the name over the nickname, and what can be done
+/// One person as Find My lists People: the monogram, the name, and what can be done
 /// about them on the trailing edge. At the accessibility text sizes the actions move under the name, so
 /// neither squeezes the other.
 struct FriendPersonRow<Trailing: View>: View {
@@ -141,11 +135,12 @@ struct FriendRowsCard<Row: View>: View {
     }
 }
 
-/// The top of a person's page and of the account sheets: the picture, the name and the nickname,
-/// centred, as Contacts opens a card and Health its profile.
+/// The top of a person's page and of the sharing page: the picture and the name, centred, as Contacts
+/// opens a card and Health its profile.
 struct FriendsHero: View {
     let name: String
-    let nick: String
+    /// Whose picture to fetch; empty for the wearer, who is drawn from this phone.
+    var id = ""
     /// The wearer's own account: drawn with their photo.
     var own = false
     var imageData: Data?
@@ -154,7 +149,7 @@ struct FriendsHero: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            FriendAvatar(name: name, size: 96, own: own, imageData: imageData, nick: nick, rev: avatarRev)
+            FriendAvatar(name: name, size: 96, own: own, imageData: imageData, id: id, rev: avatarRev)
                 .padding(.bottom, 4)
             if !name.isEmpty {
                 Text(verbatim: name)
@@ -163,11 +158,6 @@ struct FriendsHero: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
-            }
-            if !nick.isEmpty {
-                Text(verbatim: "@" + nick)
-                    .font(StrandFont.pro(17))
-                    .foregroundStyle(StrandPalette.textSecondary)
             }
         }
         .frame(maxWidth: .infinity)

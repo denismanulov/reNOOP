@@ -47,7 +47,7 @@ enum TabRoute: Hashable {
     /// Settings, pushed from the Summary's profile circle. Its own pages push `SettingsPage` values, so
     /// a stack that hosts this route registers `.settingsDestinations()` too.
     case settings
-    /// One person's page on the Friends tab, by nickname (the account's own page included).
+    /// One person's page on the Friends tab, by account id (the account's own page included).
     case friend(String)
 }
 
@@ -86,7 +86,7 @@ extension View {
             case .trends: TrendsView()
             case .trainingLoad: TrainingLoadView()
             case .settings: SettingsView()
-            case .friend(let nick): FriendDetailView(nick: nick)
+            case .friend(let id): FriendDetailView(personID: id)
             }
         }
     }

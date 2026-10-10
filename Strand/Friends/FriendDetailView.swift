@@ -10,7 +10,7 @@ import StrandAnalytics
 import StrandDesign
 
 struct FriendDetailView: View {
-    let nick: String
+    let personID: String
 
     @ObservedObject private var store = FriendsStore.shared
     @EnvironmentObject private var profile: ProfileStore
@@ -27,7 +27,7 @@ struct FriendDetailView: View {
     @State private var heroScrolledAway = false
 
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
-    private var isMe: Bool { nick == store.nick }
+    private var isMe: Bool { personID == store.myID }
     private var day: FriendFeedDay? {
         guard let days = person?.days else { return nil }
         return days.first(where: { $0.day == selectedDay }) ?? days.first
@@ -40,7 +40,7 @@ struct FriendDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if let person {
-                    FriendsHero(name: person.name, nick: person.nick, own: isMe,
+                    FriendsHero(name: person.name, id: person.id, own: isMe,
                                 imageData: profile.avatarImageData, avatarRev: person.avatarRev)
                         .padding(.bottom, NoopMetrics.space2)
                     pager(person)
@@ -99,16 +99,16 @@ struct FriendDetailView: View {
                     // The dialog hangs off the button that asks for it, where iOS 26 points it.
                     .confirmationDialog("Remove Friend", isPresented: $confirmRemove, titleVisibility: .visible) {
                         Button("Remove Friend", role: .destructive) {
-                            Task { await store.unfriend(nick); dismiss() }
+                            Task { await store.unfriend(personID); dismiss() }
                         }
                     } message: {
-                        Text("You stop seeing each other's days. Either of you can send a new request later.")
+                        Text("You stop seeing each other's days. Either of you can invite the other again later.")
                     }
                 }
             }
         }
-        .task(id: nick) {
-            person = await store.person(nick)
+        .task(id: personID) {
+            person = await store.person(personID)
             selectedDay = person?.days?.first?.day
             loaded = true
         }

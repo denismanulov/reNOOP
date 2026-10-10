@@ -1,53 +1,19 @@
 //  FriendsStore.swift
 //  NOOP · Friends — the account on this phone, what the tab shows, and the daily upload.
 //
-//  A reNOOP fork feature, and off until the wearer creates an account: with no token nothing is sent
-//  anywhere and the rest of the app behaves exactly as it did. The one call made signed out is the one
-//  the sign-up form asks for by name, whether a nickname is free. The server address is configuration:
-//  the fork's own server until the wearer names another.
+//  A reNOOP fork feature, and off until the wearer turns it on: until then no key exists, nothing is
+//  sent anywhere and the rest of the app behaves exactly as it did. The server address is
+//  configuration: the fork's own server until the wearer names another.
 //
-//  An account is a nickname and a password. The phone keeps the session token it got in return, in the
-//  Keychain item below: it is not a setting, is never written to UserDefaults, and never enters a
-//  `.noopbak` backup. The password itself is sent once and never stored anywhere on the phone.
+//  There is no name to type and no password. Turning Friends on makes this phone's key (`FriendsKey`,
+//  in the Keychain, never in UserDefaults and never in a `.noopbak` backup) and an account bound to
+//  the strap worn (`FriendsStrap`). The same strap on another phone asks to join that account; a new
+//  strap on this phone takes the account over by itself.
 
 import CryptoKit
 import Foundation
-import Security
 import StrandAnalytics
 import WhoopStore
-
-/// The account token, in the Keychain. Readable after the first unlock so an upload can follow a
-/// background sync; this device only, since it is a credential.
-enum FriendsKeychain {
-    private static let service = "com.renoop.friends"
-    private static let account = "token"
-
-    private static var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
-    }
-
-    static func read() -> String? {
-        var q = query
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    @discardableResult
-    static func save(_ token: String) -> Bool {
-        SecItemDelete(query as CFDictionary)
-        var q = query
-        q[kSecValueData as String] = Data(token.utf8)
-        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
-    }
-
-    static func clear() { SecItemDelete(query as CFDictionary) }
-}
 
 /// The one rule of the upload skip: a day goes up unless its text is the one the server last accepted
 /// for it. What the phone keeps to tell the two apart is the text's SHA-256, not the text.
@@ -58,6 +24,9 @@ enum FriendsUploadPolicy {
             return hex.count == 1 ? "0" + hex : hex
         }.joined()
     }
+
+    /// The same fingerprint for bytes: what tells one picture from another.
+    static func fingerprint(_ data: Data) -> String { FriendsKey.hex(SHA256.hash(data: data)) }
 
     static func shouldUpload(lastAcceptedFingerprint: String?, json: String) -> Bool {
         lastAcceptedFingerprint == nil || lastAcceptedFingerprint != fingerprint(json)
@@ -96,39 +65,81 @@ struct FriendsFeedCache {
     func clear() { try? FileManager.default.removeItem(at: file) }
 }
 
+/// Where Friends stands on this phone.
+enum FriendsPhase: Equatable {
+    /// Never turned on, or turned off: no request is made.
+    case off
+    /// Turn On was tapped, and the strap worn has a serial this phone has not read yet.
+    case waitingForStrap
+    /// The strap already has an account. The wearer says whether it is theirs.
+    case strapBound
+    /// This phone asked to join the strap's account and waits for an answer.
+    case waiting(FriendsClaim)
+    case on
+
+    /// What is kept between launches; a claim in flight is kept beside it.
+    var stored: String {
+        switch self {
+        case .off: return "off"
+        case .waitingForStrap: return "waitingForStrap"
+        case .strapBound: return "strapBound"
+        case .waiting: return "waiting"
+        case .on: return "on"
+        }
+    }
+}
+
 @MainActor
 final class FriendsStore: ObservableObject {
     static let shared = FriendsStore()
 
-    /// The server address when the wearer named their own, and the signed-in nickname (so the tab can
-    /// name the account before the first answer). Plain configuration; the token is NOT here.
+    /// The server address when the wearer named their own. Plain configuration; the key is NOT here.
     static let addressKey = "friends.serverAddress"
-    static let nickKey = "friends.nick"
+    static let phaseKey = "friends.phase"
+    static let claimKey = "friends.claim"
     /// When the kept feed arrived, and when a day last went up (device clock, unix seconds).
     static let feedAtKey = "friends.feedAt"
     static let uploadedAtKey = "friends.uploadedAt"
     /// One fingerprint per uploaded day, under this prefix and the day's key.
     static let markPrefix = "friends.uploaded."
+    /// What this phone last sent of the wearer's profile, so it sends again only after a change made here.
+    static let pushedNameKey = "friends.pushedName"
+    static let pushedPhotoKey = "friends.pushedPhoto"
+    /// Set when this phone joined an account that already had a profile: the next run records this
+    /// phone's profile as sent without sending it.
+    static let adoptProfileKey = "friends.adoptProfile"
+    static let sharePhotoKey = "friends.sharePhoto"
+    /// The strap handle the server last accepted for the account.
+    static let boundHandleKey = "friends.boundHandle"
+    /// The codes of the invites made on this phone, by invite id, so a waiting invite can be shown again.
+    static let inviteCodesKey = "friends.inviteCodes"
     /// Coming back to the tab inside this long of a good answer shows that answer.
     static let autoRefreshEverySeconds = 60
 
-    @Published private(set) var signedIn: Bool
+    @Published private(set) var phase: FriendsPhase
     @Published private(set) var feed: FriendsFeed?
-    @Published private(set) var requests: FriendRequests?
     @Published private(set) var loading = false
     /// The last failure, already worded for the wearer; nil once a call succeeds.
     @Published var errorText: String?
     /// When a day last went up from this phone (device clock, unix seconds).
     @Published private(set) var lastUploadAt: Int?
+    /// The account's phones and its waiting invites, once a screen has asked for them.
+    @Published private(set) var devices: [FriendsDevice]?
+    @Published private(set) var invites: [FriendsInvite]?
+    /// An invite code that arrived by a link and waits for the wearer's yes.
+    @Published var pendingInviteCode: String?
+
+    /// Which strap is worn. The app sets it once its device registry exists; until then nothing is known.
+    var strapIdentity: @MainActor () -> FriendsStrap.Identity = { .pending }
 
     private let defaults: UserDefaults
     private let cache: FriendsFeedCache?
-    private let keychain: Bool
+    private let keys: FriendsKeyStorage
     private let session: URLSession
-    private var token: String?
-    /// Counts the sessions this process has seen: it moves whenever one starts or ends. Work that began
-    /// under one session carries the value it started with, and what it brings back is kept only while
-    /// that value still stands. Without it, signing out and in as someone else while a request was in
+    private var key: (any FriendsSigner)?
+    /// Counts the accounts this process has seen: it moves whenever Friends goes on or off. Work that
+    /// began under one carries the value it started with, and what it brings back is kept only while
+    /// that value still stands. Without it, leaving and joining as someone else while a request was in
     /// flight could file the old account's answer, or the mark of a day uploaded to it, under the new one.
     private(set) var epoch = 0
     /// Device clock (unix seconds) when `feed` arrived from the server; 0 before any did.
@@ -138,31 +149,59 @@ final class FriendsStore: ObservableObject {
     private var uploadTask: Task<Void, Never>?
     private var uploadRun: Task<Void, Never>?
 
-    /// `token` nil reads the Keychain; tests pass their own and keep the Keychain out of it.
-    init(defaults: UserDefaults = .standard, token: String? = nil, cache: FriendsFeedCache? = .standard,
-         keychain: Bool = true, session: URLSession = FriendsClient.plainSession) {
+    /// `signer` nil reads the kept key; tests pass their own and keep the Keychain out of it.
+    init(defaults: UserDefaults = .standard, cache: FriendsFeedCache? = .standard,
+         keys: FriendsKeyStorage = FriendsKeychainStorage(), session: URLSession = FriendsClient.plainSession,
+         signer: (any FriendsSigner)? = nil) {
         self.defaults = defaults
         self.cache = cache
-        self.keychain = keychain
+        self.keys = keys
         self.session = session
-        let held = token ?? (keychain ? FriendsKeychain.read() : nil)
-        self.token = held
-        self.signedIn = held != nil
-        if held != nil {
+        let address = defaults.string(forKey: Self.addressKey).flatMap(FriendsServerAddress.normalized)
+            ?? FriendsServerAddress.standard
+        let held = signer ?? FriendsKey.load(server: address, storage: keys)
+        self.key = held
+        var phase = FriendsPhase.off
+        switch defaults.string(forKey: Self.phaseKey) {
+        case "on" where held != nil:
+            phase = .on
+        case "waiting" where held != nil:
+            let claim = defaults.data(forKey: Self.claimKey).flatMap { try? JSONDecoder().decode(FriendsClaim.self, from: $0) }
+            phase = claim.map { .waiting($0) } ?? .strapBound
+        case "strapBound":
+            phase = .strapBound
+        case "waitingForStrap":
+            phase = .waitingForStrap
+        default:
+            break
+        }
+        self.phase = phase
+        if phase == .on {
             feed = cache?.read()
             feedFetchedAt = defaults.integer(forKey: Self.feedAtKey)
             lastUploadAt = defaults.object(forKey: Self.uploadedAtKey) as? Int
         }
     }
 
+    var isOn: Bool { phase == .on }
     /// The server address in use; always one `FriendsServerAddress` accepts.
     var serverAddress: String {
         defaults.string(forKey: Self.addressKey).flatMap(FriendsServerAddress.normalized) ?? FriendsServerAddress.standard
     }
-    var usesStandardServer: Bool { serverAddress == FriendsServerAddress.standard }
-    var nick: String { feed?.me.nick ?? defaults.string(forKey: Self.nickKey) ?? "" }
     var me: FriendProfile? { feed?.me }
+    /// The wearer's own account id; empty before the first answer.
+    var myID: String { feed?.me.id ?? "" }
     var share: FriendsShare { feed?.me.share ?? FriendsShare() }
+    /// Requests waiting for this account's answer.
+    var claims: [FriendsClaim] { feed?.claims ?? [] }
+    /// The account's other phones that joined without confirmation: kept or removed from this one.
+    var unconfirmed: [FriendsDevice] { feed?.unconfirmed ?? [] }
+    /// Unix seconds until which this phone may only read and upload; nil for a confirmed phone.
+    var probationUntil: Int? { feed?.me.device?.probationUntil }
+    /// This phone's key id, which is its id among the account's phones.
+    var deviceID: String? { key?.keyID }
+    /// Whether the profile photo is sent for friends to see.
+    var sharePhoto: Bool { defaults.object(forKey: Self.sharePhotoKey) as? Bool ?? true }
 
     /// The server's "now" (unix seconds): what every "N min ago" on the tab counts from.
     func serverNow(_ now: Date = Date()) -> Int {
@@ -171,194 +210,274 @@ final class FriendsStore: ObservableObject {
         return FriendsClock.serverNow(serverTime: feed.serverTime, fetchedAtDevice: feedFetchedAt, nowDevice: device)
     }
 
-    /// A client for the account, or an `anonymous` one for the calls the sign-in form makes. Without a
-    /// session there is no client for anything else: signed out, nothing is sent.
-    private func client(address: String? = nil, anonymous: Bool = false) throws -> FriendsClient {
-        guard anonymous || token != nil else { throw FriendsAPIError.notSignedIn }
-        guard let url = FriendsServerAddress.baseURL(address ?? serverAddress) else { throw FriendsAPIError.notConfigured }
-        return FriendsClient(baseURL: url, token: anonymous ? nil : token, session: session)
+    /// A client signed with this phone's key. Without a key there is no client: nothing is sent.
+    private func client() throws -> FriendsClient {
+        guard let key else { throw FriendsAPIError.notEnrolled }
+        guard let url = FriendsServerAddress.baseURL(serverAddress) else { throw FriendsAPIError.notConfigured }
+        return FriendsClient(baseURL: url, signer: key, session: session)
     }
 
-    // MARK: - Account
-
-    /// What the sign-up form needs to know about a server. Asked together with the first nickname check,
-    /// never on its own: opening the form sends nothing.
-    func serverInfo(address: String) async -> Result<FriendsServerInfo, FriendsAPIError> {
-        await result { try await self.client(address: address, anonymous: true).info() }
+    /// The same, making the key first when there is none. The key exists from the first Turn On and
+    /// never before it.
+    private func clientMakingKey() throws -> FriendsClient {
+        if key == nil { key = try FriendsKey.create(server: serverAddress, storage: keys) }
+        return try client()
     }
 
-    func isNickFree(_ nick: String, address: String) async -> Bool? {
-        try? await client(address: address, anonymous: true).isNickFree(nick)
-    }
-
-    /// Create the account: the one step that turns the feature on. Returns true on success.
-    func signUp(address: String, nick: String, password: String, name: String?, invite: String?) async -> Bool {
-        await enter(address: address) { anonymous in
-            try await anonymous.register(nick: nick, password: password, name: name?.isEmpty == false ? name : nil,
-                                         invite: invite?.isEmpty == false ? invite : nil)
+    private func setPhase(_ next: FriendsPhase) {
+        phase = next
+        defaults.set(next.stored, forKey: Self.phaseKey)
+        if case let .waiting(claim) = next, let data = try? JSONEncoder().encode(claim) {
+            defaults.set(data, forKey: Self.claimKey)
+        } else {
+            defaults.removeObject(forKey: Self.claimKey)
         }
     }
 
-    /// Sign in to an account made earlier. Returns true on success.
-    func signIn(address: String, nick: String, password: String) async -> Bool {
-        await enter(address: address) { anonymous in
-            try await anonymous.login(nick: nick, password: password)
+    // MARK: - Turning on
+
+    /// Turn Friends on: the one step that makes a key and sends anything. With a strap whose serial is
+    /// known the account is bound to it; with a strap not read yet this waits for it.
+    func turnOn(profile: ProfileStore) async { await turnOn(name: profile.displayName) }
+
+    /// The same with the name given outright. The name is the profile's; this form exists for tests.
+    func turnOn(name: String) async {
+        await Task { await self.enter(name: name, bind: true) }.value
+    }
+
+    /// Turn Friends on with no strap to bind to, or beside a strap that belongs to someone else's
+    /// account. The strap, once known, is bound or asked for by the next upload.
+    func turnOnWithoutStrap(profile: ProfileStore) async { await turnOnWithoutStrap(name: profile.displayName) }
+
+    func turnOnWithoutStrap(name: String) async {
+        await Task { await self.enter(name: name, bind: false) }.value
+    }
+
+    /// Runs in a task of its own, so a view that goes away mid-request does not cut it short: an
+    /// enrolment cut short would make the account and never show it.
+    private func enter(name: String, bind: Bool) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            errorText = String(localized: "Enter your name first.")
+            return
         }
-    }
-
-    /// Both ways in end the same: a token to keep, an address and a name to remember, the first read.
-    /// The call runs in a task of its own, so a sheet that goes away mid-request does not cut it short:
-    /// a sign-up cut short would create the account and lose its token.
-    private func enter(address: String,
-                       _ call: @escaping (FriendsClient) async throws -> (token: String, me: FriendProfile)) async -> Bool {
-        await Task { await self.enterNow(address: address, call) }.value
-    }
-
-    private func enterNow(address: String,
-                          _ call: (FriendsClient) async throws -> (token: String, me: FriendProfile)) async -> Bool {
+        var strap: String?
+        if bind {
+            switch strapIdentity() {
+            case .pending:
+                errorText = nil
+                setPhase(.waitingForStrap)
+                return
+            case let .handle(found): strap = found
+            case .none: break
+            }
+        }
         loading = true
         defer { loading = false }
         do {
-            guard let normalized = FriendsServerAddress.normalized(address) else { throw FriendsAPIError.notConfigured }
-            let anonymous = try client(address: normalized, anonymous: true)
-            let entered = try await call(anonymous)
-            guard !keychain || FriendsKeychain.save(entered.token) else {
-                // A token that cannot be kept is a session nobody can use or end: end it while it is in hand.
-                var holder = anonymous
-                holder.token = entered.token
-                try? await holder.signOut()
-                errorText = String(localized: "The account's key could not be saved on this device, so you were not signed in.")
-                return false
-            }
-            // Nothing of an earlier account on this phone may stay under the new one.
-            forgetAccount()
-            token = entered.token
-            // The fork's own server is the absence of a choice, so a later change of it is followed.
-            if normalized == FriendsServerAddress.standard { defaults.removeObject(forKey: Self.addressKey) }
-            else { defaults.set(normalized, forKey: Self.addressKey) }
-            defaults.set(entered.me.nick, forKey: Self.nickKey)
-            epoch += 1
-            signedIn = true
-            errorText = nil
+            let me = try await clientMakingKey().enroll(name: name, strap: strap)
+            becomeOn(me: me, pushedName: name, boundHandle: strap)
             await refresh()
-            return true
+        } catch let error as FriendsAPIError where error.isStrapBound {
+            errorText = nil
+            setPhase(.strapBound)
         } catch {
             errorText = Self.message(for: error)
-            return false
         }
     }
 
-    /// Sign this phone out. The account stays on the server, and a password signs back in. If the server
-    /// cannot be reached the phone still forgets the token: leaving must not depend on the network.
-    func signOut() async {
+    /// "This is my account": ask to join the account the strap is bound to.
+    func claimAccount(profile: ProfileStore) async { await claimAccount(name: profile.displayName) }
+
+    func claimAccount(name: String) async {
+        await Task { await self.claimNow(name: name) }.value
+    }
+
+    private func claimNow(name: String) async {
+        guard case let .handle(strap) = strapIdentity() else {
+            setPhase(.waitingForStrap)
+            return
+        }
+        loading = true
+        defer { loading = false }
+        do {
+            let claim = try await clientMakingKey().fileClaim(strap: strap)
+            errorText = nil
+            setPhase(.waiting(claim))
+        } catch let error as FriendsAPIError where error.isStrapFree {
+            // Its owner let the strap go meanwhile: there is no account to join, so make one.
+            loading = false
+            await enter(name: name, bind: true)
+        } catch let error as FriendsAPIError where error.isAlreadyEnrolled {
+            await adopt()
+        } catch {
+            errorText = Self.message(for: error)
+        }
+    }
+
+    /// Withdraws the request to join and goes back to the choice.
+    func cancelClaim() async {
         await Task {
-            try? await self.client().signOut()
-            self.endSession()
+            try? await self.client().withdrawClaim()
+            if case .waiting = self.phase { self.setPhase(.strapBound) }
         }.value
     }
 
-    /// Change the password. The server ends every other session and sends this phone a fresh token.
-    func changePassword(old: String, new: String) async -> Bool {
-        await Task { await self.changePasswordNow(old: old, new: new) }.value
-    }
-
-    private func changePasswordNow(old: String, new: String) async -> Bool {
-        let session = epoch
+    /// Asks how the request to join stands. Called when the tab appears and while it stays open.
+    func pollClaim() async {
+        guard case .waiting = phase else { return }
         do {
-            let fresh = try await client().changePassword(old: old, new: new)
-            guard session == epoch else { return false }
-            guard !keychain || FriendsKeychain.save(fresh) else {
-                // The old token was ended along with the rest; without the new one nothing works.
-                endSession()
-                errorText = String(localized: "The account's key could not be saved on this device, so you were signed out. Sign in with the new password.")
-                return false
+            let claim = try await client().myClaim()
+            guard case .waiting = phase else { return }
+            switch claim.state {
+            case .pending:
+                setPhase(.waiting(claim))
+            case .approved:
+                await adopt()
+            case .declined:
+                errorText = String(localized: "The request was declined on your other phone.")
+                setPhase(.strapBound)
+            case .expired:
+                errorText = String(localized: "The request expired. Send it again.")
+                setPhase(.strapBound)
             }
-            token = fresh
-            errorText = nil
-            return true
+        } catch let error as FriendsAPIError where error.isNoClaim || error.isUnknownKey {
+            // The claim is gone from the server: granted long ago and cleared away, or withdrawn.
+            await adopt()
+        } catch let error as FriendsAPIError where error.isOffline {
+            // No answer is not an answer: the screen keeps showing the code.
         } catch {
-            handle(error, session: session)
-            return false
-        }
-    }
-
-    /// Delete the account on the server and forget it here. The server asks for the password again.
-    func deleteAccount(password: String) async -> Bool {
-        await Task { await self.deleteAccountNow(password: password) }.value
-    }
-
-    private func deleteAccountNow(password: String) async -> Bool {
-        let session = epoch
-        do {
-            try await client().deleteAccount(password: password)
-            if session == epoch { endSession() }
-            return true
-        } catch {
-            // A wrong password here is a 401 that must not sign the phone out; only a dead session does.
-            if let api = error as? FriendsAPIError, api.isSignedOut {
-                if session == epoch { endSession() }
-                return true
-            }
             errorText = Self.message(for: error)
-            return false
         }
     }
 
-    /// Ends the session on this phone: the one way the token, the kept feed, the pictures and the upload
-    /// marks go away together, and queued uploads with them.
-    private func endSession() {
+    /// The request was granted: this phone is one of the account's. It joins without sending its own
+    /// profile, since what the account already shows stands.
+    private func adopt() async {
+        do {
+            let me = try await client().me()
+            becomeOn(me: me, pushedName: nil, boundHandle: nil)
+            defaults.set(true, forKey: Self.adoptProfileKey)
+            await refresh()
+        } catch let error as FriendsAPIError where error.isUnknownKey {
+            setPhase(.strapBound)
+        } catch {
+            errorText = Self.message(for: error)
+        }
+    }
+
+    private func becomeOn(me: FriendProfile, pushedName: String?, boundHandle: String?) {
+        // Nothing of an earlier account on this phone may stay under the new one.
+        forgetAccount()
+        if let pushedName { defaults.set(pushedName, forKey: Self.pushedNameKey) }
+        if let boundHandle { defaults.set(boundHandle, forKey: Self.boundHandleKey) }
+        epoch += 1
+        errorText = nil
+        setPhase(.on)
+    }
+
+    // MARK: - Leaving
+
+    /// Delete the account on the server and forget it here. The strap is free again.
+    func deleteAccount() async -> Bool {
+        await Task {
+            let session = self.epoch
+            do {
+                try await self.client().deleteAccount()
+                if session == self.epoch { self.leave(deleteKey: true) }
+                return true
+            } catch {
+                self.handle(error, session: session)
+                // An account that is already gone is a deletion that worked.
+                return !self.isOn
+            }
+        }.value
+    }
+
+    /// Takes this phone off the account, which goes on living on the wearer's other phones. The server
+    /// refuses it for the account's only confirmed phone.
+    func removeThisPhone() async -> Bool {
+        guard let id = deviceID else { return false }
+        return await Task {
+            let session = self.epoch
+            do {
+                try await self.client().removeDevice(id)
+                if session == self.epoch { self.leave(deleteKey: true) }
+                return true
+            } catch {
+                self.handle(error, session: session)
+                return !self.isOn
+            }
+        }.value
+    }
+
+    /// Friends goes off on this phone: the one way the kept feed, the pictures and the upload marks go
+    /// away together, and queued uploads with them. The key goes too when the phone left by its own
+    /// doing; when the server stopped knowing it the key stays, so turning Friends on again asks to
+    /// rejoin as the same phone.
+    private func leave(deleteKey: Bool) {
         uploadTask?.cancel()
         uploadTask = nil
-        if keychain { FriendsKeychain.clear() }
+        if deleteKey {
+            FriendsKey.delete(server: serverAddress, storage: keys)
+            key = nil
+        }
         forgetAccount()
         epoch += 1
-        signedIn = false
+        setPhase(.off)
     }
 
-    /// Everything kept about the account except the server address.
+    /// Everything kept about the account except the server address and the key.
     private func forgetAccount() {
-        token = nil
-        defaults.removeObject(forKey: Self.nickKey)
-        defaults.removeObject(forKey: Self.feedAtKey)
-        defaults.removeObject(forKey: Self.uploadedAtKey)
+        for name in [Self.feedAtKey, Self.uploadedAtKey, Self.pushedNameKey, Self.pushedPhotoKey,
+                     Self.adoptProfileKey, Self.sharePhotoKey, Self.boundHandleKey, Self.inviteCodesKey] {
+            defaults.removeObject(forKey: name)
+        }
         clearUploadMarks()
         cache?.clear()
         FriendsAvatars.clear()
         feed = nil
         feedFetchedAt = 0
         lastRefreshFailed = false
-        requests = nil
+        devices = nil
+        invites = nil
         lastUploadAt = nil
     }
 
     // MARK: - Reading
 
-    /// Sends today and yesterday if they changed, then reads the feed: what opening the tab and a pull
-    /// both do. An automatic call inside `autoRefreshEverySeconds` of the last good answer does nothing,
-    /// so switching tabs back and forth costs no request; `force` (a pull, a change just made) always goes.
+    /// What opening the tab and a pull both do. Before Friends is on it moves the turning-on along: a
+    /// strap that has since been read is enrolled with, a request to join is asked about. Once on it
+    /// sends today and yesterday if they changed and reads the feed; an automatic call inside
+    /// `autoRefreshEverySeconds` of the last good answer does nothing, so switching tabs back and forth
+    /// costs no request, and `force` (a pull, a change just made) always goes.
     func sync(repo: Repository, profile: ProfileStore, force: Bool) async {
-        guard signedIn else { return }
-        let age = Int(Date().timeIntervalSince1970) - feedFetchedAt
-        if !force, feed != nil, requests != nil, !lastRefreshFailed, (0..<Self.autoRefreshEverySeconds).contains(age) { return }
-        // The upload first, so the wearer's own card is what the server holds as of now.
-        await uploadRecentDays(repo: repo, profile: profile)
-        await refresh()
+        switch phase {
+        case .off, .strapBound:
+            return
+        case .waitingForStrap:
+            if strapIdentity() != .pending { await turnOn(profile: profile) }
+        case .waiting:
+            await pollClaim()
+        case .on:
+            let age = Int(Date().timeIntervalSince1970) - feedFetchedAt
+            if !force, feed != nil, !lastRefreshFailed, (0..<Self.autoRefreshEverySeconds).contains(age) { return }
+            // The upload first, so the wearer's own card is what the server holds as of now.
+            await uploadRecentDays(repo: repo, profile: profile)
+            await refresh()
+        }
     }
 
     func refresh() async {
-        guard signedIn else { return }
+        guard isOn else { return }
         let session = epoch
         loading = feed == nil
         defer { loading = false }
         do {
-            let c = try client()
-            async let f = c.feed()
-            async let r = c.requests()
-            let (answered, asked) = (try await f, try await r)
-            // The session this was asked under has ended meanwhile: its answer belongs to nobody on screen.
+            let answered = try await client().feed()
+            // The account this was asked under is gone meanwhile: its answer belongs to nobody on screen.
             guard session == epoch else { return }
             feed = answered.feed
-            requests = asked
             feedFetchedAt = Int(Date().timeIntervalSince1970)
             defaults.set(feedFetchedAt, forKey: Self.feedAtKey)
             cache?.write(answered.raw)
@@ -371,38 +490,102 @@ final class FriendsStore: ObservableObject {
     }
 
     /// One person in full for their own page, or nil (with `errorText` set) when it cannot be read.
-    func person(_ nick: String) async -> FriendProfile? {
+    func person(_ id: String) async -> FriendProfile? {
         let session = epoch
-        do { return try await client().person(nick) }
+        do { return try await client().person(id) }
         catch { handle(error, session: session); return nil }
     }
 
-    func lookup(_ nick: String) async -> Result<FriendProfile, FriendsAPIError> {
+    /// A person's picture as the server holds it, or nil when there is none to show. Quiet: a picture
+    /// that did not arrive is drawn as initials, and is no reason for a notice.
+    func avatarBytes(of id: String) async -> Data? {
         let session = epoch
-        let answer = await result { try await self.client().lookup(nick) }
-        if case let .failure(error) = answer, error.isSignedOut { handle(error, session: session) }
-        return answer
+        guard isOn, let bytes = try? await client().avatar(id), session == epoch else { return nil }
+        return bytes
     }
 
     // MARK: - Friends
 
-    func sendRequest(to nick: String) async -> FriendProfile? {
-        await act { try await self.client().sendRequest(to: nick) }
+    func unfriend(_ id: String) async { await actNoAnswer { try await self.client().unfriend(id) } }
+
+    /// Makes a one-time invite and remembers its code, which the server says only now.
+    func createInvite() async -> FriendsInvite? {
+        guard let invite = await act({ try await self.client().createInvite() }, refreshing: false) else { return nil }
+        if let code = invite.code {
+            var kept = defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String] ?? [:]
+            kept[invite.id] = code
+            defaults.set(kept, forKey: Self.inviteCodesKey)
+        }
+        await loadInvites()
+        return invite
     }
 
-    func accept(_ nick: String) async { _ = await act { try await self.client().accept(nick) } }
-
-    func dropRequest(_ nick: String) async { await actNoAnswer { try await self.client().dropRequest(nick) } }
-
-    func unfriend(_ nick: String) async { await actNoAnswer { try await self.client().unfriend(nick) } }
-
-    // MARK: - Profile
-
-    func rename(_ name: String) async {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != me?.name else { return }
-        _ = await act { try await self.client().update(name: trimmed) }
+    /// The code of an invite made on this phone, or nil for one made elsewhere.
+    func inviteCode(_ id: String) -> String? {
+        (defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String])?[id]
     }
+
+    func loadInvites() async {
+        let session = epoch
+        do {
+            let found = try await client().invites()
+            guard session == epoch else { return }
+            invites = found
+            // A code whose invite is used, revoked or expired is of no further use.
+            let live = Set(found.map(\.id))
+            let kept = (defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String] ?? [:]).filter { live.contains($0.key) }
+            defaults.set(kept, forKey: Self.inviteCodesKey)
+        } catch {
+            handle(error, session: session)
+        }
+    }
+
+    func revokeInvite(_ id: String) async {
+        await actNoAnswer({ try await self.client().revokeInvite(id) }, refreshing: false)
+        await loadInvites()
+    }
+
+    /// Uses an invite: whatever was typed, pasted or opened is read for its code. Answers the new friend,
+    /// or nil with `errorText` set.
+    func redeem(_ text: String) async -> FriendProfile? {
+        guard let code = FriendsInviteCode.extract(text) else {
+            errorText = String(localized: "That is not an invite code.")
+            return nil
+        }
+        return await act { try await self.client().redeem(code) }
+    }
+
+    // MARK: - Requests on the strap
+
+    /// Confirms a waiting request: a new phone joins the account, or the strap goes to who asked for it.
+    func approve(_ claim: FriendsClaim) async { await actNoAnswer { try await self.client().approve(claim.id) } }
+
+    func decline(_ claim: FriendsClaim) async { await actNoAnswer { try await self.client().decline(claim.id) } }
+
+    // MARK: - Phones
+
+    func loadDevices() async {
+        let session = epoch
+        do {
+            let found = try await client().devices()
+            if session == epoch { devices = found }
+        } catch {
+            handle(error, session: session)
+        }
+    }
+
+    func removeDevice(_ id: String) async {
+        await actNoAnswer { try await self.client().removeDevice(id) }
+        await loadDevices()
+    }
+
+    /// Keeps a phone that joined without confirmation: its probation ends now.
+    func trustDevice(_ id: String) async {
+        await actNoAnswer { try await self.client().trustDevice(id) }
+        await loadDevices()
+    }
+
+    // MARK: - Profile and sharing
 
     /// Change the sharing switches. Turning one off erases that section on the server from every day
     /// already uploaded, so what this phone remembers having sent no longer describes the server: the
@@ -417,35 +600,39 @@ final class FriendsStore: ObservableObject {
         }.value
     }
 
-    /// Makes the on-device profile photo the picture friends see. Nothing is sent until the wearer asks
-    /// for this by name. False (with `errorText` set) when there is no usable photo or the server refused.
-    func uploadProfilePhoto(_ photo: Data?) async -> Bool {
-        guard let jpeg = photo.flatMap({ FriendsAvatars.fitForUpload($0) }) else {
-            errorText = String(localized: "This picture cannot be used.")
-            return false
-        }
-        return await act { try await self.client().putAvatar(jpeg) } != nil
+    /// Whether the profile photo is sent. Off removes the server's copy on the next run, which is now.
+    func setSharePhoto(_ on: Bool, repo: Repository, profile: ProfileStore) async {
+        guard on != sharePhoto else { return }
+        defaults.set(on, forKey: Self.sharePhotoKey)
+        objectWillChange.send()
+        await uploadRecentDays(repo: repo, profile: profile)
+        await refresh()
     }
 
-    func removePicture() async -> Bool {
-        await act { try await self.client().deleteAvatar(); return true } != nil
-    }
-
-    /// A person's picture as the server holds it, or nil when there is none to show. Quiet: a picture
-    /// that did not arrive is drawn as initials, and is no reason for a notice.
-    func avatarBytes(of nick: String) async -> Data? {
+    /// Everything the server holds for the account, laid out to be read; nil when it cannot be fetched.
+    func exportText() async -> String? {
         let session = epoch
-        guard signedIn, let bytes = try? await client().avatar(nick), session == epoch else { return nil }
-        return bytes
+        do {
+            let raw = try await client().export()
+            guard let object = try? JSONSerialization.jsonObject(with: raw),
+                  let pretty = try? JSONSerialization.data(
+                    withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else {
+                return String(decoding: raw, as: UTF8.self)
+            }
+            return String(decoding: pretty, as: UTF8.self)
+        } catch {
+            handle(error, session: session)
+            return nil
+        }
     }
 
     // MARK: - Uploading
 
     /// A scoring pass has finished (the cached days changed). Upload shortly after, once: a burst of
-    /// refreshes becomes one upload, and an unchanged day is not sent at all. Does nothing signed out,
-    /// and the strap sync that led here never waits on it or learns how it went.
+    /// refreshes becomes one upload, and an unchanged day is not sent at all. Does nothing while Friends
+    /// is off, and the strap sync that led here never waits on it or learns how it went.
     func daysChanged(repo: Repository, profile: ProfileStore) {
-        guard signedIn else { return }
+        guard isOn else { return }
         uploadTask?.cancel()
         uploadTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -457,7 +644,7 @@ final class FriendsStore: ObservableObject {
     /// Build and send today and yesterday, one run at a time. Failure is silent by design: a day that
     /// did not go up goes up on the next trigger.
     func uploadRecentDays(repo: Repository, profile: ProfileStore) async {
-        guard signedIn else { return }
+        guard isOn else { return }
         let previous = uploadRun
         let run = Task { [weak self] in
             await previous?.value
@@ -469,21 +656,28 @@ final class FriendsStore: ObservableObject {
 
     private func uploadNow(repo: Repository, profile: ProfileStore) async {
         let session = epoch
-        guard signedIn, let client = try? client() else { return }
-        // The switches are read from the server first, so one turned off on another phone is honoured
+        guard isOn, let client = try? client() else { return }
+        // The account is read from the server first, so a switch turned off on another phone is honoured
         // here before anything is built.
-        let share: FriendsShare
+        let account: FriendProfile
         do {
-            guard let asked = try await client.me().share, session == epoch else { return }
-            share = asked
+            account = try await client.me()
+            guard session == epoch else { return }
         } catch {
             handle(error, quiet: true, session: session)
             return
         }
+        guard let share = account.share else { return }
+        // A phone that joined without confirmation reads and uploads its days; the strap and the profile
+        // wait until it is confirmed.
+        if account.device?.probationUntil == nil {
+            await bindStrap(client, session: session)
+            await pushProfile(client, profile: profile, session: session)
+        }
         let days = await FriendsUploader.recentDays(repo: repo, profile: profile, share: share)
         let keep = Set(days.map(\.key))
         for day in days {
-            // The session this run started under is gone: nothing more is sent with its token.
+            // The account this run started under is gone: nothing more is sent with its key.
             guard session == epoch else { return }
             let now = Int(Date().timeIntervalSince1970)
             let json = FriendsDayBuilder.json(FriendsDayBuilder.day(day.input, share: share, nowTs: now))
@@ -494,9 +688,57 @@ final class FriendsStore: ObservableObject {
                 recordUpload(day.key, fingerprint: FriendsUploadPolicy.fingerprint(json), keep: keep, at: now)
             } catch {
                 handle(error, quiet: true, session: session)
-                // A refused day is not worth stopping for; a dead session or no network is.
-                guard let api = error as? FriendsAPIError, !api.isSignedOut, !api.isOffline else { return }
+                // A refused day is not worth stopping for; a phone the server no longer knows, or no network, is.
+                guard let api = error as? FriendsAPIError, !api.isUnknownKey, !api.isOffline else { return }
             }
+        }
+    }
+
+    /// Tells the server which strap is worn, when it is not the one the server last accepted. A new
+    /// strap on the same phone takes the account over this way, with nothing for the wearer to do. A
+    /// strap that belongs to another account is asked for: the feed carries that request, and every run
+    /// asks again until it is settled.
+    private func bindStrap(_ client: FriendsClient, session: Int) async {
+        guard case let .handle(strap) = strapIdentity(), strap != defaults.string(forKey: Self.boundHandleKey) else { return }
+        do {
+            let answer = try await client.putStrap(strap)
+            guard session == epoch else { return }
+            if answer == .bound { defaults.set(strap, forKey: Self.boundHandleKey) }
+        } catch {
+            handle(error, quiet: true, session: session)
+        }
+    }
+
+    /// Sends the profile's name and photo when the wearer changed them on this phone since they were
+    /// last sent. Never because the server's differ: two phones of one account with different profiles
+    /// would otherwise overwrite each other forever.
+    private func pushProfile(_ client: FriendsClient, profile: ProfileStore, session: Int) async {
+        let name = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photo = sharePhoto ? profile.avatarImageData.flatMap { FriendsAvatars.fitForUpload($0) } : nil
+        let photoMark = photo.map { FriendsUploadPolicy.fingerprint($0) } ?? (sharePhoto ? "none" : "off")
+        if defaults.bool(forKey: Self.adoptProfileKey) {
+            defaults.set(name, forKey: Self.pushedNameKey)
+            defaults.set(photoMark, forKey: Self.pushedPhotoKey)
+            defaults.removeObject(forKey: Self.adoptProfileKey)
+            return
+        }
+        do {
+            if !name.isEmpty, name != defaults.string(forKey: Self.pushedNameKey) {
+                _ = try await client.update(name: name)
+                guard session == epoch else { return }
+                defaults.set(name, forKey: Self.pushedNameKey)
+            }
+            let sent = defaults.string(forKey: Self.pushedPhotoKey)
+            guard photoMark != sent else { return }
+            if let photo {
+                _ = try await client.putAvatar(photo)
+            } else if let sent, sent != "none", sent != "off" {
+                try await client.deleteAvatar()
+            }
+            guard session == epoch else { return }
+            defaults.set(photoMark, forKey: Self.pushedPhotoKey)
+        } catch {
+            handle(error, quiet: true, session: session)
         }
     }
 
@@ -524,12 +766,6 @@ final class FriendsStore: ObservableObject {
 
     // MARK: - Plumbing
 
-    private func result<T>(_ call: @escaping () async throws -> T) async -> Result<T, FriendsAPIError> {
-        do { return .success(try await call()) }
-        catch let error as FriendsAPIError { return .failure(error) }
-        catch { return .failure(.transport(error.localizedDescription)) }
-    }
-
     private func act<T>(_ call: @escaping () async throws -> T, refreshing: Bool = true) async -> T? {
         let session = epoch
         do {
@@ -544,20 +780,20 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    private func actNoAnswer(_ call: @escaping () async throws -> Void) async {
-        _ = await act { try await call(); return true }
+    private func actNoAnswer(_ call: @escaping () async throws -> Void, refreshing: Bool = true) async {
+        _ = await act({ try await call(); return true }, refreshing: refreshing)
     }
 
-    /// A dead session ends here, once, for every screen. One that answers for an earlier session (the
-    /// phone has since signed out, or in as someone else) says nothing about the one on screen.
+    /// A phone the server no longer knows ends here, once, for every screen. An answer for an earlier
+    /// account (Friends has since gone off, or on as someone else) says nothing about the one on screen.
     private func handle(_ error: Error, quiet: Bool = false, session: Int) {
         guard session == epoch else { return }
-        // Nothing was sent and nothing ended: there is no account, which the tab already shows.
-        if case .notSignedIn? = error as? FriendsAPIError { return }
-        if let api = error as? FriendsAPIError, api.isSignedOut {
-            // The token is no longer a session. Only a sign-in can replace it, so forget it.
-            endSession()
-            errorText = String(localized: "The session has ended. Sign in again.")
+        // Nothing was sent and nothing ended: Friends is off, which the tab already shows.
+        if case .notEnrolled? = error as? FriendsAPIError { return }
+        if let api = error as? FriendsAPIError, api.isUnknownKey {
+            // Removed from the account by another phone, or the account is gone.
+            leave(deleteKey: false)
+            errorText = String(localized: "This phone is no longer part of the account. Turn Friends on to join again.")
             return
         }
         if !quiet { errorText = Self.message(for: error) }
@@ -565,28 +801,35 @@ final class FriendsStore: ObservableObject {
 
     /// The server's codes in the wearer's language; its own English sentence only as a last resort.
     static func message(for error: Error) -> String {
+        if error is FriendsKeyError {
+            return String(localized: "The key for Friends could not be saved on this device.")
+        }
         guard let api = error as? FriendsAPIError else { return error.localizedDescription }
         switch api {
-        case .notSignedIn:
-            return String(localized: "The session has ended. Sign in again.")
+        case .notEnrolled:
+            return String(localized: "Friends is off on this phone.")
         case .notConfigured:
             return String(localized: "The server address is not valid. It must start with https://.")
         case .transport:
             return String(localized: "The friends server did not answer. Check the address and your connection.")
+        case .clockSkew:
+            return String(localized: "This phone's clock is too far off. Set the date and time automatically.")
         case let .server(code, message, status):
             switch code {
-            case "nick_taken": return String(localized: "This name is taken.")
-            case "bad_nick": return String(localized: "A name is 3 to 20 Latin letters, digits or underscores.")
             case "bad_name": return String(localized: "A name is 1 to 40 characters.")
-            case "bad_password": return String(localized: "A password is 8 to 128 characters.")
-            case "bad_credentials": return String(localized: "Wrong name or password.")
-            case "bad_invite": return String(localized: "Wrong invite code.")
             case "server_full": return String(localized: "This server is not taking new accounts.")
-            case "no_such_user": return String(localized: "No one has this name.")
-            case "self_request": return String(localized: "That is your own name.")
-            case "no_request": return String(localized: "There is no request from this person any more.")
+            case "strap_bound": return String(localized: "This strap already has an account.")
+            case "probation": return String(localized: "This phone joined without confirmation. It can change things once it is confirmed.")
+            case "claim_declined": return String(localized: "That request was declined. Try again in a week.")
+            case "too_many_claims": return String(localized: "Too many requests are waiting on this strap. Try again later.")
+            case "too_many_devices": return String(localized: "The account already has five phones. Remove one first.")
+            case "last_device": return String(localized: "This is the account's only confirmed phone. Delete the account instead.")
+            case "claim_settled", "no_claim": return String(localized: "That request is no longer waiting.")
+            case "no_such_invite": return String(localized: "This code is not valid any more.")
+            case "own_invite": return String(localized: "That is your own invite.")
+            case "too_many_invites": return String(localized: "Too many invites are waiting. Revoke one first.")
             case "too_many_friends": return String(localized: "The friend limit is reached.")
-            case "too_many_requests": return String(localized: "Too many unanswered requests. Withdraw one first.")
+            case "no_such_user": return String(localized: "This person is no longer here.")
             case "bad_image", "too_large": return String(localized: "This picture cannot be used.")
             default:
                 if status == 429 { return String(localized: "Too many attempts. Try again later.") }

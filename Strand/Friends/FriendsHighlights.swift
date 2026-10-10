@@ -10,14 +10,14 @@ import StrandDesign
 
 /// One finished workout of one friend.
 struct FriendHighlight: Identifiable, Equatable {
-    let nick: String
+    let personID: String
     let name: String
     /// The revision of the friend's picture; 0 is an account without one.
     var avatarRev = 0
     let workout: FriendsDay.Workout
 
     var endTs: Int { workout.startTs + workout.durationS }
-    var id: String { "\(nick)#\(workout.startTs)" }
+    var id: String { "\(personID)#\(workout.startTs)" }
 }
 
 enum FriendsHighlights {
@@ -36,7 +36,7 @@ enum FriendsHighlights {
         for person in friends {
             for day in person.days ?? [] {
                 for workout in day.summary.workouts ?? [] {
-                    let highlight = FriendHighlight(nick: person.nick, name: person.name, avatarRev: person.avatarRev, workout: workout)
+                    let highlight = FriendHighlight(personID: person.id, name: person.name, avatarRev: person.avatarRev, workout: workout)
                     let age = now - highlight.endTs
                     guard age >= -clockSlackSeconds, age <= windowSeconds,
                           seen.insert(highlight.id).inserted else { continue }
@@ -44,7 +44,7 @@ enum FriendsHighlights {
                 }
             }
         }
-        found.sort { a, b in a.endTs != b.endTs ? a.endTs > b.endTs : a.nick < b.nick }
+        found.sort { a, b in a.endTs != b.endTs ? a.endTs > b.endTs : a.personID < b.personID }
         return Array(found.prefix(limit))
     }
 }
@@ -94,7 +94,7 @@ struct FriendsHighlightsCarousel: View {
     }
 
     private func card(_ highlight: FriendHighlight) -> some View {
-        NavigationLink(value: TabRoute.friend(highlight.nick)) {
+        NavigationLink(value: TabRoute.friend(highlight.personID)) {
             FriendHighlightCard(highlight: highlight, effortScale: effortScale)
         }
         .buttonStyle(.plain)
@@ -160,7 +160,7 @@ struct FriendHighlightCard: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                FriendAvatar(name: highlight.name, size: 32, nick: highlight.nick, rev: highlight.avatarRev)
+                FriendAvatar(name: highlight.name, size: 32, id: highlight.personID, rev: highlight.avatarRev)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("\(highlight.name) completed a workout")
                         .font(StrandFont.pro(15))

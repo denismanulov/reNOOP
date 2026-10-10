@@ -105,7 +105,7 @@ struct FriendsBoardRow: Identifiable, Equatable {
     let standing: Standing
     var detail: Detail? = nil
 
-    var id: String { person.nick }
+    var id: String { person.id }
 }
 
 enum FriendsBoard {
@@ -161,7 +161,7 @@ enum FriendsBoard {
 
     private static func byName(_ a: FriendProfile, _ b: FriendProfile) -> Bool {
         let order = a.name.localizedCaseInsensitiveCompare(b.name)
-        return order != .orderedSame ? order == .orderedAscending : a.nick < b.nick
+        return order != .orderedSame ? order == .orderedAscending : a.id < b.id
     }
 }
 

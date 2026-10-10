@@ -1,20 +1,28 @@
+import CryptoKit
 import XCTest
 import Foundation
 import StrandAnalytics
 import WhoopStore
 @testable import Strand
 
-/// The Friends client against the contract in `friends-server/README.md`: what it sends, what it
-/// reads, and that the password goes out only with the four calls that ask for it.
+/// The Friends client against the contract in `friends-server/README.md` (API version 2): what it
+/// signs and sends, what it reads, and how Friends on this phone moves between its states.
 final class FriendsClientTests: XCTestCase {
 
     /// Answers every request from a canned table and records what was asked.
     private final class Stub: URLProtocol {
-        nonisolated(unsafe) static var answers: [String: (status: Int, body: String)] = [:]
+        struct Seen {
+            let method: String
+            let path: String
+            let headers: [String: String]
+            let body: Data
+        }
+
+        /// Answers by "METHOD path". Each request takes the next answer of its list; the last one repeats.
+        nonisolated(unsafe) static var answers: [String: [(status: Int, body: String)]] = [:]
         /// Requests answered with a redirect to the address given, keyed like `answers`.
         nonisolated(unsafe) static var redirects: [String: String] = [:]
-        nonisolated(unsafe) static var seen: [(method: String, path: String, auth: String?, body: String)] = []
-        nonisolated(unsafe) static var contentTypes: [String?] = []
+        nonisolated(unsafe) static var seen: [Seen] = []
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -35,20 +43,21 @@ final class FriendsClientTests: XCTestCase {
             let url = request.url!
             let path = url.path + (url.query.map { "?" + $0 } ?? "")
             let method = request.httpMethod ?? "GET"
-            Self.seen.append((method, path, request.value(forHTTPHeaderField: "Authorization"),
-                              String(decoding: body, as: UTF8.self)))
-            Self.contentTypes.append(request.value(forHTTPHeaderField: "Content-Type"))
-            if let target = Self.redirects[method + " " + path], let location = URL(string: target) {
+            let key = method + " " + path
+            Self.seen.append(Seen(method: method, path: path, headers: request.allHTTPHeaderFields ?? [:], body: body))
+            if let target = Self.redirects[key], let location = URL(string: target) {
                 let hop = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
                                           headerFields: ["Location": target])!
-                // A client that follows it asks `location` next, with the token still on the request; one
-                // that refuses is left with the 302 as its answer.
+                // A client that follows it asks `location` next, with the signature still on the request;
+                // one that refuses is left with the 302 as its answer.
                 client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: location), redirectResponse: hop)
                 client?.urlProtocol(self, didReceive: hop, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocolDidFinishLoading(self)
                 return
             }
-            let answer = Self.answers[method + " " + path] ?? (404, #"{"error":"not_found","message":"Not found."}"#)
+            var list = Self.answers[key] ?? [(404, #"{"error":"not_found","message":""}"#)]
+            let answer = list.count > 1 ? list.removeFirst() : list[0]
+            if Self.answers[key] != nil { Self.answers[key] = list }
             let response = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
                                            headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -57,14 +66,45 @@ final class FriendsClientTests: XCTestCase {
         }
     }
 
+    /// A fixed software key, so no test touches the Keychain or the Secure Enclave.
+    private struct TestSigner: FriendsSigner, @unchecked Sendable {
+        let key = P256.Signing.PrivateKey()
+        var publicKeySPKI: Data { key.publicKey.derRepresentation }
+        var keyID: String { FriendsKey.hex(SHA256.hash(data: publicKeySPKI)) }
+        func sign(_ message: Data) throws -> Data { try key.signature(for: message).derRepresentation }
+    }
+
+    private static let base = "https://friends.example"
+    private static let fixedNow = 1_791_540_000
+    private static let fixedNonce = "AAAAAAAAAAAAAAAAAAAAAA"
+    private static let annaID = "00000000000000aa"
+    private static let me = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":true,"sleep":true,"workouts":true,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
+    private static let emptyFeed = #"{"serverTime":1791540000,"me":\#(me),"friends":[],"claims":[],"strapClaim":null}"#
+    private static let handle = "98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"
+
     private func stubbedSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [Stub.self]
         return URLSession(configuration: config)
     }
 
-    private func client(token: String? = "tok") -> FriendsClient {
-        FriendsClient(baseURL: URL(string: "https://friends.example")!, token: token, session: stubbedSession())
+    private func client(_ signer: (any FriendsSigner)? = TestSigner(), offset: FriendsClockOffset = FriendsClockOffset()) -> FriendsClient {
+        var c = FriendsClient(baseURL: URL(string: Self.base)!, signer: signer, session: stubbedSession())
+        c.offset = offset
+        c.now = { Self.fixedNow }
+        c.nonce = { Self.fixedNonce }
+        return c
+    }
+
+    /// Whether `seen` carries a signature by `signer` over exactly this method, target, time and body.
+    private func isSigned(_ seen: Stub.Seen, by signer: TestSigner, target: String, time: Int = FriendsClientTests.fixedNow) throws -> Bool {
+        guard seen.headers["X-Friends-Key"] == signer.keyID, seen.headers["X-Friends-Time"] == String(time),
+              seen.headers["X-Friends-Nonce"] == Self.fixedNonce,
+              let signature = seen.headers["X-Friends-Signature"].flatMap({ Data(base64Encoded: $0) }) else { return false }
+        let text = FriendsWire.signingString(method: seen.method, target: target, time: time, nonce: Self.fixedNonce,
+                                             bodyHashHex: FriendsKey.hex(SHA256.hash(data: seen.body)))
+        return try P256.Signing.PublicKey(derRepresentation: signer.publicKeySPKI)
+            .isValidSignature(P256.Signing.ECDSASignature(derRepresentation: signature), for: Data(text.utf8))
     }
 
     override func setUp() {
@@ -72,114 +112,160 @@ final class FriendsClientTests: XCTestCase {
         Stub.answers = [:]
         Stub.redirects = [:]
         Stub.seen = []
-        Stub.contentTypes = []
     }
 
-    // MARK: - Account
+    // MARK: - Signing
 
-    /// Sign-up sends the nickname (normalised) and the password, and is the one call made without a token.
-    func testSignUpSendsTheNameAndPasswordAndKeepsTheToken() async throws {
-        Stub.answers["POST /v1/register"] = (201, #"{"token":"abc","me":{"nick":"denis","name":"denis","avatarRev":0,"share":{"scores":true,"sleep":true,"workouts":true,"hr":false}}}"#)
-        let created = try await client(token: nil).register(nick: " @Denis ", password: "correct horse", name: nil, invite: nil)
-        XCTAssertEqual(created.token, "abc")
-        XCTAssertEqual(created.me.share, FriendsShare())
+    /// The README's vector, as this client produces it: the same method, target, time, nonce and body.
+    func testARequestIsSignedOverItsMethodTargetTimeNonceAndBody() async throws {
+        let signer = TestSigner()
+        Stub.answers["PUT /v2/me/days/2026-10-10"] = [(204, "")]
+        try await client(signer).upload(json: #"{"recovery":81}"#, on: "2026-10-10")
         let sent = try XCTUnwrap(Stub.seen.first)
-        XCTAssertEqual(sent.body, #"{"nick":"denis","password":"correct horse"}"#)
-        XCTAssertNil(sent.auth, "sign-up is made without a token")
+        XCTAssertEqual(String(decoding: sent.body, as: UTF8.self), #"{"recovery":81}"#)
+        XCTAssertEqual(FriendsKey.hex(SHA256.hash(data: sent.body)),
+                       "a59ed6f5a3416c9b116d6d17ca709ffab4e839735f21ea3c8d301a045f567445")
+        XCTAssertTrue(try isSigned(sent, by: signer, target: "/v2/me/days/2026-10-10"))
+        XCTAssertNil(sent.headers["Authorization"], "there is no bearer token any more")
     }
 
-    func testSignInSendsNameAndPasswordWithoutATokenAndReturnsANewOne() async throws {
-        Stub.answers["POST /v1/login"] = (200, #"{"token":"fresh","me":{"nick":"denis","name":"Денис","avatarRev":0}}"#)
-        let entered = try await client(token: nil).login(nick: "@Denis", password: "correct horse")
-        XCTAssertEqual(entered.token, "fresh")
-        XCTAssertEqual(entered.me.name, "Денис")
+    func testTheQueryIsPartOfWhatIsSigned() async throws {
+        let signer = TestSigner()
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        _ = try await client(signer).feed()
         let sent = try XCTUnwrap(Stub.seen.first)
-        XCTAssertEqual(sent.body, #"{"nick":"denis","password":"correct horse"}"#)
-        XCTAssertNil(sent.auth)
+        XCTAssertTrue(try isSigned(sent, by: signer, target: "/v2/feed?days=7"))
+        XCTAssertFalse(try isSigned(sent, by: signer, target: "/v2/feed"))
     }
 
-    func testSigningOutEndsOnlyThisSession() async throws {
-        Stub.answers["DELETE /v1/session"] = (204, "")
-        try await client().signOut()
-        let sent = try XCTUnwrap(Stub.seen.first)
-        XCTAssertEqual(sent.method, "DELETE")
-        XCTAssertEqual(sent.auth, "Bearer tok")
-        XCTAssertEqual(sent.body, "")
+    func testInfoIsTheOneCallThatIsNotSigned() async throws {
+        Stub.answers["GET /v2/info"] = [(200, #"{"name":"renoop-friends","api":2,"time":1791540000}"#)]
+        let info = try await client(nil).info()
+        XCTAssertEqual(info, FriendsServerInfo(name: "renoop-friends", api: 2, time: 1_791_540_000))
+        XCTAssertNil(Stub.seen.first?.headers["X-Friends-Signature"])
     }
 
-    /// The server ends every other session and answers with this phone's new token.
-    func testChangingThePasswordReturnsTheNewToken() async throws {
-        Stub.answers["POST /v1/me/password"] = (200, #"{"token":"renewed"}"#)
-        let token = try await client().changePassword(old: "old password", new: "new password")
-        XCTAssertEqual(token, "renewed")
-        XCTAssertEqual(Stub.seen.first?.body, #"{"new":"new password","old":"old password"}"#)
-    }
-
-    func testDeletingTheAccountSendsThePassword() async throws {
-        Stub.answers["POST /v1/me/delete"] = (204, "")
-        try await client().deleteAccount(password: "correct horse")
-        let sent = try XCTUnwrap(Stub.seen.first)
-        XCTAssertEqual(sent.body, #"{"password":"correct horse"}"#)
-        XCTAssertEqual(sent.auth, "Bearer tok")
-    }
-
-    /// A wrong password answers 401 like an ended session does, but it must not sign the phone out.
-    func testAWrongPasswordIsNotAnEndedSession() async {
-        Stub.answers["POST /v1/me/delete"] = (401, #"{"error":"bad_credentials","message":"Wrong password."}"#)
+    func testWithoutAKeyNothingElseIsSent() async {
         do {
-            try await client().deleteAccount(password: "nope nope")
-            XCTFail("expected a refusal")
-        } catch let error as FriendsAPIError {
-            XCTAssertTrue(error.isWrongPassword)
-            XCTAssertFalse(error.isSignedOut)
-        } catch { XCTFail("\(error)") }
+            _ = try await client(nil).me()
+            XCTFail("a call that needs the key was made without one")
+        } catch {
+            XCTAssertEqual(error as? FriendsAPIError, .notEnrolled)
+        }
+        XCTAssertTrue(Stub.seen.isEmpty)
     }
 
-    func testEveryLaterCallCarriesTheToken() async throws {
-        Stub.answers["GET /v1/friends/requests"] = (200, #"{"incoming":[{"nick":"ruslan","name":"Руслан","avatarRev":0,"requestedAt":1791500000}],"outgoing":[]}"#)
-        let requests = try await client().requests()
-        XCTAssertEqual(requests.incoming.map(\.name), ["Руслан"])
-        XCTAssertEqual(Stub.seen.first?.auth, "Bearer tok")
+    /// A phone whose clock is wrong is told the server's, signs once more by it, and remembers the gap.
+    func testAWrongClockSignsOnceMoreByTheServers() async throws {
+        let signer = TestSigner()
+        let offset = FriendsClockOffset()
+        Stub.answers["GET /v2/me"] = [(401, #"{"error":"clock_skew","message":"","serverTime":1791545000}"#), (200, Self.me)]
+        let me = try await client(signer, offset: offset).me()
+        XCTAssertEqual(me.id, Self.annaID)
+        XCTAssertEqual(Stub.seen.count, 2)
+        XCTAssertTrue(try isSigned(Stub.seen[1], by: signer, target: "/v2/me", time: 1_791_545_000))
+        XCTAssertEqual(offset.seconds, 5_000)
     }
 
-    func testARefusalCarriesTheServersCodeAndAnEndedTokenIsRecognised() async {
-        Stub.answers["POST /v1/register"] = (409, #"{"error":"nick_taken","message":"This nickname is taken."}"#)
-        do {
-            _ = try await client(token: nil).register(nick: "denis", password: "correct horse", name: nil, invite: nil)
-            XCTFail("expected a refusal")
-        } catch let error as FriendsAPIError {
-            XCTAssertEqual(error, .server(code: "nick_taken", message: "This nickname is taken.", status: 409))
-            XCTAssertFalse(error.isSignedOut)
-        } catch { XCTFail("\(error)") }
-
-        Stub.answers["GET /v1/me"] = (401, #"{"error":"unauthorized","message":"Sign in again."}"#)
+    func testAClockTheServerRefusesTwiceIsTheAnswer() async {
+        Stub.answers["GET /v2/me"] = [(401, #"{"error":"clock_skew","message":"","serverTime":1791545000}"#)]
         do {
             _ = try await client().me()
-            XCTFail("expected a refusal")
-        } catch let error as FriendsAPIError {
-            XCTAssertTrue(error.isSignedOut)
-        } catch { XCTFail("\(error)") }
+            XCTFail("a second refusal was retried")
+        } catch {
+            XCTAssertEqual(error as? FriendsAPIError, .clockSkew(serverTime: 1_791_545_000))
+        }
+        XCTAssertEqual(Stub.seen.count, 2, "once, and once more")
+    }
+
+    // MARK: - Calls
+
+    func testEnrollingSendsTheKeyTheNameThePlatformAndTheStrap() async throws {
+        let signer = TestSigner()
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        let me = try await client(signer).enroll(name: "Anna", strap: Self.handle)
+        XCTAssertEqual(me.strapBound, true)
+        XCTAssertNil(me.device?.probationUntil)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[0].body) as? [String: String])
+        XCTAssertEqual(body, ["key": signer.publicKeySPKI.base64EncodedString(), "name": "Anna",
+                              "platform": FriendsPlatform.current, "strap": Self.handle])
+        XCTAssertTrue(try isSigned(Stub.seen[0], by: signer, target: "/v2/enroll"))
+
+        _ = try await client(signer).enroll(name: "Anna", strap: nil)
+        let unbound = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[1].body) as? [String: String])
+        XCTAssertNil(unbound["strap"], "no strap is no member, not a null")
+    }
+
+    func testARefusalCarriesTheServersCode() async {
+        for (status, code, check) in [
+            (401, "unknown_key", \FriendsAPIError.isUnknownKey), (409, "strap_bound", \.isStrapBound),
+            (403, "probation", \.isProbation), (404, "no_claim", \.isNoClaim), (404, "strap_free", \.isStrapFree),
+            (409, "already_enrolled", \.isAlreadyEnrolled),
+        ] as [(Int, String, KeyPath<FriendsAPIError, Bool>)] {
+            Stub.answers["GET /v2/me"] = [(status, #"{"error":"\#(code)","message":""}"#)]
+            do {
+                _ = try await client().me()
+                XCTFail(code)
+            } catch {
+                XCTAssertEqual(error as? FriendsAPIError, .server(code: code, message: "", status: status))
+                XCTAssertEqual((error as? FriendsAPIError)?[keyPath: check], true, code)
+            }
+        }
+        XCTAssertFalse(FriendsAPIError.server(code: "unknown_key", message: "", status: 500).isUnknownKey)
+    }
+
+    func testBindingAStrapIsDoneOrAskedOfItsOwner() async throws {
+        Stub.answers["PUT /v2/me/strap"] = [
+            (200, #"{"bound":true}"#),
+            (202, #"{"claim":{"id":7,"kind":"take","code":"481902","state":"pending","platform":"ios","createdAt":1791540000,"maturesAt":1791712800}}"#),
+        ]
+        let first = try await client().putStrap(Self.handle)
+        XCTAssertEqual(first, .bound)
+        let second = try await client().putStrap(Self.handle)
+        XCTAssertEqual(second, .claimed(FriendsClaim(id: 7, kind: .take, code: "481902", state: .pending, platform: "ios",
+                                                     createdAt: 1_791_540_000, maturesAt: 1_791_712_800)))
+        XCTAssertEqual(String(decoding: Stub.seen[0].body, as: UTF8.self), #"{"strap":"\#(Self.handle)"}"#)
+    }
+
+    func testAnInviteIsMadeListedAndUsed() async throws {
+        Stub.answers["POST /v2/invites"] = [(201, #"{"id":"0123456789abcdef","code":"K7QM2-XRD4P","expiresAt":1792144800}"#)]
+        Stub.answers["GET /v2/invites"] = [(200, #"{"invites":[{"id":"0123456789abcdef","createdAt":1791540000,"expiresAt":1792144800}]}"#)]
+        Stub.answers["POST /v2/invites/redeem"] = [(200, #"{"friend":{"id":"00000000000000aa","name":"Anna","avatarRev":2}}"#)]
+        Stub.answers["DELETE /v2/invites/0123456789abcdef"] = [(204, "")]
+        let made = try await client().createInvite()
+        XCTAssertEqual(made.code, "K7QM2-XRD4P")
+        let listed = try await client().invites()
+        XCTAssertEqual(listed.map(\.id), ["0123456789abcdef"])
+        XCTAssertNil(listed[0].code, "a listing never repeats a code")
+        let friend = try await client().redeem("K7QM2XRD4P")
+        XCTAssertEqual(friend, FriendProfile(id: Self.annaID, name: "Anna", avatarRev: 2))
+        XCTAssertEqual(String(decoding: Stub.seen[2].body, as: UTF8.self), #"{"code":"K7QM2XRD4P"}"#)
+        try await client().revokeInvite("0123456789abcdef")
+        XCTAssertEqual(Stub.seen[3].method, "DELETE")
+    }
+
+    /// An id goes into a path only when it has the shape of one.
+    func testWhatIsNotAnIdNeverReachesAPath() async {
+        for id in ["../me", "anna", "00000000000000AA", ""] {
+            do {
+                _ = try await client().person(id)
+                XCTFail(id)
+            } catch {
+                XCTAssertEqual(error as? FriendsAPIError, .server(code: "no_such_user", message: "", status: 404))
+            }
+        }
+        XCTAssertTrue(Stub.seen.isEmpty)
+        XCTAssertTrue(FriendsID.isValid(Self.annaID))
     }
 
     // MARK: - Days
-
-    /// A day goes up under the local day in the path, as the very text the builder wrote: that text is
-    /// what the skip of an unchanged day compares.
-    func testUploadPutsTheDayAsBuilt() async throws {
-        Stub.answers["PUT /v1/me/days/2026-10-08"] = (204, "")
-        let json = FriendsDayBuilder.json(FriendsDay(recovery: 81, strain: 38.6, sleepScore: 88))
-        try await client().upload(json: json, on: "2026-10-08")
-        let sent = try XCTUnwrap(Stub.seen.first)
-        XCTAssertEqual(sent.method, "PUT")
-        XCTAssertEqual(sent.body, #"{"recovery":81,"strain":38.6,"sleepScore":88}"#)
-        XCTAssertEqual(Stub.contentTypes.first, "application/json")
-    }
 
     /// A day goes up unless its text is the one the server last accepted; the phone keeps the text's
     /// SHA-256. The literal is Android's (`FriendsDayPayloadTest.theFingerprintIsSha256Hex`).
     func testAnUnchangedDayIsSkippedByItsFingerprint() {
         XCTAssertEqual(FriendsUploadPolicy.fingerprint("{}"),
                        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a")
+        XCTAssertEqual(FriendsUploadPolicy.fingerprint(Data("{}".utf8)), FriendsUploadPolicy.fingerprint("{}"))
         XCTAssertNotEqual(FriendsUploadPolicy.fingerprint("{}"), FriendsUploadPolicy.fingerprint("{ }"))
         let json = FriendsDayBuilder.json(FriendsDay(recovery: 81))
         XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: json))
@@ -207,168 +293,252 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(detected.durationS, 1_860, "a missing duration falls back to the span")
     }
 
-    /// The feed as the server writes it: nulls for members a phone did not send, no heart-rate line,
-    /// and a friend whose section is switched off.
-    func testTheFeedDecodes() async throws {
-        Stub.answers["GET /v1/feed?days=7"] = (200, #"""
-        {"serverTime": 1791540100,
-         "me": {"nick": "denis", "name": "Денис", "avatarRev": 0,
-                "share": {"scores": true, "sleep": true, "workouts": true, "hr": false},
-                "days": [{"recovery": 58, "strain": 59.9, "sleepScore": 97, "day": "2026-10-08", "updatedAt": 1791540000}]},
-         "friends": [{"nick": "ruslan", "name": "Руслан", "avatarRev": 2,
-                      "share": {"scores": true, "sleep": false, "workouts": true, "hr": true},
-                      "days": [{"recovery": 81, "strain": 38.6, "sleepScore": 88,
-                                "workouts": [{"startTs": 1791530400, "sport": "Running", "durationS": 1860,
-                                              "strain": 35.2, "avgHr": 139, "maxHr": null, "kcal": 310}],
-                                "hr": {"lastBpm": 62, "lastTs": 1791540000, "restingBpm": null},
-                                "day": "2026-10-08", "updatedAt": 1791539000}]}],
-         "pendingIncoming": 1}
-        """#)
-        let feed = try await client().feed().feed
-        XCTAssertEqual(feed.me.latestDay?.summary.recovery, 58)
-        XCTAssertEqual(feed.pendingIncoming, 1)
-        let ruslan = try XCTUnwrap(feed.friends.first)
-        XCTAssertEqual(ruslan.share?.sleep, false)
-        XCTAssertEqual(ruslan.latestDay?.day, "2026-10-08")
-        XCTAssertEqual(ruslan.latestDay?.summary.workouts?.first?.kcal, 310)
-        XCTAssertNil(ruslan.latestDay?.summary.workouts?.first?.maxHr)
-        XCTAssertEqual(ruslan.latestDay?.summary.hr?.lastBpm, 62)
-        XCTAssertNil(ruslan.latestDay?.summary.hr?.series, "the feed leaves the line out")
-        XCTAssertEqual(ruslan.avatarRev, 2)
+    /// The feed as the server writes it: a friend with a day, the requests that wait for an answer, and
+    /// around what cannot be read (a friend without an id, a claim of an unknown kind) instead of failing.
+    func testTheFeedDecodesAroundWhatCannotBeRead() async throws {
+        let claim = #"{"id":3,"kind":"join","code":"481902","state":"pending","platform":"android","createdAt":1791540000,"maturesAt":1791712800}"#
+        Stub.answers["GET /v2/feed?days=7"] = [(200, """
+        {"serverTime":1791540000,"me":\(Self.me),
+         "friends":[{"id":"00000000000000bb","name":"Max","avatarRev":3,
+                     "share":{"scores":true,"sleep":false,"workouts":true,"hr":false},
+                     "days":[{"day":"2026-10-09","updatedAt":1791500000,"recovery":64,"strain":null},
+                             {"day":"2026-10-10","updatedAt":1791539000,"recovery":81,"strain":38.6,"sleepScore":88},
+                             {"day":"yesterday","recovery":1}]},
+                    {"name":"No id"},{"id":"not-an-id","name":"Bad id"}],
+         "claims":[\(claim),{"id":4,"kind":"sideways","code":"1","state":"pending","createdAt":1}],
+         "strapClaim":null,
+         "unconfirmed":[{"id":"k2","platform":"android","addedAt":1791500000,"lastSeenAt":1791539000,"probationUntil":1792104800,"current":false}]}
+        """)]
+        let (feed, raw) = try await client().feed()
+        XCTAssertFalse(raw.isEmpty)
+        XCTAssertEqual(feed.serverTime, 1_791_540_000)
+        XCTAssertEqual(feed.me.id, Self.annaID)
+        XCTAssertEqual(feed.friends.map(\.id), ["00000000000000bb"])
+        XCTAssertEqual(feed.friends[0].days?.map(\.day), ["2026-10-10", "2026-10-09"], "newest first, unreadable dropped")
+        XCTAssertEqual(feed.friends[0].latestDay?.summary.recovery, 81)
+        XCTAssertEqual(feed.friends[0].share?.sleep, false)
+        XCTAssertEqual(feed.claims.map(\.id), [3])
+        XCTAssertEqual(feed.claims[0].kind, .join)
+        XCTAssertNil(feed.strapClaim)
+        XCTAssertEqual(feed.unconfirmed.map(\.platform), ["android"])
+        let bare: FriendsFeed = try FriendsClient.decode(Data(Self.emptyFeed.utf8))
+        XCTAssertEqual(bare.unconfirmed, [], "a feed without the member reads as none")
     }
-
-    /// Only what a screen cannot stand without is required. A friend the app cannot read, a day with no
-    /// day key and a member of the wrong kind are each left out without costing the rest of the answer.
-    func testAnAnswerIsReadAroundWhatCannotBeRead() async throws {
-        Stub.answers["GET /v1/feed?days=7"] = (200, #"""
-        {"serverTime": 1791540100,
-         "me": {"nick": "denis"},
-         "friends": [{"name": "no nick"},
-                     {"nick": "ruslan", "name": "", "avatarRev": "two", "relation": "enemy",
-                      "days": [{"recovery": 70, "day": "2026-10-07"}, {"recovery": 81},
-                               {"recovery": 90, "day": "2026-10-08", "updatedAt": null}]}]}
-        """#)
-        let feed = try await client().feed().feed
-        XCTAssertEqual(feed.me.name, "denis", "a missing name reads as the nickname")
-        XCTAssertNil(feed.me.share)
-        XCTAssertEqual(feed.pendingIncoming, 0)
-        XCTAssertEqual(feed.friends.map(\.nick), ["ruslan"])
-        let ruslan = try XCTUnwrap(feed.friends.first)
-        XCTAssertEqual(ruslan.name, "ruslan")
-        XCTAssertEqual(ruslan.avatarRev, 0)
-        XCTAssertNil(ruslan.relation)
-        XCTAssertEqual(ruslan.days?.map(\.day), ["2026-10-08", "2026-10-07"], "newest first, the keyless day dropped")
-
-        Stub.answers["GET /v1/me"] = (200, #"{"name": "nobody"}"#)
-        do {
-            _ = try await client().me()
-            XCTFail("an account without a nickname is not an answer")
-        } catch let error as FriendsAPIError {
-            XCTAssertEqual(error, .transport("unexpected answer"))
-        }
-    }
-
-    // MARK: - Pictures
 
     func testAPictureGoesUpAsAJpegAndOneTooLargeIsNotSent() async throws {
-        Stub.answers["PUT /v1/me/avatar"] = (200, #"{"nick":"denis","name":"Денис","avatarRev":3}"#)
-        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + [UInt8](repeating: 0, count: 100))
-        let me = try await client().putAvatar(jpeg)
-        XCTAssertEqual(me.avatarRev, 3)
-        XCTAssertEqual(Stub.seen.first?.method, "PUT")
-        XCTAssertEqual(Stub.contentTypes.first, "image/jpeg")
-        XCTAssertEqual(FriendsAvatars.fitForUpload(jpeg), jpeg, "a small JPEG goes up untouched")
-        XCTAssertNil(FriendsAvatars.fitForUpload(Data("not a picture".utf8)))
-
-        Stub.seen = []
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0]) + Data(repeating: 0x30, count: 64)
+        _ = try await client().putAvatar(jpeg)
+        XCTAssertEqual(Stub.seen[0].headers["Content-Type"], "image/jpeg")
+        XCTAssertEqual(Stub.seen[0].body, jpeg)
         do {
-            _ = try await client().putAvatar(Data(count: FriendsLimits.maxAvatarBytes + 1))
-            XCTFail("expected a refusal")
-        } catch let error as FriendsAPIError {
-            XCTAssertEqual(error, .server(code: "too_large", message: "", status: 413))
+            _ = try await client().putAvatar(Data(repeating: 0xFF, count: FriendsLimits.maxAvatarBytes + 1))
+            XCTFail("a picture over the limit was sent")
+        } catch {
+            XCTAssertEqual(error as? FriendsAPIError, .server(code: "too_large", message: "", status: 413))
         }
-        XCTAssertTrue(Stub.seen.isEmpty, "the server would close the connection mid-upload")
+        XCTAssertEqual(Stub.seen.count, 1)
     }
 
-    func testAFriendsPictureIsReadWithTheTokenAndHeldToItsSize() async throws {
-        Stub.answers["GET /v1/users/ruslan/avatar"] = (200, "picture bytes")
-        let bytes = try await client().avatar("@Ruslan")
-        XCTAssertEqual(bytes, Data("picture bytes".utf8))
-        XCTAssertEqual(Stub.seen.first?.auth, "Bearer tok")
-
-        Stub.answers["GET /v1/users/ruslan/avatar"] = (200, String(repeating: "x", count: FriendsLimits.maxAvatarBytes + 10))
-        do {
-            _ = try await client().avatar("ruslan")
-            XCTFail("an answer past the limit is not kept")
-        } catch let error as FriendsAPIError {
-            XCTAssertEqual(error, .transport("unexpected answer"))
-        }
-    }
-
-    // MARK: - Redirects
-
-    /// A redirect is never followed, so the token and a password in a body go to the host the wearer
-    /// named and nowhere else. The 3xx comes back as the refusal it is.
+    /// A redirect is the answer, not a hop: a signed request goes to the host the wearer named only.
     func testARedirectIsAFailureNotAHop() async {
-        Stub.redirects["GET /v1/me"] = "https://elsewhere.example/v1/me"
-        Stub.answers["GET /v1/me"] = (200, #"{"nick":"mallory","name":"Mallory"}"#)
+        Stub.redirects["GET /v2/me"] = "https://elsewhere.example/v2/me"
         do {
             _ = try await client().me()
-            XCTFail("expected a refusal")
-        } catch let error as FriendsAPIError {
-            XCTAssertTrue(error.isRedirect, "\(error)")
-            XCTAssertFalse(error.isSignedOut)
-        } catch { XCTFail("\(error)") }
-        XCTAssertEqual(Stub.seen.count, 1, "nothing was asked of the address the redirect named")
+            XCTFail("the redirect was followed")
+        } catch {
+            XCTAssertEqual((error as? FriendsAPIError)?.isRedirect, true)
+        }
+        XCTAssertEqual(Stub.seen.count, 1)
     }
 
-    // MARK: - Signed out
+    // MARK: - The store
 
-    /// With no account on the phone the store sends nothing, whatever asks it to.
     @MainActor
-    func testSignedOutNothingIsSent() async throws {
-        let suite = "friends.tests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = FriendsStore(defaults: defaults, token: nil, cache: nil, keychain: false, session: stubbedSession())
-        XCTAssertFalse(store.signedIn)
-        XCTAssertEqual(store.serverAddress, "https://renoop.duckdns.org", "the fork's own server until another is named")
-        await store.refresh()
-        let anyone = await store.person("ruslan")
-        XCTAssertNil(anyone)
-        let picture = await store.avatarBytes(of: "ruslan")
-        XCTAssertNil(picture)
-        _ = await store.sendRequest(to: "ruslan")
-        _ = await store.uploadProfilePhoto(Data([0xFF, 0xD8, 0xFF, 0xE0]))
-        XCTAssertTrue(Stub.seen.isEmpty, "\(Stub.seen.map(\.path))")
-        XCTAssertNil(store.errorText, "no account is not a failure to report")
+    private func store(_ identity: FriendsStrap.Identity, signer: (any FriendsSigner)? = TestSigner(),
+                       defaults: UserDefaults? = nil,
+                       keys: FriendsMemoryKeyStorage = FriendsMemoryKeyStorage()) throws -> (FriendsStore, UserDefaults) {
+        let defaults = try defaults ?? XCTUnwrap(UserDefaults(suiteName: "friends-store-\(UUID().uuidString)"))
+        defaults.set(Self.base, forKey: FriendsStore.addressKey)
+        let store = FriendsStore(defaults: defaults, cache: nil, keys: keys, session: stubbedSession(), signer: signer)
+        store.strapIdentity = { identity }
+        return (store, defaults)
     }
 
-    /// A session the server no longer knows is forgotten here too, and with it everything the phone
-    /// kept about the account; the address of the server stays.
     @MainActor
-    func testAnEndedSessionIsForgottenWithEverythingKeptAboutIt() async throws {
-        let suite = "friends.tests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("http://127.0.0.1:8787", forKey: FriendsStore.addressKey)
-        defaults.set("denis", forKey: FriendsStore.nickKey)
-        defaults.set("abc", forKey: FriendsStore.markPrefix + "2026-10-08")
-        let store = FriendsStore(defaults: defaults, token: "tok", cache: nil, keychain: false, session: stubbedSession())
-        XCTAssertTrue(store.signedIn)
-        XCTAssertEqual(store.uploadMark("2026-10-08"), "abc")
-        Stub.answers["GET /v1/feed?days=7"] = (401, #"{"error":"unauthorized","message":"Sign in again."}"#)
-        Stub.answers["GET /v1/friends/requests"] = (401, #"{"error":"unauthorized","message":"Sign in again."}"#)
+    func testOffNothingIsSentAndNoKeyIsMade() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let (store, _) = try store(.handle(Self.handle), signer: nil, keys: keys)
+        XCTAssertEqual(store.phase, .off)
         await store.refresh()
-        XCTAssertFalse(store.signedIn)
+        let repo = Repository(deviceId: "test-friends")
+        let profile = ProfileStore()
+        await store.sync(repo: repo, profile: profile, force: true)
+        store.daysChanged(repo: repo, profile: profile)
+        _ = await store.person(Self.annaID)
+        XCTAssertTrue(Stub.seen.isEmpty)
+        XCTAssertNil(store.deviceID)
+        XCTAssertNil(keys.read(account: FriendsKey.account(forServer: Self.base)))
+    }
+
+    @MainActor
+    func testTurningOnEnrolsWithTheStrapAndGoesOn() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "  Anna ")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(store.myID, Self.annaID)
+        XCTAssertNil(store.errorText)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[0].body) as? [String: String])
+        XCTAssertEqual(body["name"], "Anna")
+        XCTAssertEqual(body["strap"], Self.handle)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on")
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.boundHandleKey), Self.handle)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Anna", "the name just sent is not sent again")
+    }
+
+    @MainActor
+    func testWithoutANameNothingIsSent() async throws {
+        let (store, _) = try store(.handle(Self.handle))
+        await store.turnOn(name: "   ")
+        XCTAssertEqual(store.phase, .off)
         XCTAssertNotNil(store.errorText)
-        XCTAssertNil(store.uploadMark("2026-10-08"))
-        XCTAssertNil(defaults.string(forKey: FriendsStore.nickKey))
-        XCTAssertEqual(store.serverAddress, "http://127.0.0.1:8787")
-        let asked = Stub.seen.count
-        await store.refresh()
-        XCTAssertEqual(Stub.seen.count, asked, "nothing more is sent once the session is gone")
+        XCTAssertTrue(Stub.seen.isEmpty)
     }
+
+    @MainActor
+    func testAStrapNotReadYetWaitsAndSendsNothing() async throws {
+        let (store, defaults) = try store(.pending)
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .waitingForStrap)
+        XCTAssertTrue(Stub.seen.isEmpty)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "waitingForStrap")
+        // The strap is read: the same tap finishes by itself.
+        store.strapIdentity = { .handle(Self.handle) }
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+    }
+
+    @MainActor
+    func testAStrapWithAnAccountAsksWhoseItIsAndAClaimSurvivesARelaunch() async throws {
+        let signer = TestSigner()
+        let (store, defaults) = try store(.handle(Self.handle), signer: signer)
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .strapBound)
+        XCTAssertNil(store.errorText, "a strap with an account is a question, not a failure")
+
+        let claim = #"{"id":3,"kind":"join","code":"481902","state":"pending","platform":"ios","createdAt":1791540000,"maturesAt":1791712800}"#
+        Stub.answers["POST /v2/claims"] = [(201, #"{"claim":\#(claim)}"#)]
+        await store.claimAccount(name: "Anna")
+        guard case let .waiting(waiting) = store.phase else { return XCTFail("not waiting") }
+        XCTAssertEqual(waiting.code, "481902")
+        XCTAssertEqual(waiting.maturesAt, 1_791_712_800)
+
+        let (relaunched, _) = try self.store(.handle(Self.handle), signer: signer, defaults: defaults)
+        XCTAssertEqual(relaunched.phase, .waiting(waiting))
+
+        Stub.answers["DELETE /v2/claims/mine"] = [(204, "")]
+        await relaunched.cancelClaim()
+        XCTAssertEqual(relaunched.phase, .strapBound)
+    }
+
+    /// A phone that joins an account does not send its own profile: what the account shows stands.
+    @MainActor
+    func testAGrantedClaimJoinsWithoutPushingTheProfile() async throws {
+        let signer = TestSigner()
+        let (store, defaults) = try store(.handle(Self.handle), signer: signer)
+        let claim = { (state: String) in
+            #"{"claim":{"id":3,"kind":"join","code":"481902","state":"\#(state)","platform":"ios","createdAt":1791540000,"maturesAt":null}}"#
+        }
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        Stub.answers["POST /v2/claims"] = [(201, claim("pending"))]
+        await store.turnOn(name: "Other")
+        await store.claimAccount(name: "Other")
+        Stub.answers["GET /v2/claims/mine"] = [(200, claim("pending")), (200, claim("approved"))]
+        Stub.answers["GET /v2/me"] = [(200, Self.me)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.pollClaim()
+        guard case .waiting = store.phase else { return XCTFail("left waiting on a pending claim") }
+        await store.pollClaim()
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertNil(defaults.string(forKey: FriendsStore.pushedNameKey))
+        XCTAssertFalse(Stub.seen.contains { $0.method == "PATCH" })
+    }
+
+    @MainActor
+    func testADeclinedClaimGoesBackToTheChoice() async throws {
+        let (store, _) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        Stub.answers["POST /v2/claims"] = [(201, #"{"claim":{"id":3,"kind":"join","code":"481902","state":"pending","createdAt":1}}"#)]
+        Stub.answers["GET /v2/claims/mine"] = [(200, #"{"claim":{"id":3,"kind":"join","code":"481902","state":"declined","createdAt":1}}"#)]
+        await store.turnOn(name: "Anna")
+        await store.claimAccount(name: "Anna")
+        await store.pollClaim()
+        XCTAssertEqual(store.phase, .strapBound)
+        XCTAssertNotNil(store.errorText)
+    }
+
+    /// A phone removed from the account by another one goes off, and keeps its key so that turning
+    /// Friends on again asks to rejoin as the same phone.
+    @MainActor
+    func testAPhoneTheServerNoLongerKnowsGoesOffAndKeepsItsKey() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed), (401, #"{"error":"unknown_key","message":""}"#)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        let epoch = store.epoch
+        await store.refresh()
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertNotNil(store.errorText)
+        XCTAssertNotNil(store.deviceID)
+        XCTAssertNil(store.feed)
+        XCTAssertGreaterThan(store.epoch, epoch)
+        XCTAssertNil(defaults.string(forKey: FriendsStore.boundHandleKey))
+    }
+
+    @MainActor
+    func testDeletingTheAccountForgetsTheKey() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let (store, _) = try store(.none, signer: nil, keys: keys)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["POST /v2/me/delete"] = [(204, "")]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertNotNil(keys.read(account: FriendsKey.account(forServer: Self.base)), "the key is made by turning on")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[0].body) as? [String: String])
+        XCTAssertNil(body["strap"], "a device with no serial enrols unbound")
+        let deleted = await store.deleteAccount()
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertNil(store.deviceID)
+        XCTAssertNil(keys.read(account: FriendsKey.account(forServer: Self.base)))
+    }
+
+    @MainActor
+    func testAnInviteIsReadOutOfALinkAndWhatIsNotACodeIsNotSent() async throws {
+        let (store, _) = try store(.none)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["POST /v2/invites/redeem"] = [(200, #"{"friend":{"id":"00000000000000bb","name":"Max","avatarRev":0}}"#)]
+        await store.turnOn(name: "Anna")
+        let sent = Stub.seen.count
+        let nobody = await store.redeem("hello")
+        XCTAssertNil(nobody)
+        XCTAssertNotNil(store.errorText)
+        XCTAssertEqual(Stub.seen.count, sent)
+        let friend = await store.redeem("https://friends.example/i/k7qm2-xrd4p")
+        XCTAssertEqual(friend?.name, "Max")
+        XCTAssertEqual(String(decoding: Stub.seen[sent].body, as: UTF8.self), #"{"code":"K7QM2XRD4P"}"#)
+    }
+
+    // MARK: - Clock
 
     /// Every "N min ago" counts from the server's clock, carried forward by the time since the feed
     /// arrived, so a phone whose own clock is wrong still reads the right age.
@@ -379,20 +549,6 @@ final class FriendsClientTests: XCTestCase {
     }
 
     // MARK: - Names and addresses
-
-    func testTheNameRuleIsTheServers() {
-        XCTAssertEqual(FriendsNick.normalized(" @Denis_1 "), "denis_1")
-        for good in ["abc", "denis", "a_b_c", "x1234567890123456789"] { XCTAssertTrue(FriendsNick.isValid(good), good) }
-        for bad in ["ab", "has space", "денис", String(repeating: "x", count: 21), "a-b", ""] {
-            XCTAssertFalse(FriendsNick.isValid(bad), bad)
-        }
-    }
-
-    /// 8 to 128 characters, counted in Unicode scalars the way the server counts them.
-    func testThePasswordRuleIsTheServers() {
-        for good in ["12345678", String(repeating: "x", count: 128), "пароль123"] { XCTAssertTrue(FriendsPassword.isValid(good), good) }
-        for bad in ["", "1234567", String(repeating: "x", count: 129)] { XCTAssertFalse(FriendsPassword.isValid(bad), bad) }
-    }
 
     // MARK: - Server address
     //
