@@ -320,6 +320,11 @@ strap free.
 `renoop-friends.service` runs the server as a throwaway user with the database in
 `/var/lib/renoop-friends` and reads the pepper from `/etc/renoop-friends.env`.
 
+The server never faces the internet itself. [`deploy/`](deploy/README.md) has the arrangement in
+front of it, and why: a small TCP-only proxy under the public name, a WireGuard link, and Caddy on
+this machine terminating TLS on the tunnel's address only. The machine that holds the database opens
+no port for the service and its address is not published.
+
 `backup.py` with `renoop-friends-backup.service` and `.timer` writes a consistent copy to
 `/var/backups/renoop-friends` every night and keeps the newest seven. Those copies sit on the same
 disk, so they cover a damaged or emptied database, not a lost server. Never copy the live file by
