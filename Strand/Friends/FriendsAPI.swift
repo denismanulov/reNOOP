@@ -621,6 +621,9 @@ struct FriendsClient: Sendable {
                 if data.count > maxBytes { break }
             }
         } catch {
+            // A request cancelled with the task that made it (a page left, a newer run) did not fail: it
+            // stays recognisable, so that nothing reports it as a server that did not answer.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             throw FriendsAPIError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw FriendsAPIError.transport("no answer") }

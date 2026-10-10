@@ -400,7 +400,7 @@ final class FriendsStore: ObservableObject {
             errorText = nil
             setPhase(.strapBound)
         } catch {
-            errorText = Self.message(for: error)
+            if !(error is CancellationError) { errorText = Self.message(for: error) }
         }
     }
 
@@ -439,7 +439,7 @@ final class FriendsStore: ObservableObject {
         } catch let error as FriendsAPIError where error.isAlreadyEnrolled {
             await adopt()
         } catch {
-            errorText = Self.message(for: error)
+            if !(error is CancellationError) { errorText = Self.message(for: error) }
         }
     }
 
@@ -475,7 +475,7 @@ final class FriendsStore: ObservableObject {
         } catch let error as FriendsAPIError where error.isOffline {
             // No answer is not an answer: the screen keeps showing the code.
         } catch {
-            errorText = Self.message(for: error)
+            if !(error is CancellationError) { errorText = Self.message(for: error) }
         }
     }
 
@@ -490,7 +490,7 @@ final class FriendsStore: ObservableObject {
         } catch let error as FriendsAPIError where error.isUnknownKey {
             setPhase(.strapBound)
         } catch {
-            errorText = Self.message(for: error)
+            if !(error is CancellationError) { errorText = Self.message(for: error) }
         }
     }
 
@@ -614,7 +614,7 @@ final class FriendsStore: ObservableObject {
             lastRefreshFailed = false
             errorText = nil
         } catch {
-            if session == epoch { lastRefreshFailed = true }
+            if session == epoch, !(error is CancellationError) { lastRefreshFailed = true }
             handle(error, session: session)
         }
     }
@@ -930,6 +930,8 @@ final class FriendsStore: ObservableObject {
     /// account (Friends has since gone off, or on as someone else) says nothing about the one on screen.
     private func handle(_ error: Error, quiet: Bool = false, session: Int) {
         guard session == epoch else { return }
+        // The request was cancelled with its task: nothing failed and nothing changed.
+        if error is CancellationError { return }
         // Nothing was sent and nothing ended: Friends is off, which the tab already shows.
         if case .notEnrolled? = error as? FriendsAPIError { return }
         if let api = error as? FriendsAPIError, api.isUnknownKey {

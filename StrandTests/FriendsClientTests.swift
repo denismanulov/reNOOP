@@ -24,6 +24,8 @@ final class FriendsClientTests: XCTestCase {
         /// Requests answered with a redirect to the address given, keyed like `answers`.
         nonisolated(unsafe) static var redirects: [String: String] = [:]
         nonisolated(unsafe) static var seen: [Seen] = []
+        /// Requests that fail in the transport, keyed like `answers`, before any answer arrives.
+        nonisolated(unsafe) static var failures: [String: URLError.Code] = [:]
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -47,6 +49,10 @@ final class FriendsClientTests: XCTestCase {
             let key = method + " " + path
             Self.seen.append(Seen(method: method, host: url.host ?? "", path: path,
                                   headers: request.allHTTPHeaderFields ?? [:], body: body))
+            if let code = Self.failures[key] {
+                client?.urlProtocol(self, didFailWithError: URLError(code))
+                return
+            }
             if let target = Self.redirects[key], let location = URL(string: target) {
                 let hop = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
                                           headerFields: ["Location": target])!
@@ -116,6 +122,7 @@ final class FriendsClientTests: XCTestCase {
         Self.restoreHostProfile()
         Stub.answers = [:]
         Stub.redirects = [:]
+        Stub.failures = [:]
         Stub.seen = []
     }
 
@@ -554,6 +561,25 @@ final class FriendsClientTests: XCTestCase {
         Stub.answers["DELETE /v2/invites/0123456789abcdef"] = [(204, "")]
         let accepted = await store.revokeInvite("0123456789abcdef")
         XCTAssertTrue(accepted)
+    }
+
+    /// A request cancelled because its page was left is not a server failure; any other transport
+    /// failure still is one.
+    @MainActor
+    func testACancelledRequestIsNotReportedAsAServerFailure() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        let phase = store.phase
+        store.errorText = nil
+
+        Stub.failures["GET /v2/me/devices"] = .cancelled
+        _ = await store.loadDevices()
+        XCTAssertNil(store.errorText)
+        XCTAssertEqual(store.phase, phase)
+
+        Stub.failures["GET /v2/me/devices"] = .notConnectedToInternet
+        _ = await store.loadDevices()
+        XCTAssertNotNil(store.errorText)
+        XCTAssertEqual(store.phase, phase)
     }
 
     /// A phone removed from the account by another one goes off, and keeps its key so that turning
