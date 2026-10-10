@@ -225303,7 +225303,8 @@
     "Friends turns off on this phone. The account stays on your other phone.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "«Друзья» выключатся на этом телефоне. Аккаунт останется на другом вашем телефоне."}}}},
     "Joined without confirmation": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вошёл без подтверждения"}}}},
     "What the Server Stores": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Что хранит сервер"}}}},
-    "Everything the server holds about you, exactly as it holds it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Всё, что сервер хранит о вас, в том виде, в каком хранит."}}}}
+    "Everything the server holds about you, exactly as it holds it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Всё, что сервер хранит о вас, в том виде, в каком хранит."}}}},
+    "It stops reading and uploading at once. It can join again only if a phone of this account confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он сразу перестанет читать и отправлять данные. Вернуться он сможет, только если его подтвердит телефон этого аккаунта."}}}}
   },
   "version": "1.0"
 }

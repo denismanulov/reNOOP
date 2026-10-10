@@ -700,13 +700,19 @@ final class FriendsStore: ObservableObject {
 
     // MARK: - Phones
 
-    func loadDevices() async {
+    /// Whether the list was loaded; a refusal or a lost connection leaves it as it was, with the reason
+    /// in `errorText`.
+    @discardableResult
+    func loadDevices() async -> Bool {
         let session = epoch
         do {
             let found = try await client().devices()
-            if session == epoch { devices = found }
+            guard session == epoch else { return false }
+            devices = found
+            return true
         } catch {
             handle(error, session: session)
+            return false
         }
     }
 

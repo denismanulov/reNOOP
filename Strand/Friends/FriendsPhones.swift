@@ -12,8 +12,17 @@ struct FriendsPhonesPage: View {
 
     @ObservedObject private var store = FriendsStore.shared
     @State private var confirmLeave = false
+    /// The phone a Remove is being confirmed for.
+    @State private var removing: FriendsDevice?
+    /// Whether the list could not be loaded. Then there is no list to show, only the reason.
+    @State private var loadFailed = false
+    /// Why the load, a Remove or a Keep failed. Kept here, not read from the store, so what the tab left
+    /// in the store's text is not mistaken for something that happened on this page.
+    @State private var failure: String?
+    /// Why this phone could not leave.
+    @State private var leaveFailure: String?
 
-    private var phones: [FriendsDevice] { store.devices ?? [] }
+    private var phones: [FriendsDevice] { loadFailed ? [] : store.devices ?? [] }
     /// A phone that joined without confirmation removes nobody but itself.
     private var locked: Bool { store.probationUntil != nil }
     /// This phone may leave while the account stays on another confirmed phone, or when it is itself
@@ -23,30 +32,28 @@ struct FriendsPhonesPage: View {
     var body: some View {
         Form {
             Section {
-                if store.devices == nil {
+                if store.devices == nil, !loadFailed {
                     ProgressView().frame(maxWidth: .infinity)
                 }
                 ForEach(phones) { phone in row(phone) }
             } footer: {
                 Text("Each phone holds its own key. Removing one stops it reading and uploading at once.")
+                if let failure {
+                    Text(verbatim: failure).foregroundStyle(StrandPalette.settingsRed)
+                }
             }
             if canLeave {
                 Section {
                     // The dialog hangs off the button that asks for it, where iOS 26 points it.
                     Button("Remove This Phone", role: .destructive) { confirmLeave = true }
                         .confirmationDialog("Remove This Phone", isPresented: $confirmLeave, titleVisibility: .visible) {
-                            Button("Remove This Phone", role: .destructive) {
-                                Task {
-                                    guard await store.removeThisPhone() else { return }
-                                    onAccountLeft()
-                                }
-                            }
+                            Button("Remove This Phone", role: .destructive) { leave() }
                         } message: {
                             Text("Friends turns off on this phone. The account stays on your other phone.")
                         }
                 } footer: {
-                    if let error = store.errorText {
-                        Text(verbatim: error).foregroundStyle(StrandPalette.settingsRed)
+                    if let leaveFailure {
+                        Text(verbatim: leaveFailure).foregroundStyle(StrandPalette.settingsRed)
                     }
                 }
             }
@@ -56,7 +63,40 @@ struct FriendsPhonesPage: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task { await store.loadDevices() }
+        .task {
+            store.errorText = nil
+            failure = nil
+            leaveFailure = nil
+            loadFailed = false
+            if await store.loadDevices() { return }
+            // A page left before the answer came leaves no text: nothing failed.
+            guard let text = store.errorText else { return }
+            loadFailed = true
+            failure = text
+        }
+    }
+
+    /// An action that failed leaves the store's text as the reason. One that went through leaves none,
+    /// even when the reload after it failed: the tab reports that, and the phone was dealt with.
+    private func run(_ action: @escaping () async -> Bool) {
+        failure = nil
+        store.errorText = nil
+        Task {
+            let went = await action()
+            failure = went ? nil : store.errorText
+        }
+    }
+
+    private func leave() {
+        leaveFailure = nil
+        store.errorText = nil
+        Task {
+            guard await store.removeThisPhone() else {
+                leaveFailure = store.errorText
+                return
+            }
+            onAccountLeft()
+        }
     }
 
     private func row(_ phone: FriendsDevice) -> some View {
@@ -84,15 +124,25 @@ struct FriendsPhonesPage: View {
             Spacer(minLength: 8)
             if !phone.current, !locked {
                 if phone.probationUntil != nil {
-                    Button { Task { await store.trustDevice(phone.id) } } label: {
+                    Button { run { await store.trustDevice(phone.id) } } label: {
                         Text("Keep").font(StrandFont.pro(15, weight: .semibold)).lineLimit(1)
                     }
                     .friendsCapsuleButton(prominent: true)
                 }
-                Button { Task { await store.removeDevice(phone.id) } } label: {
+                // The dialog hangs off the button that asks for it, where iOS 26 points it.
+                Button { removing = phone } label: {
                     Text("Remove").font(StrandFont.pro(15, weight: .semibold)).lineLimit(1)
                 }
                 .friendsCapsuleButton(prominent: false)
+                .confirmationDialog(
+                    Text(verbatim: "\(String(localized: "Remove")) \(FriendsRequestText.device(phone.platform))"),
+                    isPresented: Binding(get: { removing?.id == phone.id }, set: { if !$0 { removing = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button("Remove", role: .destructive) { run { await store.removeDevice(phone.id) } }
+                } message: {
+                    Text("It stops reading and uploading at once. It can join again only if a phone of this account confirms it.")
+                }
             }
         }
         .padding(.vertical, 2)
@@ -105,6 +155,8 @@ struct FriendsExportPage: View {
     @ObservedObject private var store = FriendsStore.shared
     @State private var text: String?
     @State private var loaded = false
+    /// Why the export could not be fetched.
+    @State private var failure: String?
 
     var body: some View {
         ScrollView {
@@ -116,9 +168,9 @@ struct FriendsExportPage: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if loaded {
-                    Text(verbatim: store.errorText ?? "")
+                    Text(verbatim: failure ?? "")
                         .font(StrandFont.pro(15))
-                        .foregroundStyle(StrandPalette.textSecondary)
+                        .foregroundStyle(StrandPalette.settingsRed)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
@@ -139,7 +191,10 @@ struct FriendsExportPage: View {
             }
         }
         .task {
+            store.errorText = nil
+            failure = nil
             text = await store.exportText()
+            if text == nil { failure = store.errorText }
             loaded = true
         }
     }

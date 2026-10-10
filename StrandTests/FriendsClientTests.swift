@@ -582,6 +582,24 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, phase)
     }
 
+    /// The phones list says whether it was loaded, so a page can tell a load that failed from one under way.
+    @MainActor
+    func testLoadingThePhonesReportsWhetherTheListWasLoaded() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        Stub.answers["GET /v2/me/devices"] = [(500, #"{"error":"server_error","message":""}"#)]
+        let refused = await store.loadDevices()
+        XCTAssertFalse(refused)
+        XCTAssertNotNil(store.errorText)
+        XCTAssertNil(store.devices)
+
+        store.errorText = nil
+        Stub.answers["GET /v2/me/devices"] = [(200, #"{"devices":[{"id":"k","platform":"ios","addedAt":1,"lastSeenAt":2,"probationUntil":null,"current":true}]}"#)]
+        let loaded = await store.loadDevices()
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(store.devices?.count, 1)
+        XCTAssertNil(store.errorText)
+    }
+
     /// A phone removed from the account by another one goes off, and keeps its key so that turning
     /// Friends on again asks to rejoin as the same phone.
     @MainActor
