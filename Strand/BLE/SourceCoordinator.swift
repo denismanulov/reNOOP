@@ -465,6 +465,9 @@ final class SourceCoordinator: ObservableObject {
     /// the serial id (other past `oura-*` pairings are left untouched — the store method enforces that scope).
     private func adoptOuraSerial(currentId: String, serial: String) {
         let serialId = "\(ExperimentalBrand.oura.idPrefix)-\(serial)"
+        // Friends (fork feature): the ring's serial id, kept so the friends account can be bound to it.
+        FriendsStrap.note(adoptedId: serialId, forDeviceId: currentId)
+        FriendsStrap.note(adoptedId: serialId, forDeviceId: serialId)
         guard currentId != serialId, registry.activeDeviceId == currentId else { return }
         Task { @MainActor [weak self] in
             guard let self, self.registry.activeDeviceId == currentId else { return }

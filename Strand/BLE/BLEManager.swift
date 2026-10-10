@@ -5338,6 +5338,7 @@ public final class BLEManager: NSObject, ObservableObject {
     /// leaves the strap on its existing id: adopting onto a junk id would migrate every device-scoped row
     /// onto a garbage key, which is worse than not adopting.
     private func adoptWhoopSerialIdentity() {
+        noteStrapSerialForFriends()
         guard let rs = registryStore,
               let serialId = WhoopSerialIdentity.adoptedId(serial: adoptableSerial),
               let active = try? rs.all().first(where: { $0.status == .active }),
@@ -5362,6 +5363,20 @@ public final class BLEManager: NSObject, ObservableObject {
             self.log("Adopted stable serial identity (serialPrefix=\(WhoopSerialIdentity.logSafe(serial: self.adoptableSerial))) - history re-pointed off the transient pairing id (#1303)")
             self.onSerialIdentityAdopted?(serialId)
         }
+    }
+
+    /// Friends (fork feature): keeps the confirmed serial's id against the active registry row, so the
+    /// friends account can be bound to this strap. A legacy `my-whoop` row is never re-pointed onto its
+    /// serial, so without this nothing outside this class would know which strap it is. Written under
+    /// the id the row has now and the id it will have once adopted. Touches no connection state.
+    private func noteStrapSerialForFriends() {
+        guard let rs = registryStore,
+              let adopted = WhoopSerialIdentity.adoptedId(serial: adoptableSerial),
+              let active = try? rs.all().first(where: { $0.status == .active }),
+              SourceIdentity.isWhoop(active)
+        else { return }
+        FriendsStrap.note(adoptedId: adopted, forDeviceId: active.id)
+        FriendsStrap.note(adoptedId: adopted, forDeviceId: adopted)
     }
 
     /// The strap's own DIS attestation is ground truth (a WHOOP 4.0 never attests a 5AM/5AG serial). When
