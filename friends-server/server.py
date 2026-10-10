@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""reNOOP friends server.
+"""reNOOP friends server, API version 2.
 
-A small self-hosted service for the reNOOP "Friends" tab: nickname accounts, mutual friendships by
-request, and a per-day summary each phone uploads after a strap sync. It holds only what a wearer
-chose to share (see README.md for the API and the privacy rules). Standard library only, one SQLite
-file, meant to sit behind a TLS-terminating reverse proxy on loopback.
+A small self-hosted service for the reNOOP "Friends" tab. An account has no name to type and no
+password: each phone holds a P-256 key and signs every request, the account is bound to the strap as a
+way back to it, and friends are made by one-time invites. It holds only what a wearer chose to share
+(README.md is the contract). One SQLite file, the standard library plus `cryptography` for checking
+signatures, meant to sit behind a TLS-terminating reverse proxy on loopback.
 """
 
+import base64
+import binascii
 import collections
 import hashlib
 import hmac
@@ -23,21 +26,43 @@ from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-API_VERSION = 1
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
-NICK_RE = re.compile(r"^[a-z0-9_]{3,20}$")
+API_VERSION = 2
+SIGN_PREFIX = "renoop-friends-v2"
+
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+KEY_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+TIME_RE = re.compile(r"^[0-9]{1,12}$")
+NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+HANDLE_RE = re.compile(r"^[0-9a-f]{64}$")
+PLATFORMS = ("ios", "android", "mac")
+CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 MAX_JSON_BYTES = 64 * 1024
 MAX_AVATAR_BYTES = 200 * 1024
-MAX_SESSIONS_PER_USER = 10
+MAX_DEVICES = 5
+MAX_PENDING_CLAIMS = 3
+MAX_INVITES = 10
 MAX_FRIENDS = 100
-MAX_PENDING_OUT = 50
 MAX_WORKOUTS_PER_DAY = 20
 MAX_HR_POINTS = 300
 KEEP_DAYS = 35
 FEED_MAX_DAYS = 14
 MIN_TS = 1_500_000_000
+
+TIME_WINDOW_S = 300
+NONCE_KEEP_S = 600
+SEEN_WRITE_EVERY_S = 60
+SILENCE_S = 48 * 3600
+PROBATION_S = 7 * 86400
+CLAIM_TTL_S = 14 * 86400
+CLAIM_BLOCK_S = 7 * 86400
+SETTLED_KEEP_S = 7 * 86400
+INVITE_TTL_S = 7 * 86400
+IDLE_DELETE_S = 180 * 86400
 
 # Which uploaded keys each sharing switch governs. A key outside this table is never stored.
 SECTIONS = {
@@ -49,12 +74,10 @@ SECTIONS = {
 SHARE_COLUMNS = {"scores": "share_scores", "sleep": "share_sleep", "workouts": "share_workouts", "hr": "share_hr"}
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY,
-    nick TEXT NOT NULL UNIQUE,
+    pub_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
-    pw_salt BLOB NOT NULL,
-    pw_hash BLOB NOT NULL,
     share_scores INTEGER NOT NULL DEFAULT 1,
     share_sleep INTEGER NOT NULL DEFAULT 1,
     share_workouts INTEGER NOT NULL DEFAULT 1,
@@ -62,45 +85,74 @@ CREATE TABLE IF NOT EXISTS users (
     avatar BLOB,
     avatar_type TEXT,
     avatar_rev INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
+    strap BLOB UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    trusted_seen INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS sessions (
-    token_hash BLOB PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS devices (
+    key_id BLOB PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    spki BLOB NOT NULL,
+    platform TEXT NOT NULL,
+    added_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    probation_until INTEGER
 );
-CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS devices_account ON devices(account_id);
+CREATE TABLE IF NOT EXISTS claims (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    strap BLOB NOT NULL,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    key_id BLOB,
+    spki BLOB,
+    platform TEXT NOT NULL,
+    claimant_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    settled_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS claims_strap ON claims(strap);
+CREATE INDEX IF NOT EXISTS claims_key ON claims(key_id);
+CREATE TABLE IF NOT EXISTS invites (
+    code_hash BLOB PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS invites_account ON invites(account_id);
 CREATE TABLE IF NOT EXISTS friendships (
-    a INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    b INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    a INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    b INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
     PRIMARY KEY (a, b),
     CHECK (a < b)
 );
 CREATE INDEX IF NOT EXISTS friendships_b ON friendships(b);
-CREATE TABLE IF NOT EXISTS requests (
-    from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (from_id, to_id)
-);
-CREATE INDEX IF NOT EXISTS requests_to ON requests(to_id);
 CREATE TABLE IF NOT EXISTS days (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
     payload TEXT NOT NULL,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (user_id, day)
+    PRIMARY KEY (account_id, day)
 );
 """
 
 
 class ApiError(Exception):
-    def __init__(self, status, code, message=""):
+    def __init__(self, status, code, message="", **extra):
         super().__init__(code)
         self.status = status
         self.code = code
         self.message = message
+        self.extra = extra
+
+
+class OldDatabase(Exception):
+    """The file is a version 1 database. It is neither migrated nor deleted here."""
 
 
 class RateLimiter:
@@ -125,8 +177,78 @@ class RateLimiter:
             hits.append(now)
 
 
-# --- payload validation -------------------------------------------------------------------------
+class NonceCache:
+    """Nonces seen inside the replay window, in memory. A restart forgets them, which widens a replay
+    only to the time window, and every call that changes something is idempotent or one-shot."""
 
+    def __init__(self):
+        self._seen = {}
+        self._lock = threading.Lock()
+
+    def seen(self, key_id, nonce, now):
+        with self._lock:
+            at = self._seen.get((key_id, nonce))
+            return at is not None and at > now - NONCE_KEEP_S
+
+    def add(self, key_id, nonce, now):
+        with self._lock:
+            if len(self._seen) > 100_000:
+                self._seen = {k: v for k, v in self._seen.items() if v > now - NONCE_KEEP_S}
+            self._seen[(key_id, nonce)] = now
+
+
+# --- signatures ---------------------------------------------------------------------------------
+
+
+def signing_string(method, target, ts, nonce, body):
+    """What a phone signs: six lines, no trailing newline. `target` is the path and query as sent."""
+    return "\n".join((SIGN_PREFIX, method.upper(), target, ts, nonce, hashlib.sha256(body).hexdigest())).encode("utf-8")
+
+
+def load_spki(raw):
+    """A P-256 public key from its canonical SubjectPublicKeyInfo, or a 400. Canonical means the bytes
+    are exactly what the key serialises to, so one key has one key id."""
+    try:
+        key = serialization.load_der_public_key(raw)
+    except Exception:  # noqa: BLE001 - whatever the parser raises, these bytes are not a key
+        raise ApiError(400, "bad_key", "")
+    if not isinstance(key, ec.EllipticCurvePublicKey) or not isinstance(key.curve, ec.SECP256R1):
+        raise ApiError(400, "bad_key", "")
+    canonical = key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    if canonical != raw:
+        raise ApiError(400, "bad_key", "")
+    return key
+
+
+def verify(spki, signature, message):
+    key = load_spki(spki)
+    try:
+        key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+    except InvalidSignature:
+        raise ApiError(401, "bad_signature", "")
+    except Exception:  # noqa: BLE001 - a signature that is not DER at all
+        raise ApiError(401, "bad_signature", "")
+
+
+def spki_in_body(body, key_id):
+    """The public key a self-introducing call carries in its body, checked against its header's key id."""
+    try:
+        value = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ApiError(400, "bad_json", "")
+    if not isinstance(value, dict) or not isinstance(value.get("key"), str):
+        raise ApiError(400, "bad_key", "")
+    try:
+        spki = base64.b64decode(value["key"], validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(400, "bad_key", "")
+    load_spki(spki)
+    if hashlib.sha256(spki).digest() != key_id:
+        raise ApiError(400, "bad_key", "")
+    return spki
+
+
+# --- payload validation -------------------------------------------------------------------------
 
 def _bad(path):
     return ApiError(400, "bad_payload", path)
@@ -229,15 +351,6 @@ def filter_day(payload, share):
     return {k: v for k, v in payload.items() if k in allowed}
 
 
-def clean_nick(value):
-    if not isinstance(value, str):
-        raise ApiError(400, "bad_nick", "Nickname: 3 to 20 characters, a-z, 0-9 and _.")
-    nick = value.strip().lstrip("@").lower()
-    if not NICK_RE.match(nick):
-        raise ApiError(400, "bad_nick", "Nickname: 3 to 20 characters, a-z, 0-9 and _.")
-    return nick
-
-
 def clean_name(value):
     if not isinstance(value, str):
         raise ApiError(400, "bad_name", "Name: 1 to 40 characters.")
@@ -245,12 +358,6 @@ def clean_name(value):
     if not 1 <= len(name) <= 40:
         raise ApiError(400, "bad_name", "Name: 1 to 40 characters.")
     return name
-
-
-def clean_password(value):
-    if not isinstance(value, str) or not 8 <= len(value) <= 128:
-        raise ApiError(400, "bad_password", "Password: 8 to 128 characters.")
-    return value
 
 
 def sniff_image(data):
@@ -263,21 +370,41 @@ def sniff_image(data):
     return None
 
 
+def clean_platform(value):
+    if value not in PLATFORMS:
+        raise ApiError(400, "bad_platform", "")
+    return value
+
+
+def is_trusted(device, now):
+    """A device is trusted unless it joined by silence and its probation is still running."""
+    return device["probation_until"] is None or device["probation_until"] <= now
+
+
 # --- application --------------------------------------------------------------------------------
 
 
 class App:
-    def __init__(self, db_path, invite_code=None, max_users=500, trust_proxy=True):
+    def __init__(self, db_path, pepper, max_users=500, trust_proxy=True, clock=time.time):
+        if not isinstance(pepper, bytes) or len(pepper) < 32:
+            raise ValueError("the strap pepper must be at least 32 bytes")
         self.db_path = db_path
-        self.invite_code = invite_code or None
+        self.pepper = pepper
         self.max_users = max_users
         self.trust_proxy = trust_proxy
+        self.clock = clock
         self.limiter = RateLimiter()
+        self.nonces = NonceCache()
         self._local = threading.local()
-        # scrypt at these parameters holds 16 MiB per call; two at a time keeps a small box calm.
-        self._scrypt_gate = threading.BoundedSemaphore(2)
-        with self.db() as db:
-            db.executescript(SCHEMA)
+        db = self.db()
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone():
+            self.close_db()
+            raise OldDatabase(db_path)
+        db.executescript(SCHEMA)
+        db.execute("PRAGMA user_version = 2")
+
+    def now(self):
+        return int(self.clock())
 
     def db(self):
         conn = getattr(self._local, "conn", None)
@@ -296,80 +423,146 @@ class App:
             conn.close()
             self._local.conn = None
 
-    def hash_password(self, password, salt):
-        with self._scrypt_gate:
-            return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+    # --- accounts and devices ---
 
-    # --- sessions ---
+    def device(self, key_id):
+        return self.db().execute("SELECT * FROM devices WHERE key_id = ?", (key_id,)).fetchone()
 
-    def new_session(self, db, user_id):
-        token = secrets.token_urlsafe(32)
+    def account(self, account_id):
+        return self.db().execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+
+    def account_by_pub(self, db, pub_id):
+        account = db.execute("SELECT * FROM accounts WHERE pub_id = ?", (pub_id,)).fetchone()
+        if account is None:
+            raise ApiError(404, "no_such_user", "")
+        return account
+
+    def claimant_spki(self, key_id):
+        """The key of whoever filed a join claim; once the claim is settled and swept, of the device it became."""
+        db = self.db()
+        row = db.execute(
+            "SELECT spki FROM claims WHERE key_id = ? AND kind = 'join' ORDER BY id DESC LIMIT 1", (key_id,)).fetchone()
+        if row is None:
+            row = db.execute("SELECT spki FROM devices WHERE key_id = ?", (key_id,)).fetchone()
+        return row["spki"] if row else None
+
+    def touch(self, device, now):
+        """Records that a device was heard from, at most once a minute, and answers its fresh row and
+        its account's. A trusted device also moves the account's `trusted_seen`, which is what a claim's
+        maturity is measured from; one on probation does not."""
+        db = self.db()
+        trusted = is_trusted(device, now)
+        probation_over = trusted and device["probation_until"] is not None
+        if probation_over or now - device["last_seen"] >= SEEN_WRITE_EVERY_S:
+            with db:
+                db.execute("UPDATE devices SET last_seen = ?, probation_until = ? WHERE key_id = ?",
+                           (now, None if trusted else device["probation_until"], device["key_id"]))
+                if trusted:
+                    db.execute("UPDATE accounts SET last_seen = ?, trusted_seen = ? WHERE id = ?",
+                               (now, now, device["account_id"]))
+                else:
+                    db.execute("UPDATE accounts SET last_seen = ? WHERE id = ?", (now, device["account_id"]))
+            device = self.device(device["key_id"])
+        return device, self.account(device["account_id"])
+
+    def device_count(self, db, account_id):
+        return db.execute("SELECT COUNT(*) FROM devices WHERE account_id = ?", (account_id,)).fetchone()[0]
+
+    def trusted_count(self, db, account_id, now):
+        return db.execute(
+            "SELECT COUNT(*) FROM devices WHERE account_id = ? AND (probation_until IS NULL OR probation_until <= ?)",
+            (account_id, now)).fetchone()[0]
+
+    def sweep_idle(self, db, now):
+        """Deletes every account not heard from in 180 days, with all it owns. Its days expired long before."""
+        db.execute("DELETE FROM accounts WHERE last_seen < ?", (now - IDLE_DELETE_S,))
+
+    # --- straps and claims ---
+
+    def strap_value(self, handle):
+        """What is stored for a strap handle: its HMAC under the server's pepper. A leaked database then
+        holds neither a serial nor a handle anyone could file a claim with."""
+        if not isinstance(handle, str) or not HANDLE_RE.match(handle):
+            raise ApiError(400, "bad_strap", "")
+        return hmac.new(self.pepper, bytes.fromhex(handle), hashlib.sha256).digest()
+
+    def strap_owner(self, db, strap):
+        return db.execute("SELECT * FROM accounts WHERE strap = ?", (strap,)).fetchone()
+
+    def close_claim(self, db, claim_id, state, now):
+        db.execute("UPDATE claims SET state = ?, settled_at = ? WHERE id = ?", (state, now, claim_id))
+
+    def settle(self, db, strap, now):
+        """Applies the clock to every pending claim on `strap`: expiry first, then maturity by silence.
+        The one place time settles a claim; whatever reads a claim calls this first, inside its transaction."""
+        for row in db.execute(
+                "SELECT id FROM claims WHERE strap = ? AND state = 'pending' ORDER BY id", (strap,)).fetchall():
+            claim = db.execute("SELECT * FROM claims WHERE id = ?", (row["id"],)).fetchone()
+            if claim is None or claim["state"] != "pending":
+                continue  # settled by an earlier claim in this pass
+            if now >= claim["created_at"] + CLAIM_TTL_S:
+                self.close_claim(db, claim["id"], "expired", now)
+                continue
+            seen = db.execute("SELECT trusted_seen FROM accounts WHERE id = ?", (claim["account_id"],)).fetchone()[0]
+            if now >= max(claim["created_at"], seen) + SILENCE_S:
+                self.admit(db, claim, now, probation=True)
+        db.execute("DELETE FROM claims WHERE state != 'pending' AND settled_at < ?", (now - SETTLED_KEEP_S,))
+
+    def admit(self, db, claim, now, probation):
+        """Grants a claim. A join adds the claiming key as a device (on probation when nobody confirmed
+        it); a take moves the strap to the claiming account."""
+        if claim["kind"] == "join":
+            taken = db.execute("SELECT 1 FROM devices WHERE key_id = ?", (claim["key_id"],)).fetchone()
+            if taken or self.device_count(db, claim["account_id"]) >= MAX_DEVICES:
+                self.close_claim(db, claim["id"], "expired", now)
+                return
+            db.execute(
+                "INSERT INTO devices(key_id, account_id, spki, platform, added_at, last_seen, probation_until) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (claim["key_id"], claim["account_id"], claim["spki"], claim["platform"], now, now,
+                 now + PROBATION_S if probation else None))
+            self.close_claim(db, claim["id"], "approved", now)
+            return
+        db.execute("UPDATE accounts SET strap = NULL WHERE id = ?", (claim["account_id"],))
+        db.execute("UPDATE accounts SET strap = ? WHERE id = ?", (claim["strap"], claim["claimant_id"]))
+        self.close_claim(db, claim["id"], "approved", now)
+        # Whatever else waited on this strap was aimed at the account that no longer holds it, and what
+        # waited on the claimant's previous strap was aimed at a strap it no longer holds.
         db.execute(
-            "INSERT INTO sessions(token_hash, user_id, created_at) VALUES (?, ?, ?)",
-            (hashlib.sha256(token.encode()).digest(), user_id, int(time.time())),
-        )
-        db.execute(
-            "DELETE FROM sessions WHERE user_id = ? AND token_hash NOT IN "
-            "(SELECT token_hash FROM sessions WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
-            (user_id, user_id, MAX_SESSIONS_PER_USER),
-        )
-        return token
+            "UPDATE claims SET state = 'expired', settled_at = ? WHERE state = 'pending' AND (strap = ? OR account_id = ?)",
+            (now, claim["strap"], claim["claimant_id"]))
 
-    def user_for_token(self, token):
-        if not token:
-            return None
-        return self.db().execute(
-            "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
-            (hashlib.sha256(token.encode()).digest(),),
-        ).fetchone()
-
-    # --- relations ---
+    # --- friends ---
 
     def are_friends(self, db, x, y):
         a, b = min(x, y), max(x, y)
         return db.execute("SELECT 1 FROM friendships WHERE a = ? AND b = ?", (a, b)).fetchone() is not None
 
-    def relation(self, db, me, other):
-        if me == other:
-            return "self"
-        if self.are_friends(db, me, other):
-            return "friend"
-        if db.execute("SELECT 1 FROM requests WHERE from_id = ? AND to_id = ?", (me, other)).fetchone():
-            return "outgoing"
-        if db.execute("SELECT 1 FROM requests WHERE from_id = ? AND to_id = ?", (other, me)).fetchone():
-            return "incoming"
-        return "none"
+    def friend_count(self, db, account_id):
+        return db.execute(
+            "SELECT COUNT(*) FROM friendships WHERE a = ? OR b = ?", (account_id, account_id)).fetchone()[0]
 
-    def friend_count(self, db, user_id):
-        return db.execute("SELECT COUNT(*) FROM friendships WHERE a = ? OR b = ?", (user_id, user_id)).fetchone()[0]
-
-    def befriend(self, db, x, y):
+    def befriend(self, db, x, y, now):
         if self.friend_count(db, x) >= MAX_FRIENDS or self.friend_count(db, y) >= MAX_FRIENDS:
             raise ApiError(409, "too_many_friends", "Friend limit reached.")
-        db.execute(
-            "INSERT OR IGNORE INTO friendships(a, b, created_at) VALUES (?, ?, ?)",
-            (min(x, y), max(x, y), int(time.time())),
-        )
-        db.execute("DELETE FROM requests WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)", (x, y, y, x))
-
-    def user_by_nick(self, db, nick):
-        user = db.execute("SELECT * FROM users WHERE nick = ?", (nick,)).fetchone()
-        if user is None:
-            raise ApiError(404, "no_such_user", "No one has this nickname.")
-        return user
+        db.execute("INSERT OR IGNORE INTO friendships(a, b, created_at) VALUES (?, ?, ?)", (min(x, y), max(x, y), now))
 
 
-def share_of(user):
-    return {section: bool(user[column]) for section, column in SHARE_COLUMNS.items()}
+def share_of(account):
+    return {section: bool(account[column]) for section, column in SHARE_COLUMNS.items()}
 
 
-def public_profile(user):
-    return {"nick": user["nick"], "name": user["name"], "avatarRev": user["avatar_rev"] if user["avatar"] else 0}
+def public_profile(account):
+    return {"id": account["pub_id"], "name": account["name"],
+            "avatarRev": account["avatar_rev"] if account["avatar"] else 0}
 
 
-def own_profile(user):
-    profile = public_profile(user)
-    profile["share"] = share_of(user)
+def me_json(account, device, now):
+    profile = public_profile(account)
+    profile["share"] = share_of(account)
+    profile["strapBound"] = account["strap"] is not None
+    profile["device"] = {"id": device["key_id"].hex(),
+                         "probationUntil": None if is_trusted(device, now) else device["probation_until"]}
     return profile
 
 
@@ -381,388 +574,80 @@ def h_health(app, req):
 
 
 def h_info(app, req):
-    return {"name": "renoop-friends", "api": API_VERSION, "inviteRequired": app.invite_code is not None}
+    return {"name": "renoop-friends", "api": API_VERSION, "time": req.now}
 
 
-def h_register(app, req):
-    app.limiter.check(("register", req.ip), 5, 3600)
-    body = req.json(("nick", "name", "password", "invite"))
-    nick = clean_nick(body.get("nick"))
-    # Sign-up asks for a nickname and a password only; the display name starts as the nickname.
-    name = clean_name(body["name"]) if body.get("name") is not None else nick
-    password = clean_password(body.get("password"))
-    if app.invite_code is not None:
-        invite = body.get("invite")
-        if not isinstance(invite, str) or not hmac.compare_digest(invite.encode(), app.invite_code.encode()):
-            raise ApiError(403, "bad_invite", "Wrong invite code.")
-    salt = secrets.token_bytes(16)
-    pw_hash = app.hash_password(password, salt)
+def h_enroll(app, req):
+    body = req.json(("key", "name", "platform", "strap"))
+    name = clean_name(body.get("name"))
+    platform = clean_platform(body.get("platform"))
+    strap = app.strap_value(body["strap"]) if body.get("strap") is not None else None
     db = app.db()
     with db:
-        if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= app.max_users:
-            raise ApiError(403, "server_full", "This server is not taking new accounts.")
-        try:
-            cur = db.execute(
-                "INSERT INTO users(nick, name, pw_salt, pw_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-                (nick, name, salt, pw_hash, int(time.time())),
-            )
-        except sqlite3.IntegrityError:
-            raise ApiError(409, "nick_taken", "This nickname is taken.")
-        token = app.new_session(db, cur.lastrowid)
-        user = db.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return 201, {"token": token, "me": own_profile(user)}
-
-
-def h_nick_free(app, req):
-    """Lets the sign-up form say whether a nickname is free before a password is typed."""
-    app.limiter.check(("nickfree", req.ip), 30, 60)
-    nick = clean_nick(req.match.group(1))
-    taken = app.db().execute("SELECT 1 FROM users WHERE nick = ?", (nick,)).fetchone() is not None
-    return {"nick": nick, "free": not taken}
-
-
-def h_login(app, req):
-    app.limiter.check(("login-ip", req.ip), 20, 600)
-    body = req.json(("nick", "password"))
-    nick = clean_nick(body.get("nick"))
-    password = body.get("password")
-    if not isinstance(password, str) or len(password) > 128:
-        raise ApiError(401, "bad_credentials", "Wrong nickname or password.")
-    app.limiter.check(("login-nick", nick), 10, 600)
-    db = app.db()
-    user = db.execute("SELECT * FROM users WHERE nick = ?", (nick,)).fetchone()
-    # A missing account costs the same hash as a wrong password, so timing does not list nicknames.
-    salt = user["pw_salt"] if user else b"\0" * 16
-    candidate = app.hash_password(password, salt)
-    if user is None or not hmac.compare_digest(candidate, user["pw_hash"]):
-        raise ApiError(401, "bad_credentials", "Wrong nickname or password.")
-    with db:
-        token = app.new_session(db, user["id"])
-    return {"token": token, "me": own_profile(user)}
-
-
-def h_logout(app, req):
-    db = app.db()
-    with db:
-        db.execute("DELETE FROM sessions WHERE token_hash = ?", (hashlib.sha256(req.token.encode()).digest(),))
-    return 204, None
+        device = app.device(req.key_id)
+        if device is not None:
+            # The answer to an earlier enrolment was lost on the way: the same key is the same account.
+            return {"me": me_json(app.account(device["account_id"]), device, req.now)}
+        if strap is not None:
+            app.settle(db, strap, req.now)
+            if app.strap_owner(db, strap) is not None:
+                raise ApiError(409, "strap_bound", "This strap already has an account.")
+        if db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] >= app.max_users:
+            app.sweep_idle(db, req.now)
+            if db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] >= app.max_users:
+                raise ApiError(403, "server_full", "This server is not taking new accounts.")
+        cur = db.execute(
+            "INSERT INTO accounts(pub_id, name, strap, created_at, last_seen, trusted_seen) VALUES (?, ?, ?, ?, ?, ?)",
+            (secrets.token_hex(8), name, strap, req.now, req.now, req.now))
+        db.execute(
+            "INSERT INTO devices(key_id, account_id, spki, platform, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
+            (req.key_id, cur.lastrowid, req.spki, platform, req.now, req.now))
+        # An account of its own supersedes a join this key was still waiting on.
+        db.execute("DELETE FROM claims WHERE key_id = ?", (req.key_id,))
+        account = app.account(cur.lastrowid)
+        device = app.device(req.key_id)
+    return 201, {"me": me_json(account, device, req.now)}
 
 
 def h_me(app, req):
-    return own_profile(req.user)
-
-
-def h_me_patch(app, req):
-    body = req.json(("name", "share"))
-    db = app.db()
-    with db:
-        if "name" in body:
-            db.execute("UPDATE users SET name = ? WHERE id = ?", (clean_name(body["name"]), req.user["id"]))
-        if "share" in body:
-            share = body["share"]
-            if not isinstance(share, dict) or not set(share) <= set(SHARE_COLUMNS):
-                raise ApiError(400, "bad_payload", "share")
-            for section, value in share.items():
-                if not isinstance(value, bool):
-                    raise ApiError(400, "bad_payload", "share." + section)
-                db.execute("UPDATE users SET %s = ? WHERE id = ?" % SHARE_COLUMNS[section], (int(value), req.user["id"]))
-        user = db.execute("SELECT * FROM users WHERE id = ?", (req.user["id"],)).fetchone()
-        if "share" in body:
-            # Switching a section off removes what was already uploaded, not only what friends see.
-            now_share = share_of(user)
-            for row in db.execute("SELECT day, payload FROM days WHERE user_id = ?", (user["id"],)).fetchall():
-                kept = filter_day(json.loads(row["payload"]), now_share)
-                db.execute(
-                    "UPDATE days SET payload = ? WHERE user_id = ? AND day = ?",
-                    (json.dumps(kept, separators=(",", ":")), user["id"], row["day"]),
-                )
-    return own_profile(user)
-
-
-def h_password(app, req):
-    app.limiter.check(("password", req.user["id"]), 5, 600)
-    body = req.json(("old", "new"))
-    old = body.get("old")
-    new = clean_password(body.get("new"))
-    if not isinstance(old, str) or len(old) > 128 or not hmac.compare_digest(
-        app.hash_password(old, req.user["pw_salt"]), req.user["pw_hash"]
-    ):
-        raise ApiError(401, "bad_credentials", "Wrong current password.")
-    salt = secrets.token_bytes(16)
-    pw_hash = app.hash_password(new, salt)
-    db = app.db()
-    with db:
-        db.execute("UPDATE users SET pw_salt = ?, pw_hash = ? WHERE id = ?", (salt, pw_hash, req.user["id"]))
-        db.execute("DELETE FROM sessions WHERE user_id = ?", (req.user["id"],))
-        token = app.new_session(db, req.user["id"])
-    return {"token": token}
-
-
-def h_delete_account(app, req):
-    app.limiter.check(("password", req.user["id"]), 5, 600)
-    body = req.json(("password",))
-    password = body.get("password")
-    if not isinstance(password, str) or len(password) > 128 or not hmac.compare_digest(
-        app.hash_password(password, req.user["pw_salt"]), req.user["pw_hash"]
-    ):
-        raise ApiError(401, "bad_credentials", "Wrong password.")
-    db = app.db()
-    with db:
-        db.execute("DELETE FROM users WHERE id = ?", (req.user["id"],))
-    return 204, None
-
-
-def h_avatar_put(app, req):
-    kind = sniff_image(req.body)
-    if kind is None:
-        raise ApiError(415, "bad_image", "JPEG, PNG or WebP only.")
-    db = app.db()
-    with db:
-        db.execute(
-            "UPDATE users SET avatar = ?, avatar_type = ?, avatar_rev = avatar_rev + 1 WHERE id = ?",
-            (req.body, kind, req.user["id"]),
-        )
-        user = db.execute("SELECT * FROM users WHERE id = ?", (req.user["id"],)).fetchone()
-    return own_profile(user)
-
-
-def h_avatar_delete(app, req):
-    db = app.db()
-    with db:
-        db.execute("UPDATE users SET avatar = NULL, avatar_type = NULL WHERE id = ?", (req.user["id"],))
-    return 204, None
-
-
-def h_user(app, req):
-    app.limiter.check(("lookup", req.user["id"]), 30, 60)
-    db = app.db()
-    other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-    profile = public_profile(other)
-    profile["relation"] = app.relation(db, req.user["id"], other["id"])
-    return profile
-
-
-def h_user_avatar(app, req):
-    db = app.db()
-    other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-    # A picture is shown only where a name already is: to its owner, to friends, and across a pending request.
-    if app.relation(db, req.user["id"], other["id"]) == "none" or not other["avatar"]:
-        raise ApiError(404, "no_avatar", "")
-    return 200, RawBody(other["avatar"], other["avatar_type"])
-
-
-def h_requests(app, req):
-    db = app.db()
-    incoming = db.execute(
-        "SELECT u.*, r.created_at AS requested_at FROM requests r JOIN users u ON u.id = r.from_id "
-        "WHERE r.to_id = ? ORDER BY r.created_at DESC", (req.user["id"],)).fetchall()
-    outgoing = db.execute(
-        "SELECT u.*, r.created_at AS requested_at FROM requests r JOIN users u ON u.id = r.to_id "
-        "WHERE r.from_id = ? ORDER BY r.created_at DESC", (req.user["id"],)).fetchall()
-
-    def item(row):
-        profile = public_profile(row)
-        profile["requestedAt"] = row["requested_at"]
-        return profile
-
-    return {"incoming": [item(r) for r in incoming], "outgoing": [item(r) for r in outgoing]}
-
-
-def h_request_send(app, req):
-    app.limiter.check(("request", req.user["id"]), 20, 3600)
-    body = req.json(("nick",))
-    db = app.db()
-    me = req.user["id"]
-    with db:
-        other = app.user_by_nick(db, clean_nick(body.get("nick")))
-        relation = app.relation(db, me, other["id"])
-        if relation == "self":
-            raise ApiError(400, "self_request", "That is your own nickname.")
-        if relation == "incoming":
-            # They already asked: answering with a request of your own is an acceptance.
-            app.befriend(db, me, other["id"])
-            relation = "friend"
-        elif relation == "none":
-            pending = db.execute("SELECT COUNT(*) FROM requests WHERE from_id = ?", (me,)).fetchone()[0]
-            if pending >= MAX_PENDING_OUT:
-                raise ApiError(409, "too_many_requests", "Too many unanswered requests.")
-            db.execute(
-                "INSERT INTO requests(from_id, to_id, created_at) VALUES (?, ?, ?)", (me, other["id"], int(time.time())))
-            relation = "outgoing"
-    profile = public_profile(other)
-    profile["relation"] = relation
-    return profile
-
-
-def h_request_accept(app, req):
-    db = app.db()
-    me = req.user["id"]
-    with db:
-        other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-        if app.relation(db, me, other["id"]) != "incoming":
-            raise ApiError(404, "no_request", "No request from this person.")
-        app.befriend(db, me, other["id"])
-    profile = public_profile(other)
-    profile["relation"] = "friend"
-    return profile
-
-
-def h_request_delete(app, req):
-    """Declines an incoming request or withdraws an outgoing one. The other side is not told which."""
-    db = app.db()
-    me = req.user["id"]
-    with db:
-        other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-        db.execute(
-            "DELETE FROM requests WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)",
-            (me, other["id"], other["id"], me),
-        )
-    return 204, None
-
-
-def h_unfriend(app, req):
-    db = app.db()
-    me = req.user["id"]
-    with db:
-        other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-        db.execute("DELETE FROM friendships WHERE a = ? AND b = ?", (min(me, other["id"]), max(me, other["id"])))
-    return 204, None
-
-
-def h_day_put(app, req):
-    app.limiter.check(("upload", req.user["id"]), 120, 3600)
-    day = req.match.group(1)
-    now = int(time.time())
-    try:
-        parsed = date.fromisoformat(day)
-    except ValueError:
-        raise ApiError(400, "bad_day", "")
-    today = datetime.fromtimestamp(now, timezone.utc).date()
-    if not today - timedelta(days=KEEP_DAYS) <= parsed <= today + timedelta(days=1):
-        raise ApiError(400, "bad_day", "Outside the kept window.")
-    body = req.json(None)
-    payload = filter_day(clean_day(body, now), share_of(req.user))
-    db = app.db()
-    with db:
-        db.execute(
-            "INSERT INTO days(user_id, day, payload, updated_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(user_id, day) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
-            (req.user["id"], day, json.dumps(payload, separators=(",", ":")), now),
-        )
-        db.execute(
-            "DELETE FROM days WHERE user_id = ? AND day < ?",
-            (req.user["id"], (today - timedelta(days=KEEP_DAYS)).isoformat()),
-        )
-    return 204, None
-
-
-def _days_query(req):
-    try:
-        days = int(req.query.get("days", ["7"])[0])
-    except ValueError:
-        raise ApiError(400, "bad_query", "days")
-    days = max(1, min(FEED_MAX_DAYS, days))
-    today = datetime.fromtimestamp(time.time(), timezone.utc).date()
-    return (today - timedelta(days=days)).isoformat()
-
-
-def _days_of(db, user, share, since, with_series):
-    rows = db.execute(
-        "SELECT day, payload, updated_at FROM days WHERE user_id = ? AND day >= ? ORDER BY day DESC",
-        (user["id"], since),
-    ).fetchall()
-    out = []
-    for row in rows:
-        entry = filter_day(json.loads(row["payload"]), share)
-        if not with_series and "hr" in entry:
-            del entry["hr"]["series"]
-        entry["day"] = row["day"]
-        entry["updatedAt"] = row["updated_at"]
-        out.append(entry)
-    return out
-
-
-def h_user_days(app, req):
-    """One person's days in full, heart-rate line included: what a friend's own page draws."""
-    db = app.db()
-    other = app.user_by_nick(db, clean_nick(req.match.group(1)))
-    if app.relation(db, req.user["id"], other["id"]) not in ("self", "friend"):
-        raise ApiError(404, "no_such_user", "No one has this nickname.")
-    share = share_of(other)
-    profile = public_profile(other)
-    profile["share"] = share
-    profile["days"] = _days_of(db, other, share, _days_query(req), with_series=True)
-    return profile
-
-
-def h_feed(app, req):
-    """Everyone at a glance. Carries the latest heart rate but not the day's line, which is the bulk of a day."""
-    since = _days_query(req)
-    db = app.db()
-    me = req.user
-
-    def days_of(user, share):
-        return _days_of(db, user, share, since, with_series=False)
-
-    friends = db.execute(
-        "SELECT u.* FROM friendships f JOIN users u ON u.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END "
-        "WHERE f.a = ? OR f.b = ? ORDER BY u.name COLLATE NOCASE",
-        (me["id"], me["id"], me["id"]),
-    ).fetchall()
-    result = {"serverTime": int(time.time()), "me": own_profile(me), "friends": []}
-    result["me"]["days"] = days_of(me, share_of(me))
-    for friend in friends:
-        share = share_of(friend)
-        profile = public_profile(friend)
-        profile["share"] = share
-        profile["days"] = days_of(friend, share)
-        result["friends"].append(profile)
-    result["pendingIncoming"] = db.execute("SELECT COUNT(*) FROM requests WHERE to_id = ?", (me["id"],)).fetchone()[0]
-    return result
+    return me_json(req.account, req.device, req.now)
 
 
 class RawBody:
-    def __init__(self, data, content_type):
+    def __init__(self, data, content_type, headers=None):
         self.data = data
         self.content_type = content_type
+        self.headers = headers or {}
 
 
-# (method, path pattern, handler, needs a session, largest accepted body)
+# The calls other than reads that a device on probation may make. Every other change waits.
+PROBATION_OK = set()
+
+# (method, path pattern, handler, who signs, largest accepted body, per-address limit before any signature maths)
 ROUTES = [
-    ("GET", r"/healthz", h_health, False, 0),
-    ("GET", r"/v1/info", h_info, False, 0),
-    ("POST", r"/v1/register", h_register, False, MAX_JSON_BYTES),
-    ("GET", r"/v1/nicks/([^/]{1,40})", h_nick_free, False, 0),
-    ("POST", r"/v1/login", h_login, False, MAX_JSON_BYTES),
-    ("DELETE", r"/v1/session", h_logout, True, 0),
-    ("GET", r"/v1/me", h_me, True, 0),
-    ("PATCH", r"/v1/me", h_me_patch, True, MAX_JSON_BYTES),
-    ("POST", r"/v1/me/password", h_password, True, MAX_JSON_BYTES),
-    ("POST", r"/v1/me/delete", h_delete_account, True, MAX_JSON_BYTES),
-    ("PUT", r"/v1/me/avatar", h_avatar_put, True, MAX_AVATAR_BYTES),
-    ("DELETE", r"/v1/me/avatar", h_avatar_delete, True, 0),
-    ("PUT", r"/v1/me/days/(\d{4}-\d{2}-\d{2})", h_day_put, True, MAX_JSON_BYTES),
-    ("GET", r"/v1/feed", h_feed, True, 0),
-    ("GET", r"/v1/users/([^/]{1,40})", h_user, True, 0),
-    ("GET", r"/v1/users/([^/]{1,40})/avatar", h_user_avatar, True, 0),
-    ("GET", r"/v1/users/([^/]{1,40})/days", h_user_days, True, 0),
-    ("GET", r"/v1/friends/requests", h_requests, True, 0),
-    ("POST", r"/v1/friends/requests", h_request_send, True, MAX_JSON_BYTES),
-    ("POST", r"/v1/friends/requests/([^/]{1,40})/accept", h_request_accept, True, 0),
-    ("DELETE", r"/v1/friends/requests/([^/]{1,40})", h_request_delete, True, 0),
-    ("DELETE", r"/v1/friends/([^/]{1,40})", h_unfriend, True, 0),
+    ("GET", r"/healthz", h_health, "none", 0, None),
+    ("GET", r"/v2/info", h_info, "none", 0, None),
+    ("POST", r"/v2/enroll", h_enroll, "newkey", MAX_JSON_BYTES, ("enroll", 5, 3600)),
+    ("GET", r"/v2/me", h_me, "device", 0, None),
 ]
-ROUTES = [(m, re.compile("^" + p + "$"), h, auth, size) for m, p, h, auth, size in ROUTES]
+ROUTES = [(m, re.compile("^" + p + "$"), h, auth, size, limit) for m, p, h, auth, size, limit in ROUTES]
 
 
 class Request:
-    def __init__(self, match, query, body, ip, token, user):
+    def __init__(self, match, query, ip, now):
         self.match = match
         self.query = query
-        self.body = body
         self.ip = ip
-        self.token = token
-        self.user = user
+        self.now = now
+        self.body = b""
+        self.key_id = None
+        self.spki = None
+        self.device = None
+        self.account = None
+
+    @property
+    def trusted(self):
+        return is_trusted(self.device, self.now)
 
     def json(self, allowed):
         try:
@@ -774,6 +659,17 @@ class Request:
         if allowed is not None and not set(value) <= set(allowed):
             raise ApiError(400, "bad_payload", "unknown field")
         return value
+
+
+LOG_ID_RE = re.compile(r"[0-9a-f]{16,}")
+
+
+def log_path(path):
+    """The path as the access log writes it: an invite code is never logged, and neither is an account
+    id or a key id, so the log says what was asked for and not by or about whom."""
+    if path.startswith("/i/"):
+        return "/i/…"
+    return LOG_ID_RE.sub("…", path)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -791,21 +687,48 @@ class Handler(BaseHTTPRequestHandler):
         return self.client_address[0]
 
     def _send(self, status, payload):
+        extra = {}
         if isinstance(payload, RawBody):
-            data, content_type = payload.data, payload.content_type
+            data, content_type, extra = payload.data, payload.content_type, payload.headers
         elif payload is None:
             data, content_type = b"", None
         else:
-            data, content_type = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), "application/json"
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            content_type = "application/json"
         self.send_response(status)
         if content_type:
             self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        for name, value in extra.items():
+            self.send_header(name, value)
         self.end_headers()
         if data and self.command != "HEAD":
             self.wfile.write(data)
+
+    def _route(self, path):
+        path_known = False
+        for method, pattern, handler, auth, max_body, ip_limit in ROUTES:
+            match = pattern.match(path)
+            if match:
+                path_known = True
+                if method == self.command:
+                    return handler, auth, max_body, ip_limit, match
+        raise ApiError(405 if path_known else 404, "method_not_allowed" if path_known else "not_found", "")
+
+    def _signature_headers(self):
+        key_id = self.headers.get("X-Friends-Key", "")
+        ts = self.headers.get("X-Friends-Time", "")
+        nonce = self.headers.get("X-Friends-Nonce", "")
+        signature = self.headers.get("X-Friends-Signature", "")
+        if not (KEY_ID_RE.match(key_id) and TIME_RE.match(ts) and NONCE_RE.match(nonce) and signature):
+            raise ApiError(401, "unsigned", "")
+        try:
+            raw = base64.b64decode(signature, validate=True)
+        except (binascii.Error, ValueError):
+            raise ApiError(401, "unsigned", "")
+        return bytes.fromhex(key_id), ts, nonce, raw
 
     def _handle(self):
         app = self.server.app
@@ -814,18 +737,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             ip = self._client_ip()
             app.limiter.check(("all", ip), 600, 60)
-            route = None
-            path_known = False
-            for method, pattern, handler, needs_auth, max_body in ROUTES:
-                match = pattern.match(url.path)
-                if match:
-                    path_known = True
-                    if method == self.command:
-                        route = (handler, needs_auth, max_body, match)
-                        break
-            if route is None:
-                raise ApiError(405 if path_known else 404, "method_not_allowed" if path_known else "not_found", "")
-            handler, needs_auth, max_body, match = route
+            handler, auth, max_body, ip_limit, match = self._route(url.path)
+            if ip_limit is not None:
+                app.limiter.check((ip_limit[0], ip), ip_limit[1], ip_limit[2])
             if self.headers.get("Transfer-Encoding"):
                 raise ApiError(411, "length_required", "")
             try:
@@ -834,27 +748,52 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, "bad_length", "")
             if length < 0 or length > max_body:
                 raise ApiError(413, "too_large", "")
-            body = self.rfile.read(length) if length else b""
+            now = app.now()
+            req = Request(match, parse_qs(url.query), ip, now)
+            device = None
+            if auth != "none":
+                key_id, ts, nonce, signature = self._signature_headers()
+                if abs(now - int(ts)) > TIME_WINDOW_S:
+                    raise ApiError(401, "clock_skew", "", serverTime=now)
+                spki = None
+                if auth == "device":
+                    device = app.device(key_id)
+                    spki = device["spki"] if device else None
+                elif auth == "claimant":
+                    spki = app.claimant_spki(key_id)
+                if auth != "newkey" and spki is None:
+                    # Known before any signature maths, so a stranger cannot make the server work.
+                    raise ApiError(401, "unknown_key", "")
+                if app.nonces.seen(key_id, nonce, now):
+                    raise ApiError(401, "replayed", "")
+            req.body = self.rfile.read(length) if length else b""
             body_read = True
-            token = None
-            auth = self.headers.get("Authorization", "")
-            if auth.startswith("Bearer "):
-                token = auth[7:].strip()
-            user = app.user_for_token(token) if needs_auth else None
-            if needs_auth and user is None:
-                raise ApiError(401, "unauthorized", "Sign in again.")
-            result = handler(app, Request(match, parse_qs(url.query), body, ip, token, user))
+            if auth != "none":
+                if auth == "newkey":
+                    spki = spki_in_body(req.body, key_id)
+                verify(spki, signature, signing_string(self.command, self.path, ts, nonce, req.body))
+                # Recorded only now: a request that failed could not use a nonce up.
+                app.nonces.add(key_id, nonce, now)
+                req.key_id, req.spki = key_id, spki
+                if auth == "device":
+                    req.device, req.account = app.touch(device, now)
+                    if not req.trusted and self.command != "GET" and handler not in PROBATION_OK:
+                        raise ApiError(403, "probation",
+                                       "This phone joined without confirmation and can only read and upload for now.")
+            result = handler(app, req)
             status, payload = result if isinstance(result, tuple) else (200, result)
             self._send(status, payload)
         except ApiError as err:
             if not body_read:
                 # Refused before its body was read: the unread bytes must not be parsed as a next request.
                 self.close_connection = True
-            self._send(err.status, {"error": err.code, "message": err.message})
+            answer = {"error": err.code, "message": err.message}
+            answer.update(err.extra)
+            self._send(err.status, answer)
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except Exception as err:  # noqa: BLE001 - one request must never take the server down
-            sys.stderr.write("internal error on %s %s: %r\n" % (self.command, url.path, err))
+            sys.stderr.write("internal error on %s %s: %r\n" % (self.command, log_path(url.path), err))
             self._send(500, {"error": "internal", "message": ""})
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _handle
@@ -865,11 +804,11 @@ class Handler(BaseHTTPRequestHandler):
         super().finish()
 
     def log_message(self, fmt, *args):
-        # Method, path without its query, status. Never a body, a token or an address.
+        # Method, path without its query or its ids, status. Never a body, a key, a signature or an address.
         if self.server.app_quiet:
             return
         status = args[1] if len(args) > 1 else "-"
-        sys.stderr.write("%s %s %s\n" % (self.command, urlparse(self.path).path, status))
+        sys.stderr.write("%s %s %s\n" % (self.command, log_path(urlparse(self.path).path), status))
 
 
 def make_server(app, host="127.0.0.1", port=8787, quiet=False):
@@ -880,17 +819,39 @@ def make_server(app, host="127.0.0.1", port=8787, quiet=False):
     return server
 
 
+def sweep_forever(app):
+    """Once a day, forgets the accounts nobody has used for 180 days."""
+    while True:
+        time.sleep(86400)
+        try:
+            db = app.db()
+            with db:
+                app.sweep_idle(db, app.now())
+        except sqlite3.Error as err:
+            sys.stderr.write("idle sweep failed: %r\n" % (err,))
+
+
 def main():
     db_path = os.environ.get("FRIENDS_DB", "friends.db")
     host = os.environ.get("FRIENDS_BIND", "127.0.0.1")
     port = int(os.environ.get("FRIENDS_PORT", "8787"))
-    app = App(
-        db_path,
-        invite_code=os.environ.get("FRIENDS_INVITE_CODE"),
-        max_users=int(os.environ.get("FRIENDS_MAX_USERS", "500")),
-        trust_proxy=os.environ.get("FRIENDS_TRUST_PROXY", "1") == "1",
-    )
+    pepper = os.environ.get("FRIENDS_STRAP_PEPPER", "").encode("utf-8")
+    if len(pepper) < 32:
+        sys.exit("FRIENDS_STRAP_PEPPER is not set, or is shorter than 32 characters. Generate one with "
+                 "`python3 -c 'import secrets; print(secrets.token_urlsafe(48))'`, put it in the service's "
+                 "environment file, and keep a copy apart from the database.")
+    try:
+        app = App(
+            db_path,
+            pepper=pepper,
+            max_users=int(os.environ.get("FRIENDS_MAX_USERS", "500")),
+            trust_proxy=os.environ.get("FRIENDS_TRUST_PROXY", "1") == "1",
+        )
+    except OldDatabase:
+        sys.exit("%s is a version 1 friends database. Version 2 starts empty: move that file aside and "
+                 "start again. Nothing in it was changed." % db_path)
     server = make_server(app, host, port)
+    threading.Thread(target=sweep_forever, args=(app,), daemon=True).start()
     sys.stderr.write("renoop-friends listening on %s:%d, database %s\n" % (host, port, db_path))
     try:
         server.serve_forever()

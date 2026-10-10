@@ -90,6 +90,7 @@ export.zip
 
 # Python bytecode
 __pycache__/
+friends-server/.venv/
 *.pyc
 
 # Local release artifacts (zips/ipas built for upload; never tracked)

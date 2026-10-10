@@ -1,7 +1,11 @@
-"""End-to-end tests: a real server on an ephemeral port, a temporary database, plain HTTP calls."""
+"""End-to-end tests: a real server on an ephemeral port, a temporary database, signed HTTP calls."""
 
+import base64
+import hashlib
+import hmac
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 import time
@@ -9,27 +13,70 @@ import unittest
 import urllib.error
 import urllib.request
 
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
 import server
 
+PEPPER = b"p" * 32
+HOUR = 3600
+DAY = 86400
 
-class Client:
-    def __init__(self, base, token=None):
-        self.base = base
-        self.token = token
 
-    def call(self, method, path, body=None, raw=None, headers=None):
-        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
-        req = urllib.request.Request(self.base + path, data=data, method=method)
-        if self.token:
-            req.add_header("Authorization", "Bearer " + self.token)
+def handle(adopted_id):
+    """The strap handle a phone sends for a registry id such as `whoop-4A0123456`."""
+    return hashlib.sha256(("renoop-friends-strap-v1\n" + adopted_id).encode()).hexdigest()
+
+
+class Phone:
+    """One phone: its key, its address, and calls signed the way the apps sign them."""
+
+    _count = 0
+
+    def __init__(self, test, platform="ios"):
+        Phone._count += 1
+        self.test = test
+        self.platform = platform
+        # Each phone arrives from its own address, as it would through the proxy, so a per-address
+        # limit is tested where it is meant to bite and nowhere else.
+        self.ip = "10.%d.%d.%d" % (Phone._count // 62500, Phone._count // 250 % 250, Phone._count % 250 + 1)
+        self.key = ec.generate_private_key(ec.SECP256R1())
+        self.spki = self.key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        self.key_id = hashlib.sha256(self.spki).hexdigest()
+        self.id = None
+        self._nonces = 0
+
+    @property
+    def key_b64(self):
+        return base64.b64encode(self.spki).decode()
+
+    def call(self, method, path, body=None, raw=None, signed=True, ts=None, nonce=None,
+             sign_body=None, sign_path=None, sign_method=None, key_id=None, headers=None):
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else b"")
+        req = urllib.request.Request(self.test.base + path, data=data or None, method=method)
+        req.add_header("X-Forwarded-For", self.ip)
         if body is not None:
             req.add_header("Content-Type", "application/json")
+        if signed:
+            ts = str(int(self.test.now)) if ts is None else str(ts)
+            if nonce is None:
+                self._nonces += 1
+                nonce = "n%021d" % self._nonces
+            message = server.signing_string(sign_method or method, sign_path or path, ts, nonce,
+                                            data if sign_body is None else sign_body)
+            signature = self.key.sign(message, ec.ECDSA(hashes.SHA256()))
+            req.add_header("X-Friends-Key", key_id or self.key_id)
+            req.add_header("X-Friends-Time", ts)
+            req.add_header("X-Friends-Nonce", nonce)
+            req.add_header("X-Friends-Signature", base64.b64encode(signature).decode())
         for key, value in (headers or {}).items():
             req.add_header(key, value)
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 payload = resp.read()
                 kind = resp.headers.get("Content-Type", "")
+                self.last_headers = resp.headers
                 return resp.status, (json.loads(payload) if kind.startswith("application/json") else payload)
         except urllib.error.HTTPError as err:
             with err:
@@ -40,12 +87,12 @@ class Client:
 class FriendsServerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.app = server.App(os.path.join(self.tmp.name, "t.db"), trust_proxy=True)
+        self.db_path = os.path.join(self.tmp.name, "t.db")
+        self.now = 1_791_540_000.0
+        self.app = server.App(self.db_path, pepper=PEPPER, clock=lambda: self.now)
         self.httpd = server.make_server(self.app, "127.0.0.1", 0, quiet=True)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.base = "http://127.0.0.1:%d" % self.httpd.server_address[1]
-        self.anon = Client(self.base)
-        self._ip = 0
 
     def tearDown(self):
         self.httpd.shutdown()
@@ -53,273 +100,192 @@ class FriendsServerTest(unittest.TestCase):
         self.app.close_db()
         self.tmp.cleanup()
 
-    def signup(self, nick, name=None, password="correct horse"):
-        # Each sign-up arrives from its own address, as it would through the proxy, so the
-        # per-address sign-up limit is tested where it is meant to bite and nowhere else.
-        self._ip += 1
-        status, body = self.anon.call(
-            "POST", "/v1/register", {"nick": nick, "name": name or nick.title(), "password": password},
-            headers={"X-Forwarded-For": "10.0.0.%d" % self._ip})
-        self.assertEqual(201, status, body)
-        return Client(self.base, body["token"])
+    def advance(self, seconds):
+        self.now += seconds
 
-    def befriend(self, a, a_nick, b, b_nick):
-        self.assertEqual(200, a.call("POST", "/v1/friends/requests", {"nick": b_nick})[0])
-        self.assertEqual(200, b.call("POST", "/v1/friends/requests/%s/accept" % a_nick)[0])
+    def rows(self, sql, args=()):
+        """Reads the database directly, for what no call exposes."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(sql, args).fetchall()
+        finally:
+            conn.close()
 
-    def today(self):
-        return time.strftime("%Y-%m-%d", time.gmtime())
+    def enroll(self, name, serial=None, platform="ios"):
+        phone = Phone(self, platform)
+        body = {"key": phone.key_b64, "name": name, "platform": platform}
+        if serial is not None:
+            body["strap"] = handle(serial)
+        status, answer = phone.call("POST", "/v2/enroll", body)
+        self.assertEqual(201, status, answer)
+        phone.id = answer["me"]["id"]
+        return phone
 
-    def full_day(self):
-        now = int(time.time())
-        return {
-            "recovery": 81, "strain": 38.6, "sleepScore": 88,
-            "sleep": {"startTs": now - 30000, "endTs": now - 1000, "asleepMin": 474, "awakeMin": 18,
-                      "remMin": 104, "lightMin": 252, "deepMin": 100, "needMin": 495},
-            "workouts": [{"startTs": now - 900, "sport": "Running", "durationS": 1860, "strain": 35.2,
-                          "avgHr": 139, "maxHr": 162, "kcal": 310}],
-            "hr": {"lastBpm": 62, "lastTs": now - 60, "restingBpm": 51, "series": [[now - 120, 64], [now - 60, 62]]},
-        }
+    # --- the frame ---
 
-    # --- accounts ---
-
-    def test_register_login_and_profile(self):
-        ruslan = self.signup("ruslan", "Руслан")
-        status, me = ruslan.call("GET", "/v1/me")
+    def test_health_and_info_need_no_signature(self):
+        anyone = Phone(self)
+        self.assertEqual((200, {"ok": True}), anyone.call("GET", "/healthz", signed=False))
+        status, info = anyone.call("GET", "/v2/info", signed=False)
         self.assertEqual(200, status)
-        self.assertEqual({"nick": "ruslan", "name": "Руслан", "avatarRev": 0,
-                          "share": {"scores": True, "sleep": True, "workouts": True, "hr": False}}, me)
-        status, body = self.anon.call("POST", "/v1/login", {"nick": "@Ruslan", "password": "correct horse"})
-        self.assertEqual(200, status)
-        self.assertEqual(200, Client(self.base, body["token"]).call("GET", "/v1/me")[0])
+        self.assertEqual({"name": "renoop-friends", "api": 2, "time": int(self.now)}, info)
 
-    def test_sign_up_needs_only_a_nickname_and_a_password(self):
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "Ruslan", "password": "correct horse"})
-        self.assertEqual(201, status)
-        self.assertEqual(("ruslan", "ruslan"), (body["me"]["nick"], body["me"]["name"]))
-        renamed = Client(self.base, body["token"]).call("PATCH", "/v1/me", {"name": "Руслан"})[1]
-        self.assertEqual("Руслан", renamed["name"])
+    def test_the_signing_string_is_the_contracts(self):
+        text = server.signing_string("PUT", "/v2/me/days/2026-10-10", "1791540000",
+                                     "AAAAAAAAAAAAAAAAAAAAAA", b'{"recovery":81}')
+        self.assertEqual(
+            b"renoop-friends-v2\nPUT\n/v2/me/days/2026-10-10\n1791540000\nAAAAAAAAAAAAAAAAAAAAAA\n"
+            b"a59ed6f5a3416c9b116d6d17ca709ffab4e839735f21ea3c8d301a045f567445", text)
+        spki = base64.b64decode(
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZ/iGnmqlOeIlaOq9cf3gYSDRWcoyKOiHtx1m7TC7Wnr6CDeXUMf1QOVArjNKQgNPyKXVXw0/"
+            "9N1Iyj8xadf1YA==")
+        self.assertEqual("b9310888608f332f9d712a19e65fd9a088948406f04240f82a4e50843774784a",
+                         hashlib.sha256(spki).hexdigest())
+        signature = base64.b64decode(
+            "MEYCIQCbv6DGgAsKyGcPSjPiv6/b8i3IJZkUCmkxZt2/mg+nBgIhAPIfodgQQUa5TD0KWsCpCIKzIgtAwstLtonCzIHZLJMQ")
+        server.verify(spki, signature, text)
+        with self.assertRaises(server.ApiError):
+            server.verify(spki, signature, text + b" ")
 
-    def test_wrong_password_and_unknown_nick_read_the_same(self):
-        self.signup("ruslan")
-        wrong = self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "not the one"})
-        missing = self.anon.call("POST", "/v1/login", {"nick": "nobody", "password": "not the one"})
-        self.assertEqual((401, "bad_credentials"), (wrong[0], wrong[1]["error"]))
-        self.assertEqual(wrong, missing)
+    def test_enrolling_makes_an_account_and_a_trusted_phone(self):
+        ruslan = self.enroll("Руслан")
+        status, me = ruslan.call("GET", "/v2/me")
+        self.assertEqual(200, status, me)
+        self.assertRegex(me["id"], r"^[0-9a-f]{16}$")
+        self.assertEqual({"id": me["id"], "name": "Руслан", "avatarRev": 0,
+                          "share": {"scores": True, "sleep": True, "workouts": True, "hr": False},
+                          "strapBound": False,
+                          "device": {"id": ruslan.key_id, "probationUntil": None}}, me)
 
-    def test_nick_rules_and_uniqueness(self):
-        self.signup("ruslan")
-        for bad in ("ab", "has space", "кириллица", "x" * 21):
-            status, body = self.anon.call("POST", "/v1/register", {"nick": bad, "name": "N", "password": "12345678"})
-            self.assertEqual((400, "bad_nick"), (status, body["error"]), bad)
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "RUSLAN", "name": "N", "password": "12345678"})
-        self.assertEqual((409, "nick_taken"), (status, body["error"]))
-        self.assertEqual({"nick": "ruslan", "free": False}, self.anon.call("GET", "/v1/nicks/ruslan")[1])
-        self.assertEqual({"nick": "denchik", "free": True}, self.anon.call("GET", "/v1/nicks/denchik")[1])
+    def test_enrolling_twice_with_one_key_is_one_account(self):
+        phone = self.enroll("Anna")
+        status, again = phone.call("POST", "/v2/enroll", {"key": phone.key_b64, "name": "Other", "platform": "ios"})
+        self.assertEqual(200, status, again)
+        self.assertEqual(phone.id, again["me"]["id"])
+        self.assertEqual("Anna", again["me"]["name"])
+        self.assertEqual(1, self.rows("SELECT COUNT(*) FROM accounts")[0][0])
 
-    def test_short_password_refused(self):
-        status, body = self.anon.call("POST", "/v1/register", {"nick": "ruslan", "name": "R", "password": "1234567"})
-        self.assertEqual((400, "bad_password"), (status, body["error"]))
+    def test_a_signed_route_refuses_an_unsigned_request(self):
+        phone = self.enroll("Anna")
+        status, body = phone.call("GET", "/v2/me", signed=False)
+        self.assertEqual((401, "unsigned"), (status, body["error"]))
 
-    def test_everything_but_sign_in_needs_a_session(self):
-        for method, path in (("GET", "/v1/me"), ("GET", "/v1/feed"), ("GET", "/v1/users/ruslan"),
-                             ("PUT", "/v1/me/days/" + self.today()), ("GET", "/v1/friends/requests")):
-            self.assertEqual(401, self.anon.call(method, path, {} if method == "PUT" else None)[0], path)
-        self.assertEqual(401, Client(self.base, "made-up-token").call("GET", "/v1/me")[0])
+    def test_a_key_the_server_does_not_know_is_refused(self):
+        stranger = Phone(self)
+        status, body = stranger.call("GET", "/v2/me")
+        self.assertEqual((401, "unknown_key"), (status, body["error"]))
 
-    def test_logout_ends_only_that_session(self):
-        first = self.signup("ruslan")
-        second = Client(self.base, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "correct horse"})[1]["token"])
-        self.assertEqual(204, first.call("DELETE", "/v1/session")[0])
-        self.assertEqual(401, first.call("GET", "/v1/me")[0])
-        self.assertEqual(200, second.call("GET", "/v1/me")[0])
+    def test_a_signature_over_anything_else_is_refused(self):
+        phone = self.enroll("Anna")
+        for changed in ({"sign_path": "/v2/me?x=1"}, {"sign_method": "POST"}, {"sign_body": b"x"}):
+            status, body = phone.call("GET", "/v2/me", **changed)
+            self.assertEqual((401, "bad_signature"), (status, body["error"]), changed)
+        # Another phone's key id over this phone's signature is not this phone.
+        other = self.enroll("Max")
+        status, body = phone.call("GET", "/v2/me", key_id=other.key_id)
+        self.assertEqual((401, "bad_signature"), (status, body["error"]))
 
-    def test_password_change_signs_other_phones_out(self):
-        phone = self.signup("ruslan")
-        other = Client(self.base, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "correct horse"})[1]["token"])
-        self.assertEqual(401, phone.call("POST", "/v1/me/password", {"old": "nope nope", "new": "new password"})[0])
-        status, body = phone.call("POST", "/v1/me/password", {"old": "correct horse", "new": "new password"})
-        self.assertEqual(200, status)
-        self.assertEqual(401, other.call("GET", "/v1/me")[0])
-        self.assertEqual(401, phone.call("GET", "/v1/me")[0])
-        self.assertEqual(200, Client(self.base, body["token"]).call("GET", "/v1/me")[0])
-        self.assertEqual(200, self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "new password"})[0])
+    def test_a_time_outside_the_window_answers_with_the_servers_clock(self):
+        phone = self.enroll("Anna")
+        for skew in (-301, 301):
+            status, body = phone.call("GET", "/v2/me", ts=int(self.now) + skew)
+            self.assertEqual((401, "clock_skew"), (status, body["error"]))
+            self.assertEqual(int(self.now), body["serverTime"])
+        self.assertEqual(200, phone.call("GET", "/v2/me", ts=int(self.now) - 300)[0])
 
-    def test_invite_code_gates_sign_up_when_set(self):
-        self.app.invite_code = "let-me-in"
-        self.assertTrue(self.anon.call("GET", "/v1/info")[1]["inviteRequired"])
-        body = {"nick": "ruslan", "name": "R", "password": "12345678"}
-        self.assertEqual(403, self.anon.call("POST", "/v1/register", body)[0])
-        self.assertEqual(403, self.anon.call("POST", "/v1/register", dict(body, invite="guess"))[0])
-        self.assertEqual(201, self.anon.call("POST", "/v1/register", dict(body, invite="let-me-in"))[0])
+    def test_a_nonce_is_good_once(self):
+        phone = self.enroll("Anna")
+        self.assertEqual(200, phone.call("GET", "/v2/me", nonce="once-once-once-once")[0])
+        status, body = phone.call("GET", "/v2/me", nonce="once-once-once-once")
+        self.assertEqual((401, "replayed"), (status, body["error"]))
+        # A request that failed its signature did not use its nonce up.
+        self.assertEqual(401, phone.call("GET", "/v2/me", nonce="twice-twice-twice-twice", sign_body=b"x")[0])
+        self.assertEqual(200, phone.call("GET", "/v2/me", nonce="twice-twice-twice-twice")[0])
 
-    def test_sign_up_is_limited_per_address(self):
-        codes = [self.anon.call("POST", "/v1/register", {"nick": "user_%d" % i, "name": "U", "password": "12345678"},
-                                headers={"X-Forwarded-For": "203.0.113.9"})[0] for i in range(6)]
-        self.assertEqual([201] * 5 + [429], codes)
+    def test_the_key_in_the_body_must_be_a_p256_key_and_the_one_in_the_header(self):
+        phone = Phone(self)
+        other = Phone(self)
+        status, body = phone.call("POST", "/v2/enroll", {"key": other.key_b64, "name": "A", "platform": "ios"})
+        self.assertEqual((400, "bad_key"), (status, body["error"]))
+        status, body = phone.call("POST", "/v2/enroll", {"key": "bm90IGEga2V5", "name": "A", "platform": "ios"})
+        self.assertEqual((400, "bad_key"), (status, body["error"]))
+        big = Phone(self)
+        big.key = ec.generate_private_key(ec.SECP384R1())
+        big.spki = big.key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        big.key_id = hashlib.sha256(big.spki).hexdigest()
+        status, body = big.call("POST", "/v2/enroll", {"key": big.key_b64, "name": "A", "platform": "ios"})
+        self.assertEqual((400, "bad_key"), (status, body["error"]))
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM accounts")[0][0])
 
-    def test_login_is_limited_per_nick(self):
-        self.signup("ruslan")
-        codes = [self.anon.call("POST", "/v1/login", {"nick": "ruslan", "password": "guess %d" % i},
-                                headers={"X-Forwarded-For": "198.51.100.%d" % i})[0] for i in range(11)]
-        self.assertEqual([401] * 10 + [429], codes)
+    def test_names_and_platforms_are_checked(self):
+        phone = Phone(self)
+        for body, code in (({"key": phone.key_b64, "name": "", "platform": "ios"}, "bad_name"),
+                           ({"key": phone.key_b64, "name": "x" * 41, "platform": "ios"}, "bad_name"),
+                           ({"key": phone.key_b64, "name": "A", "platform": "windows"}, "bad_platform"),
+                           ({"key": phone.key_b64, "name": "A", "platform": "ios", "nick": "a"}, "bad_payload")):
+            status, answer = phone.call("POST", "/v2/enroll", body)
+            self.assertEqual((400, code), (status, answer["error"]), body)
 
-    # --- friends ---
+    def test_a_bound_strap_refuses_a_second_enrolment(self):
+        self.enroll("Anna", serial="whoop-4A0123456")
+        second = Phone(self)
+        status, body = second.call("POST", "/v2/enroll", {
+            "key": second.key_b64, "name": "Max", "platform": "ios", "strap": handle("whoop-4A0123456")})
+        self.assertEqual((409, "strap_bound"), (status, body["error"]))
+        self.assertEqual(1, self.rows("SELECT COUNT(*) FROM accounts")[0][0])
+        status, body = second.call("POST", "/v2/enroll", {
+            "key": second.key_b64, "name": "Max", "platform": "ios", "strap": "not-a-handle"})
+        self.assertEqual((400, "bad_strap"), (status, body["error"]))
 
-    def test_request_accept_and_relations(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik", "Денис")
-        self.assertEqual("none", ruslan.call("GET", "/v1/users/denchik")[1]["relation"])
-        self.assertEqual("outgoing", ruslan.call("POST", "/v1/friends/requests", {"nick": "@denchik"})[1]["relation"])
-        self.assertEqual("incoming", denis.call("GET", "/v1/users/ruslan")[1]["relation"])
-        inbox = denis.call("GET", "/v1/friends/requests")[1]
-        self.assertEqual(["ruslan"], [r["nick"] for r in inbox["incoming"]])
-        self.assertEqual(["denchik"], [r["nick"] for r in ruslan.call("GET", "/v1/friends/requests")[1]["outgoing"]])
-        self.assertEqual(1, denis.call("GET", "/v1/feed")[1]["pendingIncoming"])
-        self.assertEqual("friend", denis.call("POST", "/v1/friends/requests/ruslan/accept")[1]["relation"])
-        self.assertEqual("friend", ruslan.call("GET", "/v1/users/denchik")[1]["relation"])
-        self.assertEqual({"incoming": [], "outgoing": []}, denis.call("GET", "/v1/friends/requests")[1])
+    def test_the_pepper_keys_what_is_stored_for_a_strap(self):
+        self.enroll("Anna", serial="whoop-4A0123456")
+        stored = self.rows("SELECT strap FROM accounts")[0][0]
+        sent = bytes.fromhex(handle("whoop-4A0123456"))
+        self.assertEqual("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707", sent.hex())
+        self.assertNotEqual(sent, stored)
+        self.assertEqual(hmac.new(PEPPER, sent, hashlib.sha256).digest(), stored)
 
-    def test_two_crossing_requests_make_a_friendship(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik")
-        ruslan.call("POST", "/v1/friends/requests", {"nick": "denchik"})
-        self.assertEqual("friend", denis.call("POST", "/v1/friends/requests", {"nick": "ruslan"})[1]["relation"])
+    def test_enrolment_is_limited_per_address(self):
+        ip = {"X-Forwarded-For": "10.250.0.1"}
+        for i in range(5):
+            phone = Phone(self)
+            body = {"key": phone.key_b64, "name": "P%d" % i, "platform": "ios"}
+            self.assertEqual(201, phone.call("POST", "/v2/enroll", body, headers=ip)[0])
+        phone = Phone(self)
+        status, body = phone.call("POST", "/v2/enroll", {"key": phone.key_b64, "name": "P", "platform": "ios"}, headers=ip)
+        self.assertEqual((429, "rate_limited"), (status, body["error"]))
 
-    def test_decline_withdraw_and_no_self_request(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik")
-        self.assertEqual(400, ruslan.call("POST", "/v1/friends/requests", {"nick": "ruslan"})[0])
-        self.assertEqual(404, ruslan.call("POST", "/v1/friends/requests", {"nick": "nobody_here"})[0])
-        ruslan.call("POST", "/v1/friends/requests", {"nick": "denchik"})
-        self.assertEqual(204, denis.call("DELETE", "/v1/friends/requests/ruslan")[0])
-        self.assertEqual("none", ruslan.call("GET", "/v1/users/denchik")[1]["relation"])
-        self.assertEqual(404, denis.call("POST", "/v1/friends/requests/ruslan/accept")[0])
+    def test_the_server_holds_only_so_many_accounts(self):
+        self.app.max_users = 1
+        self.enroll("Anna")
+        phone = Phone(self)
+        status, body = phone.call("POST", "/v2/enroll", {"key": phone.key_b64, "name": "Max", "platform": "ios"})
+        self.assertEqual((403, "server_full"), (status, body["error"]))
 
-    def test_a_stranger_sees_nothing_and_a_friend_sees_only_what_is_shared(self):
-        ruslan, denis, misha = self.signup("ruslan"), self.signup("denchik"), self.signup("mishka")
-        self.assertEqual(204, denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())[0])
-        self.befriend(ruslan, "ruslan", denis, "denchik")
+    def test_a_version_1_database_is_refused_and_left_alone(self):
+        old = os.path.join(self.tmp.name, "old.db")
+        conn = sqlite3.connect(old)
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, nick TEXT)")
+        conn.execute("INSERT INTO users(nick) VALUES ('ruslan')")
+        conn.commit()
+        conn.close()
+        with self.assertRaises(server.OldDatabase):
+            server.App(old, pepper=PEPPER)
+        conn = sqlite3.connect(old)
+        self.assertEqual([("ruslan",)], conn.execute("SELECT nick FROM users").fetchall())
+        self.assertEqual([("users",)], conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall())
+        conn.close()
 
-        self.assertEqual([], misha.call("GET", "/v1/feed")[1]["friends"])
-        friend = ruslan.call("GET", "/v1/feed")[1]["friends"][0]
-        self.assertEqual("denchik", friend["nick"])
-        day = friend["days"][0]
-        self.assertEqual((81, 38.6, 88), (day["recovery"], day["strain"], day["sleepScore"]))
-        self.assertEqual(474, day["sleep"]["asleepMin"])
-        self.assertEqual("Running", day["workouts"][0]["sport"])
-        self.assertNotIn("hr", day)  # heart rate is off unless its owner turns it on
-        self.assertEqual(self.today(), day["day"])
-
-    def test_the_heart_rate_line_is_on_a_persons_page_not_in_the_feed(self):
-        ruslan, denis, misha = self.signup("ruslan"), self.signup("denchik"), self.signup("mishka")
-        self.befriend(ruslan, "ruslan", denis, "denchik")
-        denis.call("PATCH", "/v1/me", {"share": {"hr": True}})
-        denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())
-        in_feed = ruslan.call("GET", "/v1/feed")[1]["friends"][0]["days"][0]["hr"]
-        self.assertEqual(62, in_feed["lastBpm"])
-        self.assertNotIn("series", in_feed)
-        status, page = ruslan.call("GET", "/v1/users/denchik/days?days=3")
-        self.assertEqual(200, status)
-        self.assertEqual(2, len(page["days"][0]["hr"]["series"]))
-        self.assertEqual(200, denis.call("GET", "/v1/users/denchik/days")[0])
-        # Not a friend: the same answer as for a nickname nobody has.
-        self.assertEqual(misha.call("GET", "/v1/users/nobody_here/days"), misha.call("GET", "/v1/users/denchik/days"))
-
-    def test_switching_a_section_off_erases_what_was_uploaded(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik")
-        self.befriend(ruslan, "ruslan", denis, "denchik")
-        self.assertEqual(200, denis.call("PATCH", "/v1/me", {"share": {"hr": True}})[0])
-        denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())
-        self.assertIn("hr", ruslan.call("GET", "/v1/feed")[1]["friends"][0]["days"][0])
-
-        denis.call("PATCH", "/v1/me", {"share": {"hr": False, "sleep": False}})
-        day = ruslan.call("GET", "/v1/feed")[1]["friends"][0]["days"][0]
-        self.assertNotIn("hr", day)
-        self.assertNotIn("sleep", day)
-        self.assertIn("recovery", day)
-        # Turning it back on does not bring the erased figures back: they are gone from the database.
-        denis.call("PATCH", "/v1/me", {"share": {"hr": True}})
-        self.assertNotIn("hr", denis.call("GET", "/v1/feed")[1]["me"]["days"][0])
-        stored = self.app.db().execute("SELECT payload FROM days").fetchone()[0]
-        self.assertNotIn("lastBpm", stored)
-        self.assertNotIn("asleepMin", stored)
-
-    def test_unfriending_cuts_both_directions(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik")
-        self.befriend(ruslan, "ruslan", denis, "denchik")
-        self.assertEqual(204, ruslan.call("DELETE", "/v1/friends/denchik")[0])
-        self.assertEqual([], ruslan.call("GET", "/v1/feed")[1]["friends"])
-        self.assertEqual([], denis.call("GET", "/v1/feed")[1]["friends"])
-
-    def test_deleting_an_account_removes_every_trace(self):
-        ruslan, denis = self.signup("ruslan"), self.signup("denchik")
-        self.befriend(ruslan, "ruslan", denis, "denchik")
-        denis.call("PUT", "/v1/me/days/" + self.today(), self.full_day())
-        self.assertEqual(401, denis.call("POST", "/v1/me/delete", {"password": "wrong one"})[0])
-        self.assertEqual(204, denis.call("POST", "/v1/me/delete", {"password": "correct horse"})[0])
-        self.assertEqual(401, denis.call("GET", "/v1/me")[0])
-        self.assertEqual([], ruslan.call("GET", "/v1/feed")[1]["friends"])
-        db = self.app.db()
-        for table in ("days", "friendships", "requests"):
-            self.assertEqual(0, db.execute("SELECT COUNT(*) FROM %s" % table).fetchone()[0], table)
-        self.assertEqual(1, db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0])
-        self.assertTrue(self.anon.call("GET", "/v1/nicks/denchik")[1]["free"])
-
-    # --- uploads ---
-
-    def test_upload_refuses_anything_outside_the_contract(self):
-        ruslan = self.signup("ruslan")
-        path = "/v1/me/days/" + self.today()
-        now = int(time.time())
-        bad = [
-            {"recovery": 101}, {"recovery": "81"}, {"recovery": True}, {"strain": -1}, {"unknown": 1},
-            {"sleep": {"startTs": now, "endTs": now - 5, "asleepMin": 10}},
-            {"sleep": {"startTs": now - 50, "endTs": now, "asleepMin": 10, "note": "x"}},
-            {"workouts": [{"startTs": now, "sport": "", "durationS": 5}]},
-            {"workouts": [{"startTs": now, "sport": "Run", "durationS": 5, "route": "encoded"}]},
-            {"workouts": [{"startTs": now, "sport": "Run", "durationS": 5}] * 21},
-            {"hr": {"lastBpm": 62, "lastTs": now, "series": [[now, 62]] * 301}},
-            {"hr": {"lastBpm": 5, "lastTs": now}},
-        ]
-        for body in bad:
-            status, err = ruslan.call("PUT", path, body)
-            self.assertEqual((400, "bad_payload"), (status, err["error"]), body)
-        self.assertEqual(400, ruslan.call("PUT", path, raw=b"[1,2]")[0])
-        self.assertEqual(400, ruslan.call("PUT", "/v1/me/days/2020-01-01", {"recovery": 50})[0])
-        self.assertEqual(413, ruslan.call("PUT", path, raw=b" " * (server.MAX_JSON_BYTES + 1))[0])
-        self.assertEqual([], ruslan.call("GET", "/v1/feed")[1]["me"]["days"])
-
-    def test_a_later_upload_replaces_the_day(self):
-        ruslan = self.signup("ruslan")
-        path = "/v1/me/days/" + self.today()
-        ruslan.call("PUT", path, {"recovery": 60, "strain": 10})
-        ruslan.call("PUT", path, {"recovery": 67})
-        day = ruslan.call("GET", "/v1/feed")[1]["me"]["days"][0]
-        self.assertEqual(67, day["recovery"])
-        self.assertNotIn("strain", day)
-
-    # --- avatars ---
-
-    def test_avatar_is_visible_to_friends_only(self):
-        ruslan, denis, misha = self.signup("ruslan"), self.signup("denchik"), self.signup("mishka")
-        jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 64
-        self.assertEqual(415, denis.call("PUT", "/v1/me/avatar", raw=b"<svg></svg>")[0])
-        self.assertEqual(413, denis.call("PUT", "/v1/me/avatar", raw=jpeg + b"\x00" * server.MAX_AVATAR_BYTES)[0])
-        status, me = denis.call("PUT", "/v1/me/avatar", raw=jpeg)
-        self.assertEqual((200, 1), (status, me["avatarRev"]))
-        self.assertEqual((200, jpeg), denis.call("GET", "/v1/users/denchik/avatar"))
-        self.assertEqual(404, ruslan.call("GET", "/v1/users/denchik/avatar")[0])
-        self.befriend(ruslan, "ruslan", denis, "denchik")
-        self.assertEqual((200, jpeg), ruslan.call("GET", "/v1/users/denchik/avatar"))
-        self.assertEqual(404, misha.call("GET", "/v1/users/denchik/avatar")[0])
-        self.assertEqual(204, denis.call("DELETE", "/v1/me/avatar")[0])
-        self.assertEqual(0, denis.call("GET", "/v1/me")[1]["avatarRev"])
-
-    # --- plumbing ---
+    def test_a_short_pepper_is_refused(self):
+        with self.assertRaises(ValueError):
+            server.App(os.path.join(self.tmp.name, "p.db"), pepper=b"short")
 
     def test_unknown_paths_and_methods(self):
-        self.assertEqual(404, self.anon.call("GET", "/v1/nope")[0])
-        self.assertEqual(405, self.anon.call("DELETE", "/v1/register")[0])
-        self.assertEqual({"ok": True}, self.anon.call("GET", "/healthz")[1])
-        self.assertEqual(1, self.anon.call("GET", "/v1/info")[1]["api"])
+        phone = self.enroll("Anna")
+        self.assertEqual(404, phone.call("GET", "/v2/nope")[0])
+        self.assertEqual(404, phone.call("GET", "/v1/me")[0])
+        self.assertEqual(405, phone.call("DELETE", "/v2/info", signed=False)[0])
 
 
 if __name__ == "__main__":
