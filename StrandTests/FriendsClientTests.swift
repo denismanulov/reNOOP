@@ -111,6 +111,7 @@ final class FriendsClientTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        Self.restoreHostProfile()
         Stub.answers = [:]
         Stub.redirects = [:]
         Stub.seen = []
@@ -482,7 +483,7 @@ final class FriendsClientTests: XCTestCase {
         await store.turnOn(name: "Other")
         await store.claimAccount(name: "Other")
         Stub.answers["GET /v2/claims/mine"] = [(200, claim("pending")), (200, claim("approved"))]
-        Stub.answers["GET /v2/me"] = [(200, Self.me)]
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
         Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
         await store.pollClaim()
         guard case .waiting = store.phase else { return XCTFail("left waiting on a pending claim") }
@@ -490,7 +491,17 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .on)
         XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
         XCTAssertNil(defaults.string(forKey: FriendsStore.pushedNameKey))
-        XCTAssertFalse(Stub.seen.contains { $0.method == "PATCH" })
+        // The upload run is where a profile would be sent: with a name and a photo of its own, this
+        // phone still sends neither, and records them as the ones it last sent.
+        Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        await store.uploadRecentDays(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Other", photo: Self.jpeg))
+        XCTAssertEqual(sent("GET", "/v2/me").count, 2, "the run reached the server")
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Other")
     }
 
     @MainActor
@@ -658,6 +669,163 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(Stub.seen.first?.path, "/v2/enroll")
         XCTAssertEqual(Stub.seen.first?.headers["X-Friends-Key"], store.deviceID)
         XCTAssertEqual(FriendsKey.load(server: Self.base, storage: keys)?.keyID, store.deviceID)
+    }
+
+    // MARK: - The upload run
+
+    private static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0]) + Data(repeating: 0x30, count: 64)
+
+    private static let hostProfileKeys = ["profile.displayName", "profile.avatarImageData"]
+    private static let keptHostProfileKey = "tests.friends.keptProfile"
+
+    /// Puts back the name and photo the test host's own defaults held before a test replaced them.
+    /// What was there is kept in the defaults themselves until then, so a run that died mid-test is
+    /// put right by the next one (`setUp` calls this too).
+    private static func restoreHostProfile() {
+        let standard = UserDefaults.standard
+        guard let kept = standard.dictionary(forKey: keptHostProfileKey) else { return }
+        for key in hostProfileKeys {
+            if let value = kept[key] { standard.set(value, forKey: key) } else { standard.removeObject(forKey: key) }
+        }
+        standard.removeObject(forKey: keptHostProfileKey)
+    }
+
+    /// A profile with the name and photo a test needs. `ProfileStore` keeps both in the test host's own
+    /// defaults, so what was there is put back when the test ends.
+    @MainActor
+    private func profile(name: String, photo: Data? = nil) -> ProfileStore {
+        let standard = UserDefaults.standard
+        if standard.dictionary(forKey: Self.keptHostProfileKey) == nil {
+            var kept: [String: Any] = [:]
+            for key in Self.hostProfileKeys { kept[key] = standard.object(forKey: key) }
+            standard.set(kept, forKey: Self.keptHostProfileKey)
+        }
+        addTeardownBlock { Self.restoreHostProfile() }
+        let profile = ProfileStore()
+        profile.displayName = name
+        profile.avatarImageData = photo
+        return profile
+    }
+
+    /// Friends on, as an enrolment answered `status` leaves it, with the requests so far forgotten.
+    @MainActor
+    private func turnedOn(_ identity: FriendsStrap.Identity, enrolAnswer status: Int = 201,
+                          name: String = "Anna") async throws -> (FriendsStore, UserDefaults) {
+        let (store, defaults) = try store(identity)
+        Stub.answers["POST /v2/enroll"] = [(status, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: name)
+        XCTAssertEqual(store.phase, .on)
+        Stub.seen = []
+        return (store, defaults)
+    }
+
+    private func sent(_ method: String, _ path: String) -> [Stub.Seen] {
+        Stub.seen.filter { $0.method == method && $0.path == path }
+    }
+
+    /// The strap worn goes to the server when it is not the one the server last accepted. Accepted, it
+    /// is recorded and not sent again; asked of the account that holds it, it is asked again every run.
+    @MainActor
+    func testTheUploadRunBindsTheStrapWornAndAsksAgainForOneThatIsSomeoneElses() async throws {
+        let (store, defaults) = try await turnedOn(.handle(Self.handle))
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna")
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").map { String(decoding: $0.body, as: UTF8.self) },
+                       [#"{"strap":"\#(Self.handle)"}"#])
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.boundHandleKey), Self.handle)
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").count, 1, "an accepted strap is not sent again")
+
+        // Another strap is worn, and it belongs to another account.
+        let other = String(repeating: "ab", count: 32)
+        store.strapIdentity = { .handle(other) }
+        Stub.answers["PUT /v2/me/strap"] = [(202, #"{"claim":{"id":7,"kind":"take","code":"481902","state":"pending","platform":"ios","createdAt":1791540000,"maturesAt":1791712800}}"#)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").count, 2)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.boundHandleKey), Self.handle, "asked for is not accepted")
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").count, 3, "asked again until it is settled")
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").last.map { String(decoding: $0.body, as: UTF8.self) }, #"{"strap":"\#(other)"}"#)
+    }
+
+    /// A phone that joined an account records its own name and photo as sent without sending them,
+    /// once. After that it sends what the wearer changes on this phone, once per change.
+    @MainActor
+    func testAPhoneThatJoinedSendsItsProfileOnlyAfterAChangeMadeHere() async throws {
+        let (store, defaults) = try await turnedOn(.none, enrolAnswer: 200, name: "Other")
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Other", photo: Self.jpeg)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("GET", "/v2/me").count, 1, "the run reached the server")
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey), "joining is recorded once")
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
+
+        profile.displayName = "Renamed"
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PATCH", "/v2/me").map { String(decoding: $0.body, as: UTF8.self) }, [#"{"name":"Renamed"}"#])
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PATCH", "/v2/me").count, 1, "a name already sent is not sent again")
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty, "the photo did not change")
+    }
+
+    /// A phone that joined without confirmation uploads its days and nothing else: neither the strap
+    /// nor the profile goes until it is confirmed.
+    @MainActor
+    func testAPhoneOnProbationSendsNeitherItsStrapNorItsProfile() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Renamed", photo: Self.jpeg)
+        let onProbation = Self.meSharingNothing.replacingOccurrences(of: #""probationUntil":null"#, with: #""probationUntil":1792104800"#)
+        XCTAssertNotEqual(onProbation, Self.meSharingNothing)
+        Stub.answers["GET /v2/me"] = [(200, onProbation)]
+        Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertTrue(sent("PUT", "/v2/me/strap").isEmpty)
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
+        XCTAssertTrue(Stub.seen.contains { $0.method == "PUT" && $0.path.hasPrefix("/v2/me/days/") }, "its days still go up")
+
+        // Confirmed: the same run now sends all three.
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").count, 1)
+        XCTAssertEqual(sent("PATCH", "/v2/me").count, 1)
+        XCTAssertEqual(sent("PUT", "/v2/me/avatar").count, 1)
+    }
+
+    /// Switching Photo off removes the server's copy of a picture this phone sent, once.
+    @MainActor
+    func testSwitchingThePhotoOffDeletesTheServersCopy() async throws {
+        let (store, defaults) = try await turnedOn(.none)
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna", photo: Self.jpeg)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        Stub.answers["DELETE /v2/me/avatar"] = [(204, "")]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PUT", "/v2/me/avatar").map(\.body), [Self.jpeg])
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedPhotoKey), FriendsUploadPolicy.fingerprint(Self.jpeg))
+        XCTAssertTrue(sent("DELETE", "/v2/me/avatar").isEmpty)
+
+        await store.setSharePhoto(false, repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedPhotoKey), "off")
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1, "a copy already removed is not removed again")
+        XCTAssertEqual(sent("PUT", "/v2/me/avatar").count, 1)
     }
 
     @MainActor
