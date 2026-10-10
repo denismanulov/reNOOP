@@ -102,7 +102,7 @@ signature has verified, so requests that fail cannot fill the cache.
 - **Nonce:** the server remembers `(key id, nonce)` for 600 s in memory and answers `401 replayed` to
   a repeat. A restart forgets the cache, which only widens replay to the 300 s window; every mutating
   call is idempotent or one-shot, so a replay inside it changes nothing.
-- A wrong signature is `401 bad_signature`.
+- A wrong signature is `401 bad_signature`; a missing or malformed signature header is `401 unsigned`.
 
 Signature verification uses the `cryptography` package (Debian/Ubuntu `python3-cryptography`), the
 server's only dependency beyond the standard library.
@@ -289,8 +289,10 @@ status. `{id}` is an account id, `{key}` a key id, `{claimId}` a claim's id, `{d
   returns them.
 - An invite's `id` is the first 16 hex characters of its code hash, so a listing never repeats a code.
 - **Feed:** `{"serverTime", "me": {…, "days"}, "friends": [{…, "share", "days"}], "claims": [claim],
-  "strapClaim": claim | null}`. `claims` are the pending claims against this account's strap;
-  `strapClaim` is this account's own pending take claim. `pendingIncoming` no longer exists.
+  "strapClaim": claim | null, "unconfirmed": [device]}`. `claims` are the pending claims against this
+  account's strap; `strapClaim` is this account's own pending take claim; `unconfirmed` are the
+  account's other phones still on probation, so the owner's tab can say that one joined without
+  confirmation. `pendingIncoming` no longer exists.
 - Sharing switches, the day format, the 35-day window, the erase-on-switch-off rule and the
   friends-only read rule are exactly v1's.
 
@@ -368,8 +370,9 @@ phone ──► renoop.duckdns.org ──► proxy VPS (nginx stream, TCP only)
 
 - **Origin.** `server.py` listens on loopback as today. Caddy listens only on the WireGuard address,
   terminates TLS, and takes the caller's address from the PROXY protocol header the proxy sends, so
-  per-address limits see real addresses. The firewall drops inbound 80 and 443 on the public
-  interface and accepts the WireGuard port only from the proxy. SSH stays, key-only.
+  per-address limits see real addresses. The origin dials the proxy over WireGuard and keeps the
+  link up from its side, so it opens no port for the service at all and the proxy's configuration
+  never names the origin's address. The firewall accepts SSH (key-only) and, on the tunnel, the proxy.
 - **Proxy.** A small VPS chosen at a host whose tariff includes L3/L4 DDoS filtering. nginx `stream`
   forwards TCP 443 unchanged with `proxy_protocol on`. It holds no certificate and no key and sees
   only ciphertext. It is disposable: DuckDNS answers with a 60-second TTL, so replacing a burned
@@ -429,7 +432,9 @@ the Keychain.
 
 When the active device is a WHOOP or an Oura whose serial has not been read yet, Turn on waits for it
 (`waitingForStrap`, "Connect your strap to finish") instead of enrolling without a binding. A device
-with no serial concept enrols without one.
+with no serial concept enrols without one. The waiting page also offers "Continue Without a Strap",
+for a wearer who has no strap to connect (an import-only install); such an account has no way back
+from another phone until a strap is bound, and the page says so.
 
 ### 9.3 Screens
 
