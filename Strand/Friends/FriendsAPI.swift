@@ -396,13 +396,17 @@ struct FriendsClient: Sendable {
 
     /// Makes an account for this phone's key, bound to `strap` when one is given. Answers the account
     /// the key already has when it has one. A strap that belongs to another account is `strap_bound`.
-    func enroll(name: String, strap: String?) async throws -> FriendProfile {
+    /// `isNew` is false when the key was already a phone of an account (`200`, not `201`): the server
+    /// answered that account as it stands and took neither the name nor the strap sent.
+    func enroll(name: String, strap: String?) async throws -> (me: FriendProfile, isNew: Bool) {
         struct Body: Encodable { let key: String; let name: String; let platform: String; let strap: String? }
         struct Answer: Decodable { let me: FriendProfile }
-        let answer: Answer = try await send("POST", "/v2/enroll", body: Body(
+        let body = try Self.encoder.encode(Body(
             key: try key().publicKeySPKI.base64EncodedString(), name: name,
             platform: FriendsPlatform.current, strap: strap))
-        return answer.me
+        let answered = try await answer("POST", "/v2/enroll", body: body)
+        let account: Answer = try decode(answered.data)
+        return (account.me, answered.status == 201)
     }
 
     /// Asks to join the account `strap` is bound to. A phone of that account confirms it, or two days
@@ -564,6 +568,13 @@ struct FriendsClient: Sendable {
 
     private func perform(_ method: String, _ path: String, body: Data?, contentType: String = "application/json",
                          maxBytes: Int = FriendsLimits.maxAnswerBytes, signed: Bool = true) async throws -> Data {
+        try await answer(method, path, body: body, contentType: contentType, maxBytes: maxBytes, signed: signed).data
+    }
+
+    /// The answer's bytes with its status, for the one call where two successes mean different things.
+    private func answer(_ method: String, _ path: String, body: Data?, contentType: String = "application/json",
+                        maxBytes: Int = FriendsLimits.maxAnswerBytes,
+                        signed: Bool = true) async throws -> (data: Data, status: Int) {
         do {
             return try await once(method, path, body: body, contentType: contentType, maxBytes: maxBytes, signed: signed)
         } catch let FriendsAPIError.clockSkew(serverTime) {
@@ -574,7 +585,7 @@ struct FriendsClient: Sendable {
     }
 
     private func once(_ method: String, _ path: String, body: Data?, contentType: String, maxBytes: Int,
-                      signed: Bool) async throws -> Data {
+                      signed: Bool) async throws -> (data: Data, status: Int) {
         guard let url = URL(string: baseURL.absoluteString + path) else { throw FriendsAPIError.notConfigured }
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.httpMethod = method
@@ -624,6 +635,6 @@ struct FriendsClient: Sendable {
             }
             throw FriendsAPIError.server(code: "http_\(http.statusCode)", message: "", status: http.statusCode)
         }
-        return data
+        return (data, http.statusCode)
     }
 }

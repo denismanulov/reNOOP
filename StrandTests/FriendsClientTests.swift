@@ -184,8 +184,9 @@ final class FriendsClientTests: XCTestCase {
 
     func testEnrollingSendsTheKeyTheNameThePlatformAndTheStrap() async throws {
         let signer = TestSigner()
-        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
-        let me = try await client(signer).enroll(name: "Anna", strap: Self.handle)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#), (200, #"{"me":\#(Self.me)}"#)]
+        let (me, isNew) = try await client(signer).enroll(name: "Anna", strap: Self.handle)
+        XCTAssertTrue(isNew, "201 is an account made now")
         XCTAssertEqual(me.strapBound, true)
         XCTAssertNil(me.device?.probationUntil)
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[0].body) as? [String: String])
@@ -193,7 +194,9 @@ final class FriendsClientTests: XCTestCase {
                               "platform": FriendsPlatform.current, "strap": Self.handle])
         XCTAssertTrue(try isSigned(Stub.seen[0], by: signer, target: "/v2/enroll"))
 
-        _ = try await client(signer).enroll(name: "Anna", strap: nil)
+        let again = try await client(signer).enroll(name: "Anna", strap: nil)
+        XCTAssertFalse(again.isNew, "200 is the account the key already had")
+        XCTAssertEqual(again.me.id, Self.annaID)
         let unbound = try XCTUnwrap(JSONSerialization.jsonObject(with: Stub.seen[1].body) as? [String: String])
         XCTAssertNil(unbound["strap"], "no strap is no member, not a null")
     }
@@ -396,8 +399,26 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(body["name"], "Anna")
         XCTAssertEqual(body["strap"], Self.handle)
         XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on")
-        XCTAssertEqual(defaults.string(forKey: FriendsStore.boundHandleKey), Self.handle)
+        XCTAssertNil(defaults.string(forKey: FriendsStore.boundHandleKey),
+                     "an enrolment records no strap: the upload run's own request does")
         XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Anna", "the name just sent is not sent again")
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+    }
+
+    /// The key was already a phone of an account (a reinstall keeps the Keychain item): the server
+    /// answers that account and takes neither the name nor the strap sent. Nothing is recorded as
+    /// accepted, and the phone joins as any other does, without pushing its profile.
+    @MainActor
+    func testAnEnrolmentThatFindsAnExistingAccountRecordsNoStrapAndPushesNoProfile() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Other")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertNil(store.errorText)
+        XCTAssertNil(defaults.string(forKey: FriendsStore.boundHandleKey))
+        XCTAssertNil(defaults.string(forKey: FriendsStore.pushedNameKey), "the name sent was not taken")
+        XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
     }
 
     @MainActor

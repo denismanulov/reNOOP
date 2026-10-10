@@ -344,8 +344,12 @@ final class FriendsStore: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            let me = try await clientMakingKey().enroll(name: name, strap: strap)
-            becomeOn(me: me, pushedName: name, boundHandle: strap)
+            let enrolled = try await clientMakingKey().enroll(name: name, strap: strap)
+            // The strap sent is not recorded as accepted: the upload run's own request is what says so.
+            // A key that was already a phone of an account joined that account as it stands, so this
+            // phone sends neither its name nor its picture on joining.
+            becomeOn(me: enrolled.me, pushedName: enrolled.isNew ? name : nil)
+            if !enrolled.isNew { defaults.set(true, forKey: Self.adoptProfileKey) }
             await refresh()
         } catch let error as FriendsAPIError where error.isStrapBound {
             errorText = nil
@@ -426,7 +430,7 @@ final class FriendsStore: ObservableObject {
     private func adopt() async {
         do {
             let me = try await client().me()
-            becomeOn(me: me, pushedName: nil, boundHandle: nil)
+            becomeOn(me: me, pushedName: nil)
             defaults.set(true, forKey: Self.adoptProfileKey)
             await refresh()
         } catch let error as FriendsAPIError where error.isUnknownKey {
@@ -436,11 +440,10 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    private func becomeOn(me: FriendProfile, pushedName: String?, boundHandle: String?) {
+    private func becomeOn(me: FriendProfile, pushedName: String?) {
         // Nothing of an earlier account on this phone may stay under the new one.
         forgetAccount()
         if let pushedName { defaults.set(pushedName, forKey: Self.pushedNameKey) }
-        if let boundHandle { defaults.set(boundHandle, forKey: Self.boundHandleKey) }
         epoch += 1
         errorText = nil
         setPhase(.on)
