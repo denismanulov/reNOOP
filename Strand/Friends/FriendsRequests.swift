@@ -119,7 +119,7 @@ struct FriendsRequestsSection: View {
     }
 
     private func row(title: String, detail: String, yes: LocalizedStringKey, no: LocalizedStringKey,
-                     onYes: @escaping () async -> Void, onNo: @escaping () async -> Void) -> some View {
+                     onYes: @escaping () async -> Bool, onNo: @escaping () async -> Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
@@ -146,13 +146,15 @@ struct FriendsRequestsSection: View {
         .padding(.vertical, 4)
     }
 
-    private func run(_ answer: @escaping () async -> Void) {
+    /// An answer that failed leaves the store's text as the reason. One that went through leaves none,
+    /// even when the refresh after it failed: the tab reports that, and the request was answered.
+    private func run(_ answer: @escaping () async -> Bool) {
         working = true
         failure = nil
         store.errorText = nil
         Task {
-            await answer()
-            failure = store.errorText
+            let went = await answer()
+            failure = went ? nil : store.errorText
             working = false
         }
     }

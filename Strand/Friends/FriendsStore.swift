@@ -688,9 +688,12 @@ final class FriendsStore: ObservableObject {
     // MARK: - Requests on the strap
 
     /// Confirms a waiting request: a new phone joins the account, or the strap goes to who asked for it.
-    func approve(_ claim: FriendsClaim) async { await actNoAnswer { try await self.client().approve(claim.id) } }
+    /// The answers below return whether the call itself went through, whatever the refresh after it did.
+    @discardableResult
+    func approve(_ claim: FriendsClaim) async -> Bool { await actNoAnswer { try await self.client().approve(claim.id) } }
 
-    func decline(_ claim: FriendsClaim) async { await actNoAnswer { try await self.client().decline(claim.id) } }
+    @discardableResult
+    func decline(_ claim: FriendsClaim) async -> Bool { await actNoAnswer { try await self.client().decline(claim.id) } }
 
     // MARK: - Phones
 
@@ -704,15 +707,19 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    func removeDevice(_ id: String) async {
-        await actNoAnswer { try await self.client().removeDevice(id) }
+    @discardableResult
+    func removeDevice(_ id: String) async -> Bool {
+        let went = await actNoAnswer { try await self.client().removeDevice(id) }
         await loadDevices()
+        return went
     }
 
     /// Keeps a phone that joined without confirmation: its probation ends now.
-    func trustDevice(_ id: String) async {
-        await actNoAnswer { try await self.client().trustDevice(id) }
+    @discardableResult
+    func trustDevice(_ id: String) async -> Bool {
+        let went = await actNoAnswer { try await self.client().trustDevice(id) }
         await loadDevices()
+        return went
     }
 
     // MARK: - Profile and sharing
@@ -911,8 +918,9 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    private func actNoAnswer(_ call: @escaping () async throws -> Void, refreshing: Bool = true) async {
-        _ = await act({ try await call(); return true }, refreshing: refreshing)
+    @discardableResult
+    private func actNoAnswer(_ call: @escaping () async throws -> Void, refreshing: Bool = true) async -> Bool {
+        await act({ try await call(); return true }, refreshing: refreshing) != nil
     }
 
     /// A phone the server no longer knows ends here, once, for every screen. An answer for an earlier

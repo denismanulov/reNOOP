@@ -519,6 +519,26 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertNotNil(store.errorText)
     }
 
+    /// An answer reports whether the call itself went through, apart from what the refresh after it did:
+    /// a refusal is a failure with a text, and an accepted answer stays one when the feed then fails.
+    @MainActor
+    func testAnAnswerReportsItsOwnOutcomeNotTheRefreshAfterIt() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        let claim = FriendsClaim(id: 3, kind: .join, code: "481902", state: .pending, platform: "ios",
+                                 createdAt: 1_791_540_000, maturesAt: nil)
+        Stub.answers["POST /v2/claims/3/approve"] = [(409, #"{"error":"not_pending","message":"That request is no longer waiting"}"#)]
+        let refused = await store.approve(claim)
+        XCTAssertFalse(refused)
+        XCTAssertNotNil(store.errorText)
+
+        store.errorText = nil
+        Stub.answers["POST /v2/claims/3/approve"] = [(200, "{}")]
+        Stub.answers["GET /v2/feed?days=7"] = [(500, #"{"error":"server_error","message":""}"#)]
+        let accepted = await store.approve(claim)
+        XCTAssertTrue(accepted, "the answer went through, though the feed after it did not")
+        XCTAssertNotNil(store.errorText, "the failed refresh is still reported, by the tab")
+    }
+
     /// A phone removed from the account by another one goes off, and keeps its key so that turning
     /// Friends on again asks to rejoin as the same phone.
     @MainActor
