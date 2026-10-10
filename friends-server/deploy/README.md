@@ -38,7 +38,10 @@ machine it belongs to and never committed.
 - The origin running the friends server as `friends-server/README.md` describes (`renoop-friends.service`,
   `FRIENDS_STRAP_PEPPER` set, listening on `127.0.0.1:8787`).
 - SSH to both by key. On both, in `/etc/ssh/sshd_config`: `PasswordAuthentication no`, then
-  `systemctl reload ssh`. Keep a second session open while changing a firewall.
+  `systemctl reload ssh`. Check that it took: `sshd -T | grep -i passwordauthentication` must print
+  `passwordauthentication no` (a file in `/etc/ssh/sshd_config.d/` is read first and wins, and cloud
+  images often ship one), and a new session must still open by key before the old one is closed.
+  Keep a second session open while changing a firewall.
 
 ## 1. Keys
 
@@ -90,7 +93,8 @@ caddy version
   `<proxy public key>` and `<proxy public address>` filled in. Then
   `systemctl enable --now wg-quick@wg0`.
 - Check the tunnel from the origin: `ping -c 3 10.77.0.2`. And from the proxy: `ping -c 3 10.77.0.1`.
-- `origin-Caddyfile` to `/etc/caddy/Caddyfile`, with the public name in place of
+- Keep the Caddyfile in use now: `cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-proxy`. Then
+  `origin-Caddyfile` to `/etc/caddy/Caddyfile`, with the public name in place of
   `renoop.duckdns.org` if yours differs. Check it:
 
   ```bash
@@ -105,8 +109,24 @@ caddy version
   systemctl daemon-reload && systemctl restart caddy
   ```
 
-  It cannot get its certificate until the public name points at the proxy (next step). That is
-  expected; it retries by itself.
+  From this restart until step 4 takes effect, the service cannot be reached under its public name:
+  the name still points at this machine, and Caddy no longer listens on its public address. Do this
+  step and the next in one sitting. Before moving the name, check the new path from any other
+  machine, with the name resolved to the proxy by hand:
+
+  ```bash
+  curl -s --resolve renoop.duckdns.org:443:<proxy public address> https://renoop.duckdns.org/v2/info
+  ```
+
+  `<proxy public address>` is the proxy's address, as in `origin-wg0.conf`. On an origin that already
+  served this name, Caddy still holds its certificate and the answer is
+  `{"name":"renoop-friends","api":2,"time":…}`: the proxy, the tunnel and Caddy work, and only the
+  name is left to move. On an origin that never held a certificate for the name, the request fails
+  with a TLS error instead: Caddy can obtain one only once the name points at the proxy (next step),
+  and it retries by itself. If the request cannot connect at all or times out, put
+  `/etc/caddy/Caddyfile.before-proxy` back as `/etc/caddy/Caddyfile` and `systemctl restart caddy`
+  (the service answers the old way again), then read `journalctl -u caddy -n 50` here and
+  `journalctl -u nginx -n 50` on the proxy before going on.
 
 ## 4. Point the name at the proxy
 
@@ -161,7 +181,11 @@ When the proxy is flooded, blocked or lost:
 1. Bring up a new VPS and do section 2 on it (a new key pair, or the old proxy's key if you kept it).
 2. On the origin, put the new `Endpoint` (and `PublicKey`, if it changed) in `/etc/wireguard/wg0.conf`,
    then `systemctl restart wg-quick@wg0 && systemctl restart caddy`.
-3. Point the name at the new proxy (section 4). Phones follow within a minute.
+3. Check the new path before moving the name, from any other machine:
+   `curl -s --resolve renoop.duckdns.org:443:<new proxy address> https://renoop.duckdns.org/v2/info`
+   must answer `{"name":"renoop-friends","api":2,"time":…}` (the origin already holds the
+   certificate).
+4. Point the name at the new proxy (section 4). Phones follow within a minute.
 
 No app update is involved.
 
