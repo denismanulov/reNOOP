@@ -96,7 +96,7 @@ final class ProfileStore: ObservableObject {
             .joined()
     }
 
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
     private enum K {
         static let dateOfBirth = "profile.dateOfBirth"
         /// Pre-#146 age key. No longer the source of truth; kept mirrored from `dateOfBirth` so the
@@ -117,7 +117,9 @@ final class ProfileStore: ObservableObject {
         static let name = "profile.displayName"
     }
 
-    init() {
+    /// `defaults` is where the profile is kept: the app's own unless a test names another.
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
         // #146 age migration. `dateOfBirth` is authoritative whenever it exists, so age advances on
         // its own. A pre-#146 install — or a `.noopbak` restore, which writes only the legacy Int age
         // and clears any stale DOB (see `BackupSettings.apply`) — has no DOB yet, so derive one from

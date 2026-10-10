@@ -20,7 +20,7 @@ final class FriendsStrapTests: XCTestCase {
     }
 
     func testAConfirmedSerialIsKeptAgainstTheRegistryId() throws {
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "friends-strap-\(UUID().uuidString)"))
+        let defaults = FriendsTestDefaults()
         XCTAssertNil(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults))
         FriendsStrap.note(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults)
         XCTAssertEqual(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults), "whoop-4A0123456")
@@ -78,7 +78,7 @@ final class FriendsStrapTests: XCTestCase {
 
     @MainActor
     func testASerialKeyedActiveRowIsAHandleWithNothingStored() async throws {
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "friends-strap-\(UUID().uuidString)"))
+        let defaults = FriendsTestDefaults()
         let registry = try await registry([device("whoop-4A0123456", brand: "WHOOP")], active: "whoop-4A0123456")
         XCTAssertEqual(FriendsStrap.identity(registry: registry, defaults: defaults),
                        .handle("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"))
@@ -86,7 +86,7 @@ final class FriendsStrapTests: XCTestCase {
 
     @MainActor
     func testAnArchivedRowThatIsStillTheActiveIdIsNotAStrap() async throws {
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "friends-strap-\(UUID().uuidString)"))
+        let defaults = FriendsTestDefaults()
         let registry = try await registry([device("whoop-4A0123456", brand: "WHOOP")], active: "whoop-4A0123456")
         registry.archive("whoop-4A0123456")
         XCTAssertEqual(registry.activeDeviceId, "whoop-4A0123456", "archiving leaves the active id where it was")

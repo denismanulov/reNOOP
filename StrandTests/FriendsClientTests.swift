@@ -5,6 +5,37 @@ import StrandAnalytics
 import WhoopStore
 @testable import Strand
 
+/// Defaults a Friends test hands to the store, the profile and the strap reader: everything is held in
+/// memory. A named suite is not used, because the preferences daemon keeps a file for one in
+/// `~/Library/Preferences` even after the suite's domain is removed.
+final class FriendsTestDefaults: UserDefaults {
+    private let lock = NSLock()
+    private var values: [String: Any] = [:]
+
+    /// The suite named here is never read or written: every accessor below answers from `values`.
+    init() { super.init(suiteName: nil)! }
+
+    override func object(forKey defaultName: String) -> Any? {
+        lock.lock(); defer { lock.unlock() }
+        return values[defaultName]
+    }
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        lock.lock(); defer { lock.unlock() }
+        values[defaultName] = value
+    }
+
+    override func removeObject(forKey defaultName: String) {
+        lock.lock(); defer { lock.unlock() }
+        values[defaultName] = nil
+    }
+
+    override func dictionaryRepresentation() -> [String: Any] {
+        lock.lock(); defer { lock.unlock() }
+        return values
+    }
+}
+
 /// The Friends client against the contract in `friends-server/README.md` (API version 2): what it
 /// signs and sends, what it reads, and how Friends on this phone moves between its states.
 final class FriendsClientTests: XCTestCase {
@@ -119,11 +150,58 @@ final class FriendsClientTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        Self.restoreHostProfile()
+        Self.putBackAStashedHostProfile()
         Stub.answers = [:]
         Stub.redirects = [:]
         Stub.failures = [:]
         Stub.seen = []
+    }
+
+    /// An earlier form of these tests wrote the test host's own profile and kept what was there under
+    /// a key of the host's defaults until the test ended. A run that died in between left that key
+    /// behind: it is put back once, and the key removed. Nothing here writes the host's profile now.
+    private static func putBackAStashedHostProfile() {
+        let standard = UserDefaults.standard
+        let stash = "tests.friends.keptProfile"
+        guard let kept = standard.dictionary(forKey: stash) else { return }
+        for key in ["profile.displayName", "profile.avatarImageData"] {
+            if let value = kept[key] { standard.set(value, forKey: key) } else { standard.removeObject(forKey: key) }
+        }
+        standard.removeObject(forKey: stash)
+    }
+
+    // MARK: - The tests' own defaults
+
+    /// What the store, the profile and the strap reader write goes through the typed accessors. Each
+    /// kind of value comes back from the tests' defaults, and none reaches the test host's own.
+    func testTheTestsOwnDefaultsKeepEverythingInMemory() {
+        let defaults: UserDefaults = FriendsTestDefaults()
+        let key = "tests.friends.\(UUID().uuidString)"
+        let kinds = ["string", "int", "bool", "double", "data", "dictionary", "date"]
+        addTeardownBlock { kinds.forEach { UserDefaults.standard.removeObject(forKey: key + "." + $0) } }
+        defaults.set("text", forKey: key + ".string")
+        defaults.set(7, forKey: key + ".int")
+        defaults.set(true, forKey: key + ".bool")
+        defaults.set(1.5, forKey: key + ".double")
+        defaults.set(Data([1, 2]), forKey: key + ".data")
+        defaults.set(["id": "code"], forKey: key + ".dictionary")
+        defaults.set(Date(timeIntervalSince1970: 5), forKey: key + ".date")
+        XCTAssertEqual(defaults.string(forKey: key + ".string"), "text")
+        XCTAssertEqual(defaults.integer(forKey: key + ".int"), 7)
+        XCTAssertEqual(defaults.object(forKey: key + ".int") as? Int, 7)
+        XCTAssertTrue(defaults.bool(forKey: key + ".bool"))
+        XCTAssertEqual(defaults.object(forKey: key + ".double") as? Double, 1.5)
+        XCTAssertEqual(defaults.data(forKey: key + ".data"), Data([1, 2]))
+        XCTAssertEqual(defaults.dictionary(forKey: key + ".dictionary") as? [String: String], ["id": "code"])
+        XCTAssertEqual(defaults.object(forKey: key + ".date") as? Date, Date(timeIntervalSince1970: 5))
+        XCTAssertEqual(Set(defaults.dictionaryRepresentation().keys), Set(kinds.map { key + "." + $0 }))
+        for kind in kinds {
+            XCTAssertNil(UserDefaults.standard.object(forKey: key + "." + kind), kind)
+        }
+        defaults.removeObject(forKey: key + ".string")
+        XCTAssertNil(defaults.string(forKey: key + ".string"))
+        XCTAssertFalse(defaults.bool(forKey: key + ".missing"))
+        XCTAssertEqual(defaults.integer(forKey: key + ".missing"), 0)
     }
 
     // MARK: - Signing
@@ -373,9 +451,11 @@ final class FriendsClientTests: XCTestCase {
     private func store(_ identity: FriendsStrap.Identity, signer: (any FriendsSigner)? = TestSigner(),
                        defaults: UserDefaults? = nil,
                        keys: FriendsMemoryKeyStorage = FriendsMemoryKeyStorage()) throws -> (FriendsStore, UserDefaults) {
-        let defaults = try defaults ?? XCTUnwrap(UserDefaults(suiteName: "friends-store-\(UUID().uuidString)"))
+        let defaults = defaults ?? FriendsTestDefaults()
         defaults.set(Self.base, forKey: FriendsStore.addressKey)
-        let store = FriendsStore(defaults: defaults, cache: nil, keys: keys, session: stubbedSession(), signer: signer)
+        // The pictures the test host itself keeps are not this test's to delete.
+        let store = FriendsStore(defaults: defaults, cache: nil, keys: keys, session: stubbedSession(), signer: signer,
+                                 clearPictures: {})
         store.strapIdentity = { identity }
         return (store, defaults)
     }
@@ -387,7 +467,7 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .off)
         await store.refresh()
         let repo = Repository(deviceId: "test-friends")
-        let profile = ProfileStore()
+        let profile = profile(name: "")
         await store.sync(repo: repo, profile: profile, force: true)
         store.daysChanged(repo: repo, profile: profile)
         _ = await store.person(Self.annaID)
@@ -647,7 +727,7 @@ final class FriendsClientTests: XCTestCase {
         -> (store: FriendsStore, defaults: UserDefaults, keys: FriendsMemoryKeyStorage, kept: FriendsKey) {
         let keys = FriendsMemoryKeyStorage()
         let kept = try FriendsKey.create(server: Self.base, storage: keys, enclave: false)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "friends-store-\(UUID().uuidString)"))
+        let defaults = FriendsTestDefaults()
         if let phase { defaults.set(phase, forKey: FriendsStore.phaseKey) }
         keys.failsReads = true
         let (store, _) = try store(identity, signer: nil, defaults: defaults, keys: keys)
@@ -662,7 +742,7 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .off)
         XCTAssertNil(store.deviceID)
         let repo = Repository(deviceId: "test-friends")
-        let profile = ProfileStore()
+        let profile = profile(name: "")
         await store.sync(repo: repo, profile: profile, force: false)
         XCTAssertEqual(store.phase, .off, "still unreadable: nothing changes")
         XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on", "the kept phase is not written over")
@@ -758,33 +838,11 @@ final class FriendsClientTests: XCTestCase {
 
     private static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0]) + Data(repeating: 0x30, count: 64)
 
-    private static let hostProfileKeys = ["profile.displayName", "profile.avatarImageData"]
-    private static let keptHostProfileKey = "tests.friends.keptProfile"
-
-    /// Puts back the name and photo the test host's own defaults held before a test replaced them.
-    /// What was there is kept in the defaults themselves until then, so a run that died mid-test is
-    /// put right by the next one (`setUp` calls this too).
-    private static func restoreHostProfile() {
-        let standard = UserDefaults.standard
-        guard let kept = standard.dictionary(forKey: keptHostProfileKey) else { return }
-        for key in hostProfileKeys {
-            if let value = kept[key] { standard.set(value, forKey: key) } else { standard.removeObject(forKey: key) }
-        }
-        standard.removeObject(forKey: keptHostProfileKey)
-    }
-
-    /// A profile with the name and photo a test needs. `ProfileStore` keeps both in the test host's own
-    /// defaults, so what was there is put back when the test ends.
+    /// A profile with the name and photo a test needs, kept in defaults of the test's own: the test
+    /// host's profile is neither read nor written.
     @MainActor
     private func profile(name: String, photo: Data? = nil) -> ProfileStore {
-        let standard = UserDefaults.standard
-        if standard.dictionary(forKey: Self.keptHostProfileKey) == nil {
-            var kept: [String: Any] = [:]
-            for key in Self.hostProfileKeys { kept[key] = standard.object(forKey: key) }
-            standard.set(kept, forKey: Self.keptHostProfileKey)
-        }
-        addTeardownBlock { Self.restoreHostProfile() }
-        let profile = ProfileStore()
+        let profile = ProfileStore(defaults: FriendsTestDefaults())
         profile.displayName = name
         profile.avatarImageData = photo
         return profile
@@ -805,6 +863,26 @@ final class FriendsClientTests: XCTestCase {
 
     private func sent(_ method: String, _ path: String) -> [Stub.Seen] {
         Stub.seen.filter { $0.method == method && $0.path == path }
+    }
+
+    /// A test's profile is kept in the test's own defaults: a run that sends its name and its photo
+    /// leaves the test host's own profile as it was.
+    @MainActor
+    func testAnUploadRunLeavesTheTestHostsOwnProfileAlone() async throws {
+        let host = UserDefaults.standard
+        let nameBefore = host.string(forKey: "profile.displayName")
+        let photoBefore = host.data(forKey: "profile.avatarImageData")
+        let (store, _) = try await turnedOn(.none)
+        let profile = profile(name: "Only In This Test", photo: Self.jpeg)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        await store.uploadRecentDays(repo: Repository(deviceId: "test-friends"), profile: profile)
+        XCTAssertEqual(sent("PATCH", "/v2/me").map { String(decoding: $0.body, as: UTF8.self) },
+                       [#"{"name":"Only In This Test"}"#])
+        XCTAssertEqual(sent("PUT", "/v2/me/avatar").map(\.body), [Self.jpeg])
+        XCTAssertEqual(host.string(forKey: "profile.displayName"), nameBefore)
+        XCTAssertEqual(host.data(forKey: "profile.avatarImageData"), photoBefore)
     }
 
     /// The strap worn goes to the server when it is not the one the server last accepted. Accepted, it

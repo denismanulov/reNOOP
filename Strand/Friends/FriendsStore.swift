@@ -136,6 +136,8 @@ final class FriendsStore: ObservableObject {
     private let cache: FriendsFeedCache?
     private let keys: FriendsKeyStorage
     private let session: URLSession
+    /// Deletes the kept pictures when the account is forgotten.
+    private let clearPictures: () -> Void
     private var key: (any FriendsSigner)?
     /// Counts the accounts this process has seen: it moves whenever Friends goes on or off. Work that
     /// began under one carries the value it started with, and what it brings back is kept only while
@@ -149,14 +151,16 @@ final class FriendsStore: ObservableObject {
     private var uploadTask: Task<Void, Never>?
     private var uploadRun: Task<Void, Never>?
 
-    /// `signer` nil reads the kept key; tests pass their own and keep the Keychain out of it.
+    /// `signer` nil reads the kept key; tests pass their own and keep the Keychain out of it. Tests
+    /// also pass their own `clearPictures`, so the pictures the app itself keeps are left alone.
     init(defaults: UserDefaults = .standard, cache: FriendsFeedCache? = .standard,
          keys: FriendsKeyStorage = FriendsKeychainStorage(), session: URLSession = FriendsClient.plainSession,
-         signer: (any FriendsSigner)? = nil) {
+         signer: (any FriendsSigner)? = nil, clearPictures: @escaping () -> Void = FriendsAvatars.clear) {
         self.defaults = defaults
         self.cache = cache
         self.keys = keys
         self.session = session
+        self.clearPictures = clearPictures
         let address = defaults.string(forKey: Self.addressKey).flatMap(FriendsServerAddress.normalized)
             ?? FriendsServerAddress.standard
         let held = signer ?? FriendsKey.load(server: address, storage: keys)
@@ -562,7 +566,7 @@ final class FriendsStore: ObservableObject {
         }
         clearUploadMarks()
         cache?.clear()
-        FriendsAvatars.clear()
+        clearPictures()
         feed = nil
         feedFetchedAt = 0
         lastRefreshFailed = false
