@@ -23,15 +23,19 @@ private extension View {
 // MARK: - Friends
 
 /// The sheet behind the tab's bar button. Fitness invites and answers invitations from one place, so
-/// this is where a friend is invited, where a code is entered, and the way to the wearer's own sharing.
+/// this holds what waits for an answer, inviting a friend, using a friend's code, and the way to the
+/// wearer's own sharing.
 struct FriendsManageSheet: View {
     @ObservedObject private var store = FriendsStore.shared
     @Environment(\.dismiss) private var dismiss
+
+    @State private var shown: FriendsShownInvite?
 
     var body: some View {
         NavigationStack {
             Form {
                 FriendsRequestsSection()
+                FriendsAddSections(shown: $shown)
                 Section {
                     NavigationLink {
                         FriendsSharingPage(onAccountLeft: { dismiss() })
@@ -49,6 +53,10 @@ struct FriendsManageSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton { dismiss() } }
             }
+            .navigationDestination(isPresented: Binding(get: { shown != nil }, set: { if !$0 { shown = nil } })) {
+                if let shown { FriendsInvitePage(shown: shown) }
+            }
+            .task { await store.loadInvites() }
         }
     }
 }

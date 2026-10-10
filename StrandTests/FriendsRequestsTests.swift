@@ -29,4 +29,11 @@ final class FriendsRequestsTests: XCTestCase {
         XCTAssertEqual(FriendsWelcome.spaced("481902"), "481 902")
         XCTAssertEqual(FriendsWelcome.spaced("12"), "12", "anything that is not six digits is left alone")
     }
+
+    func testAnInviteLinkBecomesASquareQRCode() throws {
+        let image = try XCTUnwrap(FriendsQRCode.image("https://renoop.duckdns.org/i/K7QM2-XRD4P", side: 660))
+        XCTAssertEqual(image.width, image.height)
+        XCTAssertGreaterThan(image.width, 300)
+        XCTAssertLessThanOrEqual(image.width, 660)
+    }
 }

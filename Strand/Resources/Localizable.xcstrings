@@ -225282,7 +225282,20 @@
     "This phone is not confirmed yet": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон ещё не подтверждён"}}}},
     "It can read and upload your day. Changes wait until %@, or until another phone of yours confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он может читать и отправлять ваш день. Изменения станут доступны %@ или когда его подтвердит другой ваш телефон."}}}},
     "A phone joined without your confirmation": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Телефон вошёл без вашего подтверждения"}}}},
-    "This phone joined without confirmation, so it cannot answer these.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон вошёл без подтверждения и не может отвечать на запросы."}}}}
+    "This phone joined without confirmation, so it cannot answer these.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон вошёл без подтверждения и не может отвечать на запросы."}}}},
+    "Invite a Friend": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Пригласить друга"}}}},
+    "Enter a Code": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Введите код"}}}},
+    "An invite works once and makes you friends at once. Paste a link or type its code.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Приглашение работает один раз и сразу делает вас друзьями. Вставьте ссылку или введите код."}}}},
+    "You and %@ are friends now.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вы и %@ теперь друзья."}}}},
+    "Invites Waiting": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Ожидающие приглашения"}}}},
+    "Valid until %@": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Действует до %@"}}}},
+    "Revoke": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Отозвать"}}}},
+    "Invite": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Приглашение"}}}},
+    "Invite QR code": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "QR-код приглашения"}}}},
+    "Valid until %@. It works once.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Действует до %@. Работает один раз."}}}},
+    "Share Invite": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Поделиться приглашением"}}}},
+    "Whoever uses this code becomes your friend at once and sees what you share. Give it only to the person you mean.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Тот, кто введёт этот код, сразу станет вашим другом и увидит то, чем вы делитесь. Давайте его только тому, кому хотите."}}}},
+    "Add me on reNOOP Friends: %@\nOr enter the code %@ on the Friends tab.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Добавь меня в друзья в reNOOP: %@\nИли введи код %@ на вкладке «Друзья»."}}}}
   },
   "version": "1.0"
 }
