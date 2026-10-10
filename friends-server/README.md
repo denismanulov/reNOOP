@@ -160,7 +160,7 @@ status. `{id}` is an account id (16 hex), `{key}` a key id (64 hex), `{claimId}`
 | `PATCH /v2/me` | a phone | `{"name"?, "share"?: {"scores"?, "sleep"?, "workouts"?, "hr"?}}` | `me` |
 | `PUT /v2/me/avatar` | a phone | raw JPEG, PNG or WebP, at most 200 KB | `me` |
 | `DELETE /v2/me/avatar` | a phone | | `204` |
-| `PUT /v2/me/strap` | a phone | `{"strap"}` | `200 {"bound": true}`; `202 {"claim"}` when the strap is bound elsewhere; `429 claim_declined`; `429 too_many_claims` |
+| `PUT /v2/me/strap` | a phone | `{"strap"}` | `200 {"bound": true}`; `202 {"claim"}` when the strap is bound elsewhere; `429 claim_declined`; `429 too_many_claims`; `429 rate_limited` |
 | `GET /v2/me/devices` | a phone | | `{"devices": [{"id", "platform", "addedAt", "lastSeenAt", "probationUntil", "current"}]}` |
 | `DELETE /v2/me/devices/{key}` | a phone | | `204`; `409 last_device` for the only confirmed phone |
 | `POST /v2/me/devices/{key}/trust` | a phone | | `204`, probation ended |
@@ -279,7 +279,7 @@ and a client works from the code. `clock_skew` also carries `serverTime`.
 | `length_required` | 411 | A request with a `Transfer-Encoding` header |
 | `too_large` | 413 | A body larger than the call accepts |
 | `bad_image` | 415 | `PUT /v2/me/avatar` with something other than JPEG, PNG or WebP |
-| `rate_limited` | 429 | A per-address or per-phone limit below |
+| `rate_limited` | 429 | A per-address, per-phone or per-account limit below, including `PUT /v2/me/strap` |
 | `claim_declined` | 429 | `POST /v2/claims`, `PUT /v2/me/strap`: this key or account was declined for this strap in the last 7 days |
 | `too_many_claims` | 429 | `POST /v2/claims`, `PUT /v2/me/strap`: the strap already has 3 claims waiting |
 | `internal` | 500 | A fault in the server; nothing in the call is to blame |
@@ -288,7 +288,8 @@ and a client works from the code. `clock_skew` also carries `serverTime`.
 
 Per address: 600 requests a minute, 5 enrolments an hour, 10 join claims an hour. Per phone: 120
 uploads, 20 invites and 10 redeem attempts an hour. Per account: 5 phones, 100 friends, 10 invites
-waiting. Per strap: 3 claims waiting. 500 accounts per server unless `FRIENDS_MAX_USERS` says
+waiting, 10 strap changes an hour (asking again for the strap already bound, or already waited for, is
+not a change). Per strap: 3 claims waiting. 500 accounts per server unless `FRIENDS_MAX_USERS` says
 otherwise. A claim nobody settles expires after 14 days; one that was declined cannot be filed again
 for 7.
 

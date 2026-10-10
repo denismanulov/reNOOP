@@ -836,6 +836,12 @@ def h_strap_put(app, req):
         owner = app.strap_owner(db, strap)
         if owner is not None and owner["id"] == me:
             return {"bound": True}
+        waiting = db.execute(
+            "SELECT * FROM claims WHERE claimant_id = ? AND strap = ? AND state = 'pending'", (me, strap)).fetchone()
+        if owner is not None and waiting is not None:
+            return 202, {"claim": claim_json(db, waiting)}
+        # Asking again for what is already bound or already waiting is how a take settles and is not counted.
+        app.limiter.check(("strap", me), 10, 3600)
         if owner is None:
             db.execute("UPDATE accounts SET strap = ? WHERE id = ?", (strap, me))
             # What waited on the strap just let go was aimed at this account through it; a take of this
@@ -844,10 +850,6 @@ def h_strap_put(app, req):
                 "UPDATE claims SET state = 'expired', settled_at = ? WHERE state = 'pending' "
                 "AND ((account_id = ? AND strap != ?) OR claimant_id = ?)", (req.now, me, strap, me))
             return {"bound": True}
-        waiting = db.execute(
-            "SELECT * FROM claims WHERE claimant_id = ? AND strap = ? AND state = 'pending'", (me, strap)).fetchone()
-        if waiting is not None:
-            return 202, {"claim": claim_json(db, waiting)}
         if claim_blocked(db, strap, req.now, claimant_id=me):
             raise ApiError(429, "claim_declined", "This request was declined. Try again in a week.")
         if pending_claims(db, strap) >= MAX_PENDING_CLAIMS:

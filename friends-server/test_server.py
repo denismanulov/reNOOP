@@ -14,6 +14,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -618,6 +619,42 @@ class FriendsServerTest(unittest.TestCase):
         guest = self.joined_by_silence("whoop-AAA111")
         status, body = self.put_strap(guest, "whoop-MINE99")
         self.assertEqual((403, "probation"), (status, body["error"]))
+
+    def test_strap_changes_are_limited_to_ten_an_hour_per_account(self):
+        anna = self.enroll("Anna")
+        for n in range(10):
+            self.assertEqual((200, {"bound": True}), self.put_strap(anna, "whoop-FREE%02d" % n))
+        status, body = self.put_strap(anna, "whoop-FREE10")
+        self.assertEqual((429, "rate_limited"), (status, body["error"]))
+        # Saying again which strap is on the wrist is not a change and is never counted.
+        for _ in range(3):
+            self.assertEqual((200, {"bound": True}), self.put_strap(anna, "whoop-FREE09"))
+        # Another account has its own count.
+        self.assertEqual(200, self.put_strap(self.enroll("Max"), "whoop-FREE10")[0])
+        # The hour passes: the count starts again.
+        real = time.monotonic
+        with mock.patch.object(server.time, "monotonic", lambda: real() + HOUR + 1):
+            self.assertEqual((200, {"bound": True}), self.put_strap(anna, "whoop-FREE11"))
+
+    def test_asking_again_for_a_strap_is_not_counted_against_the_limit(self):
+        seller = self.enroll("Seller", serial="whoop-AAA111")
+        self.enroll("Other", serial="whoop-BBB222")
+        buyer = self.enroll("Buyer")
+        for n in range(9):
+            self.assertEqual(200, self.put_strap(buyer, "whoop-FREE%02d" % n)[0])
+        status, body = self.put_strap(buyer, "whoop-AAA111")
+        self.assertEqual(202, status, body)
+        claim = body["claim"]
+        # The tenth change is spent; the take that waits is settled by asking again, as often as it takes.
+        for _ in range(3):
+            status, body = self.put_strap(buyer, "whoop-AAA111")
+            self.assertEqual((202, claim["id"]), (status, body["claim"]["id"]))
+        status, body = self.put_strap(buyer, "whoop-BBB222")
+        self.assertEqual((429, "rate_limited"), (status, body["error"]))
+        status, body = self.put_strap(buyer, "whoop-FREE10")
+        self.assertEqual((429, "rate_limited"), (status, body["error"]))
+        self.assertEqual(204, seller.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        self.assertEqual((200, {"bound": True}), self.put_strap(buyer, "whoop-AAA111"))
 
     # --- invites ---
 
