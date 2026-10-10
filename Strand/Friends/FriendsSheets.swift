@@ -31,6 +31,7 @@ struct FriendsManageSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                FriendsRequestsSection()
                 Section {
                     NavigationLink {
                         FriendsSharingPage(onAccountLeft: { dismiss() })

@@ -225265,7 +225265,24 @@
     "The key for Friends could not be read right now. Try again in a moment.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Сейчас не удалось прочитать ключ «Друзей». Повторите чуть позже."}}}},
     "Server Address": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Адрес сервера"}}}},
     "Leave this empty to use the standard server. Each server keeps its own account: turning Friends on here does not touch an account on another server.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Оставьте поле пустым, чтобы использовать стандартный сервер. У каждого сервера свой аккаунт: включение «Друзей» здесь не затрагивает аккаунт на другом сервере."}}}},
-    "Not Now": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Не сейчас"}}}}
+    "Not Now": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Не сейчас"}}}},
+    "iPhone": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "iPhone"}}}},
+    "Android phone": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Телефон Android"}}}},
+    "Mac": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Mac"}}}},
+    "A new phone wants to join your account": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Новый телефон хочет войти в ваш аккаунт"}}}},
+    "Someone connected your strap": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Кто-то подключил ваш браслет"}}}},
+    "%@, code %@. Confirm it only if the code is on your own phone.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "%@, код %@. Подтверждайте, только если этот код на вашем телефоне."}}}},
+    "If the strap is no longer yours, release it. They get no access to your account.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Если браслет больше не ваш, отпустите его. Доступа к вашему аккаунту это не даёт."}}}},
+    "Confirm": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Подтвердить"}}}},
+    "Release": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Отпустить"}}}},
+    "Keep": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Оставить"}}}},
+    "Review": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Посмотреть"}}}},
+    "%@, joined %@. Keep it only if it is yours.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "%@, вошёл %@. Оставляйте, только если он ваш."}}}},
+    "Joined %@ · last seen %@": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вошёл %@ · был в сети %@"}}}},
+    "This phone is not confirmed yet": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон ещё не подтверждён"}}}},
+    "It can read and upload your day. Changes wait until %@, or until another phone of yours confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он может читать и отправлять ваш день. Изменения станут доступны %@ или когда его подтвердит другой ваш телефон."}}}},
+    "A phone joined without your confirmation": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Телефон вошёл без вашего подтверждения"}}}},
+    "This phone joined without confirmation, so it cannot answer these.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон вошёл без подтверждения и не может отвечать на запросы."}}}}
   },
   "version": "1.0"
 }

@@ -74,7 +74,7 @@ struct FriendsView: View {
             .accessibilityLabel(Text("Server"))
     }
 
-    private var waiting: Int { store.claims.count }
+    private var waiting: Int { store.claims.count + store.unconfirmed.count }
 
     /// iOS 26 draws a bar button's badge itself; before it the glyph carries a dot instead.
     private var badgesBarButtons: Bool {
@@ -109,6 +109,7 @@ struct FriendsView: View {
                         NoticeCard(title: Text(verbatim: error), systemImage: "exclamationmark.triangle.fill",
                                    tone: .warning, onDismiss: { store.errorText = nil })
                     }
+                    FriendsNotices(onReview: { showFriends = true })
                     if let feed = store.feed {
                         let highlights = FriendsHighlights.recent(friends: feed.friends, now: store.serverNow())
                         if !highlights.isEmpty {
