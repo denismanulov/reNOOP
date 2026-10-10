@@ -378,10 +378,11 @@ struct FriendsWelcome: View {
         code.count == 6 ? code.prefix(3) + " " + code.suffix(3) : code
     }
 
-    /// "Friday at 14:30", in the active language.
-    static func moment(_ ts: Int) -> String {
+    /// "17 October at 14:30", in the active language. The date, not the weekday: the moments shown
+    /// are days away, and a seven-day wait ends on the weekday it began on.
+    static func moment(_ ts: Int, locale: Locale = AppLanguage.activeLocale, timeZone: TimeZone = .current) -> String {
         Date(timeIntervalSince1970: TimeInterval(ts))
-            .formatted(.dateTime.weekday(.wide).hour().minute().locale(AppLanguage.activeLocale))
+            .formatted(Date.FormatStyle(locale: locale, timeZone: timeZone).day().month(.wide).hour().minute())
     }
 }
 

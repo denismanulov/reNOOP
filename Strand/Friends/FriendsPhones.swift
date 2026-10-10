@@ -23,6 +23,8 @@ struct FriendsPhonesPage: View {
     @State private var leaveFailure: String?
 
     private var phones: [FriendsDevice] { loadFailed ? [] : store.devices ?? [] }
+    /// The server's clock, which the list's timestamps are counted from.
+    private var serverDate: Date { Date(timeIntervalSince1970: TimeInterval(store.serverNow())) }
     /// A phone that joined without confirmation removes nobody but itself.
     private var locked: Bool { store.probationUntil != nil }
     /// This phone may leave while the account stays on another confirmed phone, or when it is itself
@@ -68,7 +70,12 @@ struct FriendsPhonesPage: View {
             failure = nil
             leaveFailure = nil
             loadFailed = false
-            if await store.loadDevices() { return }
+            if await store.loadDevices() {
+                // Whether this phone is still unconfirmed is the feed's to say: asked again with the
+                // list, so the row's label and what the page offers come from the same moment.
+                await store.refresh()
+                return
+            }
             // A page left before the answer came leaves no text: nothing failed.
             guard let text = store.errorText else { return }
             loadFailed = true
@@ -112,7 +119,7 @@ struct FriendsPhonesPage: View {
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
-                Text(verbatim: FriendsRequestText.seen(phone))
+                Text(verbatim: FriendsRequestText.seen(phone, now: serverDate))
                     .font(StrandFont.pro(13))
                     .foregroundStyle(StrandPalette.textSecondary)
                 if phone.probationUntil != nil {
@@ -135,13 +142,13 @@ struct FriendsPhonesPage: View {
                 }
                 .friendsCapsuleButton(prominent: false)
                 .confirmationDialog(
-                    Text(verbatim: "\(String(localized: "Remove")) \(FriendsRequestText.device(phone.platform))"),
+                    Text("Remove \(FriendsRequestText.device(phone.platform))"),
                     isPresented: Binding(get: { removing?.id == phone.id }, set: { if !$0 { removing = nil } }),
                     titleVisibility: .visible
                 ) {
                     Button("Remove", role: .destructive) { run { await store.removeDevice(phone.id) } }
                 } message: {
-                    Text("It stops reading and uploading at once. It can join again only if a phone of this account confirms it.")
+                    Text("It stops reading and uploading at once. It has to ask to join again.")
                 }
             }
         }

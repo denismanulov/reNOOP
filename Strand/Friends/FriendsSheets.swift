@@ -58,6 +58,11 @@ struct FriendsManageSheet: View {
             }
             .task { await store.loadInvites() }
         }
+        // Friends went off behind the sheet (this phone dropped off the account): nothing here is
+        // about an account this phone is on any more, and the tab says why.
+        .onChangeCompat(of: store.isOn) { on in
+            if !on { dismiss() }
+        }
     }
 }
 
@@ -115,8 +120,8 @@ struct FriendsServerSheet: View {
         case .done, .notOff:
             // Not off any more means the page behind has moved on, and says why itself.
             dismiss()
-        case .refused:
-            refusal = FriendsStore.message(for: FriendsAPIError.notConfigured)
+        case let .refused(problem):
+            refusal = FriendsStore.message(forAddress: problem)
         }
     }
 }
@@ -143,7 +148,7 @@ struct FriendsSharingPage: View {
     var body: some View {
         Form {
             Section {
-                FriendsHero(name: profile.displayName, own: true,
+                FriendsHero(name: store.nameFriendsSee(fallback: profile.displayName), own: true,
                             imageData: sharePhoto ? profile.avatarImageData : nil)
                     .friendsHeroRow()
             } footer: {

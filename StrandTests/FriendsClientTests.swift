@@ -1433,6 +1433,17 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix("{\n  \"me\": {"), "the server's order, not the alphabet's")
     }
 
+    /// The name on the wearer's own page is the account's, as friends see it. On a phone that joined
+    /// it can differ from this phone's profile, which stands in only before any answer.
+    @MainActor
+    func testTheNameFriendsSeeIsTheAccountsNotThisPhonesProfile() async throws {
+        let (off, _) = try store(.none)
+        XCTAssertEqual(off.nameFriendsSee(fallback: "Other"), "Other")
+        let (store, _) = try await turnedOn(.none, enrolAnswer: 200, name: "Other")
+        XCTAssertEqual(store.me?.name, "Anna")
+        XCTAssertEqual(store.nameFriendsSee(fallback: "Other"), "Anna")
+    }
+
     // MARK: - Loose ends
 
     /// Cancel withdraws the request on the server. When the server could not be reached the request
@@ -1807,6 +1818,20 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(valid("https://xn--d1acufc.xn--p1ai"), "https://xn--d1acufc.xn--p1ai")
         // An address typed on the wrong keyboard is not one.
         XCTAssertEqual(problem("реезЖ//127ю0ю0ю1Ж8787"), .malformed)
+    }
+
+    /// Each reason an address is not taken has its own words: credentials or a query in the address
+    /// are not a missing "https://".
+    @MainActor
+    func testEachReasonAnAddressIsRefusedHasItsOwnWords() {
+        let problems: [FriendsServerAddress.Problem] = [.malformed, .notHTTPS, .hasCredentials, .hasQuery]
+        let texts = problems.map { FriendsStore.message(forAddress: $0) }
+        XCTAssertEqual(Set(texts).count, problems.count, "\(texts)")
+        XCTAssertTrue(texts.allSatisfy { !$0.isEmpty })
+        XCTAssertTrue(FriendsStore.message(forAddress: .notHTTPS).contains("https://"))
+        XCTAssertFalse(FriendsStore.message(forAddress: .hasCredentials).contains("https://"))
+        XCTAssertFalse(FriendsStore.message(forAddress: .hasQuery).contains("https://"))
+        XCTAssertEqual(FriendsStore.message(forAddress: .empty), FriendsStore.message(forAddress: .malformed))
     }
 
     func testAClientAddressExistsOnlyForAnAcceptedAddress() {

@@ -60,6 +60,9 @@ struct FriendsNotices: View {
     /// Opens the friends sheet, where the answers are given.
     let onReview: () -> Void
 
+    /// The server's clock, which a phone's timestamps are counted from.
+    private var serverDate: Date { Date(timeIntervalSince1970: TimeInterval(store.serverNow())) }
+
     var body: some View {
         if let until = store.probationUntil {
             NoticeCard(title: Text("This phone is not confirmed yet"),
@@ -74,7 +77,7 @@ struct FriendsNotices: View {
         }
         ForEach(store.unconfirmed) { phone in
             NoticeCard(title: Text("A phone joined without your confirmation"),
-                       message: Text(verbatim: FriendsRequestText.joined(phone)),
+                       message: Text(verbatim: FriendsRequestText.joined(phone, now: serverDate)),
                        systemImage: "exclamationmark.shield.fill", tone: .warning,
                        actionTitle: "Review", action: onReview)
         }
@@ -91,6 +94,8 @@ struct FriendsRequestsSection: View {
 
     /// A phone that joined without confirmation answers nothing until it is confirmed itself.
     private var locked: Bool { working || store.probationUntil != nil }
+    /// The server's clock, which a phone's timestamps are counted from.
+    private var serverDate: Date { Date(timeIntervalSince1970: TimeInterval(store.serverNow())) }
 
     var body: some View {
         if !store.claims.isEmpty || !store.unconfirmed.isEmpty {
@@ -102,7 +107,7 @@ struct FriendsRequestsSection: View {
                 }
                 ForEach(store.unconfirmed) { phone in
                     row(title: String(localized: "A phone joined without your confirmation"),
-                        detail: FriendsRequestText.joined(phone), yes: "Keep", no: "Remove",
+                        detail: FriendsRequestText.joined(phone, now: serverDate), yes: "Keep", no: "Remove",
                         onYes: { await store.trustDevice(phone.id) }, onNo: { await store.removeDevice(phone.id) })
                 }
             } header: {

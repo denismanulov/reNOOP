@@ -220,6 +220,12 @@ final class FriendsStore: ObservableObject {
     /// The wearer's own account id; empty before the first answer.
     var myID: String { feed?.me.id ?? "" }
     var share: FriendsShare { feed?.me.share ?? FriendsShare() }
+    /// The wearer's name as friends see it: the account's. On a phone that joined the account it can
+    /// differ from this phone's profile, which stands in (`fallback`) only before any answer.
+    func nameFriendsSee(fallback: String) -> String {
+        guard let name = me?.name, !name.isEmpty else { return fallback }
+        return name
+    }
     /// Requests waiting for this account's answer.
     var claims: [FriendsClaim] { feed?.claims ?? [] }
     /// The account's other phones that joined without confirmation: kept or removed from this one.
@@ -1035,6 +1041,16 @@ final class FriendsStore: ObservableObject {
             return
         }
         if !quiet { errorText = Self.message(for: error) }
+    }
+
+    /// Why an address typed for the server was not taken, each reason in its own words.
+    static func message(forAddress problem: FriendsServerAddress.Problem) -> String {
+        switch problem {
+        case .empty, .malformed: return String(localized: "This is not a server address.")
+        case .notHTTPS: return String(localized: "The server address must start with https://.")
+        case .hasCredentials: return String(localized: "The server address cannot contain a user name or a password.")
+        case .hasQuery: return String(localized: "The server address cannot contain “?” or “#”.")
+        }
     }
 
     /// The server's codes in the wearer's language; its own English sentence only as a last resort.

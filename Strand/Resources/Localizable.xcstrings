@@ -225305,7 +225305,12 @@
     "What the Server Stores": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Что хранит сервер"}}}},
     "Everything the server holds about you, exactly as it holds it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Всё, что сервер хранит о вас, в том виде, в каком хранит."}}}},
     "It stops reading and uploading at once. It can join again only if a phone of this account confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он сразу перестанет читать и отправлять данные. Вернуться он сможет, только если его подтвердит телефон этого аккаунта."}}}},
-    "You opened an invite. Add this person as a friend? You will see each other's days.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вы открыли приглашение. Добавить этого человека в друзья? Вы будете видеть дни друг друга."}}}}
+    "You opened an invite. Add this person as a friend? You will see each other's days.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вы открыли приглашение. Добавить этого человека в друзья? Вы будете видеть дни друг друга."}}}},
+    "It stops reading and uploading at once. It has to ask to join again.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он сразу перестанет читать и отправлять данные. Чтобы вернуться, ему придётся отправить запрос заново."}}}},
+    "This is not a server address.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Это не адрес сервера."}}}},
+    "The server address must start with https://.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Адрес сервера должен начинаться с https://."}}}},
+    "The server address cannot contain a user name or a password.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "В адресе сервера не должно быть имени пользователя или пароля."}}}},
+    "The server address cannot contain “?” or “#”.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "В адресе сервера не должно быть «?» или «#»."}}}}
   },
   "version": "1.0"
 }

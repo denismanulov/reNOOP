@@ -50,7 +50,7 @@ struct FriendDetailView: View {
                     heartRate(person)
                     unshared(person)
                 } else if loaded {
-                    Text(store.errorText ?? String(localized: "No one has this name."))
+                    Text(store.errorText ?? String(localized: "This person is no longer here."))
                         .font(StrandFont.pro(15))
                         .foregroundStyle(StrandPalette.textSecondary)
                         .frame(maxWidth: .infinity)
