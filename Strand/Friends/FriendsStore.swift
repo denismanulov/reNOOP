@@ -15,8 +15,10 @@ import Foundation
 import StrandAnalytics
 import WhoopStore
 
-/// The one rule of the upload skip: a day goes up unless its text is the one the server last accepted
-/// for it. What the phone keeps to tell the two apart is the text's SHA-256, not the text.
+/// The rules of the upload skip. A day goes up unless its text is the one the server last accepted for
+/// it; what the phone keeps to tell the two apart is the text's SHA-256, not the text. And a phone does
+/// not introduce a day with nothing to show: an upload replaces the day, and another phone of the
+/// account may have uploaded it.
 enum FriendsUploadPolicy {
     static func fingerprint(_ json: String) -> String {
         SHA256.hash(data: Data(json.utf8)).map { byte in
@@ -28,8 +30,11 @@ enum FriendsUploadPolicy {
     /// The same fingerprint for bytes: what tells one picture from another.
     static func fingerprint(_ data: Data) -> String { FriendsKey.hex(SHA256.hash(data: data)) }
 
-    static func shouldUpload(lastAcceptedFingerprint: String?, json: String) -> Bool {
-        lastAcceptedFingerprint == nil || lastAcceptedFingerprint != fingerprint(json)
+    /// `isEmpty` is whether the day built has nothing to show a friend (`FriendsDay.isEmpty`). Such a
+    /// day goes up only over one this phone sent before, which it then replaces.
+    static func shouldUpload(lastAcceptedFingerprint: String?, json: String, isEmpty: Bool) -> Bool {
+        guard let lastAcceptedFingerprint else { return !isEmpty }
+        return lastAcceptedFingerprint != fingerprint(json)
     }
 }
 
@@ -845,8 +850,10 @@ final class FriendsStore: ObservableObject {
             // The account this run started under is gone: nothing more is sent with its key.
             guard session == epoch else { return }
             let now = Int(Date().timeIntervalSince1970)
-            let json = FriendsDayBuilder.json(FriendsDayBuilder.day(day.input, share: share, nowTs: now))
-            guard FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: uploadMark(day.key), json: json) else { continue }
+            let built = FriendsDayBuilder.day(day.input, share: share, nowTs: now)
+            let json = FriendsDayBuilder.json(built)
+            guard FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: uploadMark(day.key), json: json,
+                                                   isEmpty: built.isEmpty) else { continue }
             do {
                 try await client.upload(json: json, on: day.key)
                 guard session == epoch else { return }

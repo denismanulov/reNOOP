@@ -209,6 +209,7 @@ status. `{id}` is an account id (16 hex), `{key}` a key id (64 hex), `{claimId}`
 ### A day
 
 Every member is optional; a missing one is simply not shown to friends. Unknown members are a `400`.
+An upload replaces the whole day, so with several phones on one account the last upload of a day wins.
 
 ```json
 {

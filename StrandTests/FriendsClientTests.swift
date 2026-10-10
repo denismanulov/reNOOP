@@ -124,6 +124,8 @@ final class FriendsClientTests: XCTestCase {
     private static let me = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":true,"sleep":true,"workouts":true,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
     /// The account with every sharing switch off, so an upload run reads nothing out of the app's data.
     private static let meSharingNothing = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":false,"sleep":false,"workouts":false,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
+    /// The account sharing workouts only: the one section a test can fill from a store held in memory.
+    private static let meSharingWorkouts = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":false,"sleep":false,"workouts":true,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
     private static let emptyFeed = #"{"serverTime":1791540000,"me":\#(me),"friends":[],"claims":[],"strapClaim":null}"#
     private static let handle = "98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"
 
@@ -366,11 +368,28 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(FriendsUploadPolicy.fingerprint(Data("{}".utf8)), FriendsUploadPolicy.fingerprint("{}"))
         XCTAssertNotEqual(FriendsUploadPolicy.fingerprint("{}"), FriendsUploadPolicy.fingerprint("{ }"))
         let json = FriendsDayBuilder.json(FriendsDay(recovery: 81))
-        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: json))
+        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: json, isEmpty: false))
         let accepted = FriendsUploadPolicy.fingerprint(json)
-        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted, json: json))
+        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted, json: json, isEmpty: false))
         XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted,
-                                                       json: FriendsDayBuilder.json(FriendsDay(recovery: 82))))
+                                                       json: FriendsDayBuilder.json(FriendsDay(recovery: 82)), isEmpty: false))
+    }
+
+    /// A phone does not introduce a day with nothing to show: another phone of the account may have
+    /// uploaded that day, and an upload replaces it. A day this phone did send and that has since
+    /// become empty still goes up, once.
+    func testAnEmptyDayIsNotIntroducedButReplacesOneThisPhoneSent() {
+        let empty = FriendsDayBuilder.json(FriendsDay())
+        XCTAssertEqual(empty, "{}")
+        XCTAssertTrue(FriendsDay().isEmpty)
+        XCTAssertFalse(FriendsDay(recovery: 81).isEmpty)
+        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: empty, isEmpty: true),
+                       "nothing to show and nothing sent before")
+        let sent = FriendsUploadPolicy.fingerprint(FriendsDayBuilder.json(FriendsDay(recovery: 81)))
+        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: sent, json: empty, isEmpty: true),
+                      "what this phone sent is replaced by nothing")
+        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: FriendsUploadPolicy.fingerprint(empty),
+                                                        json: empty, isEmpty: true), "and only once")
     }
 
     /// A workout goes to a friend under its English label, whatever language this phone is in, with its
@@ -965,6 +984,54 @@ final class FriendsClientTests: XCTestCase {
         Stub.seen.filter { $0.method == method && $0.path == path }
     }
 
+    private func sentDays() -> [Stub.Seen] {
+        Stub.seen.filter { $0.method == "PUT" && $0.path.hasPrefix("/v2/me/days/") }
+    }
+
+    /// A repository over a store held in memory with one workout on the app's current day, and that
+    /// day's key: a day with something to show a friend when workouts are shared.
+    @MainActor
+    private func repoWithAWorkoutToday() async throws -> (Repository, String) {
+        let today = FriendsFormat.todayKey()
+        let start = try XCTUnwrap(FriendsUploader.dayBounds(today)).start + 60
+        let store = try await WhoopStore.inMemory()
+        _ = try await store.upsertWorkouts([
+            WorkoutRow(startTs: start, endTs: start + 1_800, sport: "Running", source: "manual", durationS: 1_800,
+                       energyKcal: 310, avgHr: 139, maxHr: 162, strain: 35.2, distanceM: nil, zonesJSON: nil,
+                       notes: nil, steps: nil),
+        ], deviceId: "test-friends")
+        let repo = Repository(deviceId: "test-friends")
+        repo.setStoreForTesting(store)
+        return (repo, today)
+    }
+
+    /// A phone with nothing to show for a day does not send that day: another phone of the account may
+    /// have uploaded it, and an upload replaces the day. What this phone did send it still replaces
+    /// when the day has since become empty, once.
+    @MainActor
+    func testAPhoneWithNothingToShowSendsNoDayAndReplacesOnlyWhatItSent() async throws {
+        let (store, _) = try await turnedOn(.none)
+        let profile = profile(name: "Anna")
+        let nothing = Repository(deviceId: "test-friends")
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingWorkouts)]
+        await store.uploadRecentDays(repo: nothing, profile: profile)
+        XCTAssertEqual(sent("GET", "/v2/me").count, 1, "the run reached the server")
+        XCTAssertTrue(sentDays().isEmpty, "a freshly joined phone with nothing to show sends no day")
+
+        let (repo, today) = try await repoWithAWorkoutToday()
+        Stub.answers["PUT /v2/me/days/\(today)"] = [(204, "")]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sentDays().map(\.path), ["/v2/me/days/\(today)"])
+        XCTAssertNotNil(store.uploadMark(today))
+
+        // The workout is gone from this phone: the day it sent is replaced by an empty one, once.
+        await store.uploadRecentDays(repo: nothing, profile: profile)
+        XCTAssertEqual(sentDays().map(\.path), ["/v2/me/days/\(today)", "/v2/me/days/\(today)"])
+        XCTAssertEqual(sentDays().last.map { String(decoding: $0.body, as: UTF8.self) }, #"{"workouts":[]}"#)
+        await store.uploadRecentDays(repo: nothing, profile: profile)
+        XCTAssertEqual(sentDays().count, 2)
+    }
+
     /// A test's profile is kept in the test's own defaults: a run that sends its name and its photo
     /// leaves the test host's own profile as it was.
     @MainActor
@@ -1045,19 +1112,22 @@ final class FriendsClientTests: XCTestCase {
     @MainActor
     func testAPhoneOnProbationSendsNeitherItsStrapNorItsProfile() async throws {
         let (store, _) = try await turnedOn(.handle(Self.handle))
-        let repo = Repository(deviceId: "test-friends")
+        let (repo, today) = try await repoWithAWorkoutToday()
         let profile = profile(name: "Renamed", photo: Self.jpeg)
-        let onProbation = Self.meSharingNothing.replacingOccurrences(of: #""probationUntil":null"#, with: #""probationUntil":1792104800"#)
-        XCTAssertNotEqual(onProbation, Self.meSharingNothing)
+        let onProbation = Self.meSharingWorkouts.replacingOccurrences(of: #""probationUntil":null"#, with: #""probationUntil":1792104800"#)
+        XCTAssertNotEqual(onProbation, Self.meSharingWorkouts)
         Stub.answers["GET /v2/me"] = [(200, onProbation)]
         Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
         Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
         Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/days/\(today)"] = [(204, "")]
         await store.uploadRecentDays(repo: repo, profile: profile)
         XCTAssertTrue(sent("PUT", "/v2/me/strap").isEmpty)
         XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
         XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
-        XCTAssertTrue(Stub.seen.contains { $0.method == "PUT" && $0.path.hasPrefix("/v2/me/days/") }, "its days still go up")
+        let days = Stub.seen.filter { $0.method == "PUT" && $0.path.hasPrefix("/v2/me/days/") }
+        XCTAssertEqual(days.map(\.path), ["/v2/me/days/\(today)"], "its days still go up")
+        XCTAssertTrue(String(decoding: try XCTUnwrap(days.first).body, as: UTF8.self).contains(#""sport":"Running""#))
 
         // Confirmed: the same run now sends all three.
         Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
