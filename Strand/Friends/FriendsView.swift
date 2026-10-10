@@ -287,6 +287,7 @@ struct FriendsWelcome: View {
                 .buttonStyle(FriendsKeyButtonStyle(prominent: false, large: true))
                 .disabled(store.loading)
                 .padding(.top, NoopMetrics.space5)
+            notNowButton
         case .strapBound:
             note("person.2.fill", "Starting your own asks the strap's previous owner to let it go. Friends works meanwhile.")
             Button { Task { await store.claimAccount(profile: profile) } } label: { Text("This Is My Account") }
@@ -297,6 +298,7 @@ struct FriendsWelcome: View {
                 .buttonStyle(FriendsKeyButtonStyle(prominent: false, large: true))
                 .disabled(store.loading)
                 .padding(.top, NoopMetrics.space3)
+            notNowButton
         case let .waiting(claim):
             if let matures = claim.maturesAt {
                 note("clock.fill", "If that phone is gone, you are let in by yourself on \(Self.moment(matures)).")
@@ -305,6 +307,22 @@ struct FriendsWelcome: View {
                 .buttonStyle(FriendsKeyButtonStyle(prominent: false, large: true))
                 .padding(.top, NoopMetrics.space5)
         }
+    }
+
+    /// The way back from a page that waits on the strap: plain text under the page's buttons, in their
+    /// type and key colour. Nothing has been sent by then, and nothing is.
+    private var notNowButton: some View {
+        Button { store.notNow() } label: {
+            Text("Not Now")
+                .font(StrandFont.pro(17, weight: .semibold))
+                .foregroundStyle(FriendsStyle.key)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, NoopMetrics.space3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(store.loading)
+        .padding(.top, NoopMetrics.space2)
     }
 
     /// The glyph and footnote above the page's button, as Fitness sets its own.

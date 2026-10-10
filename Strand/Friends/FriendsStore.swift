@@ -404,6 +404,15 @@ final class FriendsStore: ObservableObject {
         }
     }
 
+    /// "Not Now" on the two pages that wait on the strap: Friends is off again, as before Turn On.
+    /// Nothing is sent, and the strap being read later finishes nothing by itself. A key this phone
+    /// holds is kept, and the next Turn On uses it.
+    func notNow() {
+        guard phase == .waitingForStrap || phase == .strapBound else { return }
+        errorText = nil
+        setPhase(.off)
+    }
+
     /// "This is my account": ask to join the account the strap is bound to.
     func claimAccount(profile: ProfileStore) async { await claimAccount(name: profile.displayName) }
 

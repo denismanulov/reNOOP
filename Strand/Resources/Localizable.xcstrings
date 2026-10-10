@@ -225264,7 +225264,8 @@
     "This person is no longer here.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этого человека здесь больше нет."}}}},
     "The key for Friends could not be read right now. Try again in a moment.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Сейчас не удалось прочитать ключ «Друзей». Повторите чуть позже."}}}},
     "Server Address": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Адрес сервера"}}}},
-    "Leave this empty to use the standard server. Each server keeps its own account: turning Friends on here does not touch an account on another server.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Оставьте поле пустым, чтобы использовать стандартный сервер. У каждого сервера свой аккаунт: включение «Друзей» здесь не затрагивает аккаунт на другом сервере."}}}}
+    "Leave this empty to use the standard server. Each server keeps its own account: turning Friends on here does not touch an account on another server.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Оставьте поле пустым, чтобы использовать стандартный сервер. У каждого сервера свой аккаунт: включение «Друзей» здесь не затрагивает аккаунт на другом сервере."}}}},
+    "Not Now": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Не сейчас"}}}}
   },
   "version": "1.0"
 }

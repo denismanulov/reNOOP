@@ -830,6 +830,60 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(sent("PUT", "/v2/me/avatar").count, 1)
     }
 
+    // MARK: - Not now
+
+    /// Turn On can be taken back while the page waits for the strap: Friends is off again, nothing was
+    /// sent, the key is as it was, and the strap being read later does not finish it by itself.
+    @MainActor
+    func testNotNowWhileWaitingForTheStrapGoesBackToOffAndStaysThere() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let kept = try FriendsKey.create(server: Self.base, storage: keys, enclave: false)
+        let (store, defaults) = try store(.pending, signer: nil, keys: keys)
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .waitingForStrap)
+        store.notNow()
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "off")
+        XCTAssertEqual(FriendsKey.load(server: Self.base, storage: keys)?.keyID, kept.keyID)
+        XCTAssertEqual(keys.writeCount, 1)
+
+        // The strap is read, and the profile has the name an enrolment needs: only a tap on Turn On
+        // may use them.
+        store.strapIdentity = { .handle(Self.handle) }
+        await store.sync(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"), force: true)
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertTrue(Stub.seen.isEmpty)
+
+        let (relaunched, _) = try self.store(.handle(Self.handle), signer: nil, defaults: defaults, keys: keys)
+        XCTAssertEqual(relaunched.phase, .off)
+        XCTAssertEqual(relaunched.deviceID, kept.keyID, "the key is kept for the next Turn On")
+    }
+
+    @MainActor
+    func testNotNowOnAStrapWithAnAccountGoesBackToOff() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .strapBound)
+        let asked = Stub.seen.count
+        store.notNow()
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "off")
+        XCTAssertEqual(Stub.seen.count, asked, "nothing is sent to take it back")
+        XCTAssertNotNil(store.deviceID)
+        let (relaunched, _) = try self.store(.handle(Self.handle), defaults: defaults)
+        XCTAssertEqual(relaunched.phase, .off)
+    }
+
+    /// It is the way back from those two pages only: a claim is withdrawn with Cancel, and Friends that
+    /// is on is left by deleting the account.
+    @MainActor
+    func testNotNowDoesNothingElsewhere() async throws {
+        let (store, _) = try await turnedOn(.none)
+        store.notNow()
+        XCTAssertEqual(store.phase, .on)
+    }
+
     // MARK: - The server address
 
     private static let otherServer = "https://other.example"
