@@ -1,7 +1,8 @@
 //  FriendsSheets.swift
-//  NOOP · Friends — the sheet behind the bar's button, where Fitness keeps friends too, and the page of
-//  what the wearer shares. There is no account form: Friends is turned on from the tab itself, the name
-//  and photo are the profile's, and nothing here asks for a password.
+//  NOOP · Friends — the sheet behind the bar's button, where Fitness keeps friends too, the page of
+//  what the wearer shares, and the sheet that names the server before Friends is on. There is no account
+//  form: Friends is turned on from the tab itself, the name and photo are the profile's, and nothing
+//  here asks for a password.
 //
 //  The sheet closes with the bar's ✕ like every other sheet in the app.
 
@@ -47,6 +48,66 @@ struct FriendsManageSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton { dismiss() } }
             }
+        }
+    }
+}
+
+// MARK: - The server
+
+/// The sheet behind the welcome page's bar button: which server Friends talks to. Empty is the fork's
+/// own server. It is offered only while Friends is off, since each server keeps its own account.
+struct FriendsServerSheet: View {
+    @ObservedObject private var store = FriendsStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var address = ""
+    /// Why the address typed was not taken, until it is edited.
+    @State private var refusal: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Server Address", text: $address, prompt: Text(verbatim: FriendsServerAddress.standard))
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .submitLabel(.done)
+                        .onSubmit(save)
+                } footer: {
+                    if let refusal {
+                        Text(verbatim: refusal).foregroundStyle(StrandPalette.settingsRed)
+                    } else {
+                        Text("Leave this empty to use the standard server. Each server keeps its own account: turning Friends on here does not touch an account on another server.")
+                    }
+                }
+            }
+            .settingsForm()
+            .navigationTitle(Text("Server"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { SheetConfirmButton(action: save) }
+            }
+        }
+        .onAppear {
+            address = store.serverAddress == FriendsServerAddress.standard ? "" : store.serverAddress
+        }
+        .onChangeCompat(of: address) { _ in refusal = nil }
+    }
+
+    private func save() {
+        switch store.setServerAddress(address) {
+        case .done, .notOff:
+            // Not off any more means the page behind has moved on, and says why itself.
+            dismiss()
+        case .refused:
+            refusal = FriendsStore.message(for: FriendsAPIError.notConfigured)
         }
     }
 }

@@ -22,6 +22,7 @@ struct FriendsView: View {
     @AppStorage("friends.sort") private var sortRaw = FriendsSort.name.rawValue
 
     @State private var showFriends = false
+    @State private var showServer = false
 
     private var sort: Binding<FriendsSort> {
         Binding(get: { FriendsSort(rawValue: sortRaw) ?? .name }, set: { sortRaw = $0.rawValue })
@@ -41,6 +42,7 @@ struct FriendsView: View {
         #endif
         .toolbar { toolbar }
         .sheet(isPresented: $showFriends) { FriendsManageSheet() }
+        .sheet(isPresented: $showServer) { FriendsServerSheet() }
         .task(id: store.phase.stored) {
             // Opening the tab sends the wearer's own day first, so their card is never the stale one.
             // Coming back within a minute of a good answer shows that answer and asks nothing. Before
@@ -50,7 +52,8 @@ struct FriendsView: View {
     }
 
     /// Fitness's one bar button: it opens the friends sheet, and counts what waits there for an answer.
-    /// The page before Friends is on has no button and no title, as Fitness's has none.
+    /// The page before Friends is on has no title, as Fitness's has none, and while Friends is off one
+    /// button: which server it will talk to, which is chosen before turning on and not after.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if store.isOn {
             ToolbarItem(placement: .primaryAction) { friendsButton }
@@ -58,7 +61,17 @@ struct FriendsView: View {
             ToolbarItem(placement: .principal) {
                 Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
+            if store.phase == .off {
+                ToolbarItem(placement: .primaryAction) { serverButton }
+            }
         }
+    }
+
+    private var serverButton: some View {
+        Button { showServer = true } label: { Image(systemName: "server.rack") }
+            .barGlyph()
+            .disabled(store.loading)
+            .accessibilityLabel(Text("Server"))
     }
 
     private var waiting: Int { store.claims.count }

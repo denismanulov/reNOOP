@@ -292,6 +292,51 @@ final class FriendsStore: ObservableObject {
         }
     }
 
+    /// What naming a server came to.
+    enum ServerChange: Equatable {
+        case done
+        /// The address is not one the app will talk to; nothing was written.
+        case refused(FriendsServerAddress.Problem)
+        /// Friends is not off (or is on behind a key that cannot be read just now); nothing was written.
+        case notOff
+    }
+
+    /// Points Friends at the server the wearer names, or back at the standard one when `text` is empty.
+    /// Only while Friends is off: a server is chosen before turning on. An address `FriendsServerAddress`
+    /// refuses is not written. Another server is another account, so the key in hand becomes the one
+    /// kept for that address (none is made here) and nothing remembered about the previous server
+    /// stays. Naming the address already in use changes nothing.
+    func setServerAddress(_ text: String) -> ServerChange {
+        // Off behind a key that cannot be read just now is not off, and a key that has just come back
+        // may have brought Friends back with it.
+        guard mayEnter(), phase == .off, !loading else { return .notOff }
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var named: String?
+        if !typed.isEmpty {
+            switch FriendsServerAddress.validate(typed) {
+            case let .success(address): named = address
+            case let .failure(problem): return .refused(problem)
+            }
+        }
+        guard (named ?? FriendsServerAddress.standard) != serverAddress else { return .done }
+        if let named {
+            defaults.set(named, forKey: Self.addressKey)
+        } else {
+            defaults.removeObject(forKey: Self.addressKey)
+        }
+        forgetAccount()
+        FriendsClockOffset.shared.set(0)
+        errorText = nil
+        if case let .key(kept) = FriendsKey.find(server: serverAddress, storage: keys) {
+            key = kept
+        } else {
+            key = nil
+        }
+        epoch += 1
+        setPhase(.off)
+        return .done
+    }
+
     private func setPhase(_ next: FriendsPhase) {
         phase = next
         defaults.set(next.stored, forKey: Self.phaseKey)

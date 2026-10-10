@@ -13,6 +13,7 @@ final class FriendsClientTests: XCTestCase {
     private final class Stub: URLProtocol {
         struct Seen {
             let method: String
+            let host: String
             let path: String
             let headers: [String: String]
             let body: Data
@@ -44,7 +45,8 @@ final class FriendsClientTests: XCTestCase {
             let path = url.path + (url.query.map { "?" + $0 } ?? "")
             let method = request.httpMethod ?? "GET"
             let key = method + " " + path
-            Self.seen.append(Seen(method: method, path: path, headers: request.allHTTPHeaderFields ?? [:], body: body))
+            Self.seen.append(Seen(method: method, host: url.host ?? "", path: path,
+                                  headers: request.allHTTPHeaderFields ?? [:], body: body))
             if let target = Self.redirects[key], let location = URL(string: target) {
                 let hop = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
                                           headerFields: ["Location": target])!
@@ -826,6 +828,110 @@ final class FriendsClientTests: XCTestCase {
         await store.uploadRecentDays(repo: repo, profile: profile)
         XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1, "a copy already removed is not removed again")
         XCTAssertEqual(sent("PUT", "/v2/me/avatar").count, 1)
+    }
+
+    // MARK: - The server address
+
+    private static let otherServer = "https://other.example"
+
+    /// An address the rules refuse is not written, and the one in use stands.
+    @MainActor
+    func testAServerAddressTheRulesRefuseIsNotWritten() throws {
+        let (store, defaults) = try store(.none, signer: nil)
+        for bad in ["http://elsewhere.example", "https://user:secret@elsewhere.example", "not an address"] {
+            guard case .refused = store.setServerAddress(bad) else { return XCTFail(bad) }
+            XCTAssertEqual(defaults.string(forKey: FriendsStore.addressKey), Self.base)
+            XCTAssertEqual(store.serverAddress, Self.base)
+        }
+        XCTAssertEqual(store.setServerAddress("http://elsewhere.example"), .refused(.notHTTPS))
+    }
+
+    /// Another server is another account: the key in hand becomes the one kept for that address, or
+    /// none, and nothing remembered about the previous server stays. No key is made here.
+    @MainActor
+    func testAnotherServerBringsItsOwnKeyAndForgetsThePreviousOne() throws {
+        let keys = FriendsMemoryKeyStorage()
+        let first = try FriendsKey.create(server: Self.base, storage: keys, enclave: false)
+        let second = try FriendsKey.create(server: Self.otherServer, storage: keys, enclave: false)
+        let (store, defaults) = try store(.none, signer: nil, keys: keys)
+        XCTAssertEqual(store.deviceID, first.keyID)
+        let remembered = [FriendsStore.boundHandleKey, FriendsStore.pushedNameKey, FriendsStore.pushedPhotoKey,
+                          FriendsStore.adoptProfileKey, FriendsStore.markPrefix + "2026-10-10"]
+        func remember() {
+            for key in remembered { defaults.set("kept", forKey: key) }
+            FriendsClockOffset.shared.set(5_000)
+            store.errorText = "an earlier failure"
+        }
+        addTeardownBlock { FriendsClockOffset.shared.set(0) }
+
+        remember()
+        XCTAssertEqual(store.setServerAddress(Self.base + "/"), .done, "the address already in use")
+        XCTAssertEqual(remembered.compactMap { defaults.string(forKey: $0) }.count, remembered.count, "the same address changes nothing")
+        XCTAssertEqual(FriendsClockOffset.shared.seconds, 5_000)
+        XCTAssertEqual(store.deviceID, first.keyID)
+
+        XCTAssertEqual(store.setServerAddress("  https://Other.example/ "), .done)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.addressKey), Self.otherServer)
+        XCTAssertEqual(store.serverAddress, Self.otherServer)
+        XCTAssertEqual(store.deviceID, second.keyID)
+        XCTAssertEqual(remembered.compactMap { defaults.object(forKey: $0) as? String }, [], "nothing of the previous server stays")
+        XCTAssertEqual(FriendsClockOffset.shared.seconds, 0)
+        XCTAssertNil(store.errorText)
+        XCTAssertEqual(store.phase, .off)
+
+        XCTAssertEqual(store.setServerAddress("https://third.example"), .done)
+        XCTAssertNil(store.deviceID, "no key is kept for that server, and none is made by naming it")
+        XCTAssertEqual(keys.writeCount, 2)
+        XCTAssertTrue(Stub.seen.isEmpty)
+    }
+
+    /// Nothing typed is the standard server: the setting is removed.
+    @MainActor
+    func testAnEmptyServerAddressIsTheStandardServer() throws {
+        let (store, defaults) = try store(.none, signer: nil)
+        XCTAssertEqual(store.setServerAddress("   "), .done)
+        XCTAssertNil(defaults.string(forKey: FriendsStore.addressKey))
+        XCTAssertEqual(store.serverAddress, FriendsServerAddress.standard)
+    }
+
+    /// A server is chosen before Friends is turned on, and at no other time.
+    @MainActor
+    func testTheServerAddressChangesOnlyWhileFriendsIsOff() async throws {
+        let (on, onDefaults) = try await turnedOn(.none)
+        XCTAssertEqual(on.setServerAddress(Self.otherServer), .notOff)
+        XCTAssertEqual(onDefaults.string(forKey: FriendsStore.addressKey), Self.base)
+        XCTAssertEqual(on.phase, .on)
+
+        let (waiting, waitingDefaults) = try store(.pending)
+        await waiting.turnOn(name: "Anna")
+        XCTAssertEqual(waiting.phase, .waitingForStrap)
+        XCTAssertEqual(waiting.setServerAddress(Self.otherServer), .notOff)
+        XCTAssertEqual(waitingDefaults.string(forKey: FriendsStore.addressKey), Self.base)
+        XCTAssertEqual(waiting.phase, .waitingForStrap)
+
+        // Friends is on, and only looks off because its key cannot be read: the address stays.
+        let (unread, unreadDefaults, _, _) = try storeThatCouldNotReadItsKey(phase: "on")
+        XCTAssertEqual(unread.setServerAddress(Self.otherServer), .notOff)
+        XCTAssertEqual(unreadDefaults.string(forKey: FriendsStore.addressKey), Self.base)
+        XCTAssertEqual(unreadDefaults.string(forKey: FriendsStore.phaseKey), "on")
+    }
+
+    /// Turning on after naming another server enrols there, signed with that server's key.
+    @MainActor
+    func testTurningOnAfterNamingAnotherServerEnrolsThereWithItsKey() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        _ = try FriendsKey.create(server: Self.base, storage: keys, enclave: false)
+        let second = try FriendsKey.create(server: Self.otherServer, storage: keys, enclave: false)
+        let (store, _) = try store(.none, signer: nil, keys: keys)
+        XCTAssertEqual(store.setServerAddress(Self.otherServer), .done)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(Stub.seen.map(\.host), ["other.example", "other.example"])
+        XCTAssertEqual(Stub.seen.first?.path, "/v2/enroll")
+        XCTAssertEqual(Stub.seen.first?.headers["X-Friends-Key"], second.keyID)
+        XCTAssertEqual(keys.writeCount, 2, "no third key was made")
     }
 
     @MainActor
