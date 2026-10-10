@@ -1,10 +1,12 @@
 """End-to-end tests: a real server on an ephemeral port, a temporary database, signed HTTP calls."""
 
+import ast
 import base64
 import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import threading
@@ -1045,6 +1047,24 @@ class FriendsServerTest(unittest.TestCase):
         for method, pattern, handler, auth, size, limit in server.ROUTES:
             if method != "GET" or handler in (server.h_feed, server.h_claim_mine):
                 self.assertTrue(getattr(handler, "writes", False), "%s %s" % (method, pattern.pattern))
+
+    # --- the contract ---
+
+    def test_the_readme_names_every_error_code_the_server_can_answer(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "server.py"), encoding="utf-8") as source:
+            tree = ast.parse(source.read())
+        codes = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ApiError":
+                codes.update(part.value for part in ast.walk(node.args[1])
+                             if isinstance(part, ast.Constant) and isinstance(part.value, str))
+        self.assertGreater(len(codes), 30)  # the walk found the calls, not an empty set
+        with open(os.path.join(here, "README.md"), encoding="utf-8") as readme:
+            text = readme.read()
+        codes.add("internal")  # answered by the catch-all in the handler, not by an ApiError
+        missing = sorted(code for code in codes if not re.search(r"(?<![a-z_])%s(?![a-z_])" % code, text))
+        self.assertEqual([], missing)
 
 
 
