@@ -110,6 +110,8 @@ struct FriendsAddSections: View {
 
     /// A phone that joined without confirmation leaves the friend list alone.
     private var locked: Bool { store.probationUntil != nil }
+    /// Add is offered for anything typed: what is not a code is answered with the reason under the field.
+    private var nothingTyped: Bool { code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         Section {
@@ -130,7 +132,7 @@ struct FriendsAddSections: View {
                 } else {
                     Button(action: redeem) { Text("Add").font(StrandFont.pro(15, weight: .semibold)) }
                         .friendsCapsuleButton(prominent: true)
-                        .disabled(FriendsInviteCode.extract(code) == nil || locked)
+                        .disabled(nothingTyped || locked)
                 }
             }
         } header: {
@@ -215,7 +217,7 @@ struct FriendsAddSections: View {
     }
 
     private func redeem() {
-        guard !working, FriendsInviteCode.extract(code) != nil else { return }
+        guard !working, !nothingTyped else { return }
         working = true
         Task {
             if let friend = await store.redeem(code) {

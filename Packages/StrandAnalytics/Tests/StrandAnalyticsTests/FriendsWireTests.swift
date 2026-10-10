@@ -114,4 +114,40 @@ final class FriendsWireTests: XCTestCase {
         XCTAssertNil(FriendsInviteCode.extract("renoop://friends/add?c=nope"))
         XCTAssertNil(FriendsInviteCode.extract("hello"))
     }
+
+    /// A friend copies the whole message the app shared and pastes it: the code is found among the
+    /// words, by its link first and else in the form codes are shown in.
+    func testTheCodeIsFoundInAPastedMessage() {
+        let english = "Add me on reNOOP Friends: https://renoop.duckdns.org/i/K7QM2-XRD4P\nOr enter the code K7QM2-XRD4P on the Friends tab."
+        let russian = "Добавь меня в друзья в reNOOP: https://renoop.duckdns.org/i/K7QM2-XRD4P\nИли введи код K7QM2-XRD4P на вкладке «Друзья»."
+        XCTAssertEqual(FriendsInviteCode.extract(english), "K7QM2XRD4P")
+        XCTAssertEqual(FriendsInviteCode.extract(russian), "K7QM2XRD4P")
+        XCTAssertEqual(FriendsInviteCode.extract("https://renoop.duckdns.org/i/K7QM2-XRD4P."), "K7QM2XRD4P",
+                       "a link that ends a sentence")
+        XCTAssertEqual(FriendsInviteCode.extract("see https://renoop.duckdns.org/i/K7QM2-XRD4P), thanks!"), "K7QM2XRD4P")
+        XCTAssertEqual(FriendsInviteCode.extract("my code is k7qm2-xrd4p."), "K7QM2XRD4P")
+        XCTAssertEqual(FriendsInviteCode.extract("code AAAAA-BBBBB or https://example.org/i/K7QM2-XRD4P"), "K7QM2XRD4P",
+                       "a link is taken before a bare code")
+        XCTAssertEqual(FriendsInviteCode.extract("https://renoop.duckdns.org/i/K7QM2-XRD4P/"), "K7QM2XRD4P", "a trailing slash")
+        XCTAssertEqual(FriendsInviteCode.extract("renoop://friends/add/?c=K7QM2-XRD4P"), "K7QM2XRD4P")
+        XCTAssertEqual(FriendsInviteCode.extract("K7QM2\tXRD4P"), "K7QM2XRD4P", "a tab inside a code")
+    }
+
+    /// Words alone are not a code, though a ten-letter word may be spelled in the code's alphabet: among
+    /// other words a code is read only as it is shown, in two halves with a dash.
+    func testProseAloneIsNotACode() {
+        XCTAssertNil(FriendsInviteCode.extract("Add me on reNOOP Friends"))
+        XCTAssertNil(FriendsInviteCode.extract("our friendship means everything"))
+        XCTAssertNil(FriendsInviteCode.extract("Или введи код на вкладке «Друзья»."))
+        XCTAssertNil(FriendsInviteCode.extract("call me - maybe"))
+        XCTAssertNil(FriendsInviteCode.extract("see https://example.org/other/K7QM2XRD4P today"))
+        XCTAssertEqual(FriendsInviteCode.extract("friendship"), "FR1ENDSH1P", "typed alone it is what was typed")
+    }
+
+    /// The server upper-cases before it reads a code, and so does this: a letter whose upper case is
+    /// two letters counts as both, on both sides.
+    func testALetterThatUpperCasesToTwoIsReadAsTheServerReadsIt() {
+        XCTAssertEqual(FriendsInviteCode.normalized("K7QM2XRDß"), "K7QM2XRDSS")
+        XCTAssertNil(FriendsInviteCode.normalized("K7QM2XRD4ß"), "eleven characters once upper-cased")
+    }
 }

@@ -117,17 +117,43 @@ public enum FriendsInviteCode {
 
     /// The code in whatever was typed, pasted or opened: a bare code, an invite page's address
     /// (".../i/<code>") or the app's own link ("renoop://friends/add?c=<code>"). Nil when there is none.
+    /// A whole message may be pasted, such as the one the app shares: when the text as a whole is
+    /// neither, it is read word by word, each without the punctuation that may end it, for a link
+    /// first and else for a code written as codes are shown ("XXXXX-XXXXX"). A word among others is
+    /// not read as a code in any looser form, since a ten-letter word can be spelled in the alphabet.
+    /// Kotlin twin: `FriendsInviteCode.extract` must read a pasted message the same way.
     public static func extract(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let code = normalized(trimmed) { return code }
-        guard let parts = URLComponents(string: trimmed) else { return nil }
+        if let code = normalized(trimmed) ?? fromLink(trimmed) { return code }
+        let words = trimmed.unicodeScalars
+            .split(whereSeparator: { CharacterSet.whitespacesAndNewlines.contains($0) })
+            .map { word -> String in
+                var word = word
+                while let last = word.last, ".,;:!?)".unicodeScalars.contains(last) { word = word.dropLast() }
+                return String(String.UnicodeScalarView(word))
+            }
+        guard words.count > 1 || words.first != trimmed else { return nil }
+        if let code = words.lazy.compactMap(fromLink).first { return code }
+        return words.lazy.compactMap(shown).first
+    }
+
+    /// The code an invite page's address or the app's own link carries, or nil.
+    private static func fromLink(_ text: String) -> String? {
+        guard let parts = URLComponents(string: text) else { return nil }
         if parts.scheme?.lowercased() == "renoop" {
-            guard parts.host?.lowercased() == "friends", parts.path == "/add" else { return nil }
+            guard parts.host?.lowercased() == "friends", parts.path == "/add" || parts.path == "/add/" else { return nil }
             return parts.queryItems?.first(where: { $0.name == "c" })?.value.flatMap(normalized)
         }
         let segments = parts.path.split(separator: "/", omittingEmptySubsequences: true)
         guard segments.count >= 2, segments[segments.count - 2] == "i" else { return nil }
         return normalized(String(segments[segments.count - 1]))
+    }
+
+    /// The code in a word written exactly as codes are shown, two halves of five with a dash, or nil.
+    private static func shown(_ word: String) -> String? {
+        let scalars = Array(word.unicodeScalars)
+        guard scalars.count == length + 1, scalars[length / 2] == "-" else { return nil }
+        return normalized(word)
     }
 
     /// The invite page's address on `server` (a normalised server address, no trailing slash).

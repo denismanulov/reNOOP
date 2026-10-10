@@ -1497,6 +1497,11 @@ final class FriendsClientTests: XCTestCase {
         let friend = await store.redeem("https://friends.example/i/k7qm2-xrd4p")
         XCTAssertEqual(friend?.name, "Max")
         XCTAssertEqual(String(decoding: Stub.seen[sent].body, as: UTF8.self), #"{"code":"K7QM2XRD4P"}"#)
+        // The whole message the app shares, pasted as it was received.
+        let pasted = await store.redeem("Add me on reNOOP Friends: https://friends.example/i/AAAAA-BBBBB\nOr enter the code AAAAA-BBBBB on the Friends tab.")
+        XCTAssertEqual(pasted?.name, "Max")
+        XCTAssertEqual(Stub.seen.last(where: { $0.path == "/v2/invites/redeem" }).map { String(decoding: $0.body, as: UTF8.self) },
+                       #"{"code":"AAAAABBBBB"}"#)
     }
 
     // MARK: - Clock
