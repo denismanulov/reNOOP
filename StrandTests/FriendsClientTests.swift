@@ -83,7 +83,15 @@ final class FriendsClientTests: XCTestCase {
             let key = method + " " + path
             Self.seen.append(Seen(method: method, host: url.host ?? "", path: path,
                                   headers: request.allHTTPHeaderFields ?? [:], body: body))
-            if let delay = Self.delays[key] { Thread.sleep(forTimeInterval: delay) }
+            if let delay = Self.delays[key] {
+                // Off this thread, so other requests are answered while this one waits.
+                DispatchQueue.global().asyncAfter(deadline: .now() + delay) { self.answer(key, url: url) }
+            } else {
+                answer(key, url: url)
+            }
+        }
+
+        private func answer(_ key: String, url: URL) {
             if let code = Self.failures[key] {
                 client?.urlProtocol(self, didFailWithError: URLError(code))
                 return
@@ -1322,6 +1330,131 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertGreaterThan(text.split(separator: "\n").count, 10, "one member to a line")
         XCTAssertEqual(text.filter { !$0.isWhitespace }, wire, "nothing but layout was added")
         XCTAssertTrue(text.hasPrefix("{\n  \"me\": {"), "the server's order, not the alphabet's")
+    }
+
+    // MARK: - Loose ends
+
+    /// Cancel withdraws the request on the server. When the server could not be reached the request
+    /// is still there, so the page stays and says why; any answer of the server's ends the wait.
+    @MainActor
+    func testCancellingAClaimOfflineStaysOnThePage() async throws {
+        let (store, _) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        Stub.answers["POST /v2/claims"] = [(201, #"{"claim":{"id":3,"kind":"join","code":"481902","state":"pending","createdAt":1}}"#)]
+        await store.turnOn(name: "Anna")
+        await store.claimAccount(name: "Anna")
+        guard case let .waiting(claim) = store.phase else { return XCTFail("not waiting") }
+
+        Stub.failures["DELETE /v2/claims/mine"] = .notConnectedToInternet
+        await store.cancelClaim()
+        XCTAssertEqual(store.phase, .waiting(claim), "the request is still on the server")
+        XCTAssertEqual(store.errorText, FriendsStore.message(for: FriendsAPIError.transport("")))
+
+        Stub.failures = [:]
+        Stub.answers["DELETE /v2/claims/mine"] = [(404, #"{"error":"no_claim","message":""}"#)]
+        await store.cancelClaim()
+        XCTAssertEqual(store.phase, .strapBound, "a refusal is an answer: nothing waits on the server")
+        XCTAssertNil(store.errorText)
+    }
+
+    /// "This Is My Account" needs the strap's handle. Without one nothing is sent and the page stands:
+    /// moving on would end, at the next sync, in a new account, the opposite of what was tapped.
+    @MainActor
+    func testClaimingTheAccountWithoutAStrapSendsNothingAndStays() async throws {
+        for identity in [FriendsStrap.Identity.none, .pending] {
+            let (store, defaults) = try store(.handle(Self.handle))
+            Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+            await store.turnOn(name: "Anna")
+            XCTAssertEqual(store.phase, .strapBound)
+            Stub.seen = []
+            store.strapIdentity = { identity }
+            await store.claimAccount(name: "Anna")
+            XCTAssertTrue(Stub.seen.isEmpty)
+            XCTAssertEqual(store.phase, .strapBound)
+            XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "strapBound")
+            XCTAssertEqual(store.errorText, String(localized: "Connect your strap first."))
+            await store.sync(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"), force: true)
+            XCTAssertTrue(Stub.seen.isEmpty, "and no sync enrols by itself")
+        }
+    }
+
+    /// A phone that joined records its profile as already sent at its first run, confirmed or not. What
+    /// the wearer changes during the seven days is then a change made here, sent once confirmed.
+    @MainActor
+    func testARenameDuringProbationIsSentOnceThePhoneIsConfirmed() async throws {
+        let (store, defaults) = try await turnedOn(.none, enrolAnswer: 200, name: "Other")
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Other", photo: Self.jpeg)
+        let onProbation = Self.meSharingNothing.replacingOccurrences(of: #""probationUntil":null"#, with: #""probationUntil":1792104800"#)
+        Stub.answers["GET /v2/me"] = [(200, onProbation)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey), "joining is recorded by a run on probation too")
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Other")
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedPhotoKey), FriendsUploadPolicy.fingerprint(Self.jpeg))
+
+        profile.displayName = "Renamed"
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty, "nothing changes while on probation")
+
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("PATCH", "/v2/me").map { String(decoding: $0.body, as: UTF8.self) }, [#"{"name":"Renamed"}"#])
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty, "the photo did not change")
+    }
+
+    /// The account a run started under can go while the run is asking about the strap. Nothing more of
+    /// that run is sent: the profile is not pushed with a key the server has just stopped knowing.
+    @MainActor
+    func testARunWhoseAccountWentWhileBindingTheStrapSendsNoProfile() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        let profile = profile(name: "Renamed", photo: Self.jpeg)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        Stub.answers["GET /v2/feed?days=7"] = [(401, #"{"error":"unknown_key","message":""}"#)]
+        Stub.delays["PUT /v2/me/strap"] = 0.4
+        async let run: Void = store.uploadRecentDays(repo: Repository(deviceId: "test-friends"), profile: profile)
+        // The run is waiting on the strap's answer when a refresh finds the phone off the account.
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(sent("PUT", "/v2/me/strap").count, 1)
+        await store.refresh()
+        XCTAssertEqual(store.phase, .off)
+        await run
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty)
+        XCTAssertTrue(sent("PUT", "/v2/me/avatar").isEmpty)
+    }
+
+    /// What API version 1 left on the phone, its token and the nickname, goes the first time Friends
+    /// comes on, once. Nothing is touched before that, and no phone key is involved.
+    @MainActor
+    func testTheLeftoversOfVersionOneGoWhenFriendsComesOn() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let defaults = FriendsTestDefaults()
+        defaults.set("anna", forKey: "friends.nick")
+        let (store, _) = try store(.none, signer: nil, defaults: defaults, keys: keys)
+        await store.sync(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"), force: true)
+        XCTAssertEqual(keys.obsoleteTokenRemovals, 0, "nothing is touched while Friends is off")
+        XCTAssertEqual(defaults.string(forKey: "friends.nick"), "anna")
+
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["POST /v2/me/delete"] = [(204, "")]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(keys.obsoleteTokenRemovals, 1)
+        XCTAssertNil(defaults.string(forKey: "friends.nick"))
+        let key = try XCTUnwrap(store.deviceID)
+        XCTAssertEqual(FriendsKey.load(server: Self.base, storage: keys)?.keyID, key, "the phone key is as it was made")
+
+        let deleted = await store.deleteAccount()
+        XCTAssertTrue(deleted)
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(keys.obsoleteTokenRemovals, 1, "once")
     }
 
     // MARK: - Not now

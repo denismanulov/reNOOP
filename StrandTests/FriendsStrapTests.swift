@@ -84,6 +84,22 @@ final class FriendsStrapTests: XCTestCase {
                        .handle("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"))
     }
 
+    /// A row whose own id is serial-derived names its strap by itself. A value stored against that id
+    /// (left by another strap confirmed earlier in the process) does not speak for it.
+    @MainActor
+    func testASerialKeyedActiveRowIsTheHandleOfItsOwnIdWhateverIsStoredAgainstIt() async throws {
+        let defaults = FriendsTestDefaults()
+        FriendsStrap.note(adoptedId: "whoop-4B7654321", forDeviceId: "whoop-4A0123456", defaults: defaults)
+        let registry = try await registry([device("whoop-4A0123456", brand: "WHOOP")], active: "whoop-4A0123456")
+        XCTAssertEqual(FriendsStrap.identity(registry: registry, defaults: defaults),
+                       .handle("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"))
+        // The legacy seed has no serial in its id, so the stored value is all there is.
+        FriendsStrap.note(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults)
+        let legacy = try await self.registry([device("my-whoop", brand: "WHOOP")], active: "my-whoop")
+        XCTAssertEqual(FriendsStrap.identity(registry: legacy, defaults: defaults),
+                       .handle("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"))
+    }
+
     @MainActor
     func testAnArchivedRowThatIsStillTheActiveIdIsNotAStrap() async throws {
         let defaults = FriendsTestDefaults()

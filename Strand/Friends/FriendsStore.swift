@@ -125,6 +125,10 @@ final class FriendsStore: ObservableObject {
     static let boundHandleKey = "friends.boundHandle"
     /// The codes of the invites made on this phone, by invite id, so a waiting invite can be shown again.
     static let inviteCodesKey = "friends.inviteCodes"
+    /// Set once what API version 1 left on this phone (its token, the nickname) has been removed.
+    static let v1RemovedKey = "friends.v1Removed"
+    /// The nickname version 1 kept; nothing reads it any more.
+    static let v1NickKey = "friends.nick"
     /// Coming back to the tab inside this long of a good answer shows that answer.
     static let autoRefreshEverySeconds = 60
 
@@ -449,8 +453,10 @@ final class FriendsStore: ObservableObject {
 
     private func claimNow(name: String) async {
         guard mayEnter(), !loading, phase != .on else { return }
+        // Without the strap's handle there is no account to ask for. The page stands: waiting for the
+        // strap from here would end in an enrolment, a new account where the wearer asked for theirs.
         guard case let .handle(strap) = strapIdentity() else {
-            setPhase(.waitingForStrap)
+            errorText = String(localized: "Connect your strap first.")
             return
         }
         loading = true
@@ -470,11 +476,24 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    /// Withdraws the request to join and goes back to the choice.
+    /// Withdraws the request to join and goes back to the choice. A server that could not be reached
+    /// still holds the request, so the page stays and says why; any answer ends the wait, since a
+    /// refusal means nothing of this phone's waits there.
     func cancelClaim() async {
         await Task {
-            try? await self.client().withdrawClaim()
-            if case .waiting = self.phase { self.setPhase(.strapBound) }
+            do {
+                try await self.client().withdrawClaim()
+            } catch let error as FriendsAPIError where error.isOffline {
+                self.errorText = Self.message(for: error)
+                return
+            } catch is CancellationError {
+                return
+            } catch {
+                // Any other answer: nothing of this phone's waits on the server.
+            }
+            guard case .waiting = self.phase else { return }
+            self.errorText = nil
+            self.setPhase(.strapBound)
         }.value
     }
 
@@ -524,6 +543,13 @@ final class FriendsStore: ObservableObject {
     private func becomeOn(me: FriendProfile, pushedName: String?) {
         // Nothing of an earlier account on this phone may stay under the new one.
         forgetAccount()
+        // Nor what API version 1 left behind, removed here once rather than at launch, where a Keychain
+        // call can put a prompt on a Mac's screen before anything was asked for.
+        if !defaults.bool(forKey: Self.v1RemovedKey) {
+            keys.removeObsoleteToken()
+            defaults.removeObject(forKey: Self.v1NickKey)
+            defaults.set(true, forKey: Self.v1RemovedKey)
+        }
         if let pushedName { defaults.set(pushedName, forKey: Self.pushedNameKey) }
         epoch += 1
         errorText = nil
@@ -842,10 +868,14 @@ final class FriendsStore: ObservableObject {
             return
         }
         guard let share = account.share else { return }
+        // A phone that joined records its profile as the one already sent at its first run, confirmed
+        // or not: what the wearer changes after that is a change made here.
+        recordAdoptedProfile(profile)
         // A phone that joined without confirmation reads and uploads its days; the strap and the profile
         // wait until it is confirmed.
         if account.device?.probationUntil == nil {
             await bindStrap(client, session: session)
+            guard session == epoch else { return }
             await pushProfile(client, profile: profile, avatarRev: account.avatarRev, session: session)
         }
         let days = await FriendsUploader.recentDays(repo: repo, profile: profile, share: share)
@@ -887,24 +917,33 @@ final class FriendsStore: ObservableObject {
         }
     }
 
+    /// The profile as it would go to the server: the name, the photo when it is shared and fits, and
+    /// what stands for that photo on record ("none" for no photo, "off" for Photo switched off).
+    private func profileToSend(_ profile: ProfileStore) -> (name: String, photo: Data?, photoMark: String) {
+        let name = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photo = sharePhoto ? profile.avatarImageData.flatMap { FriendsAvatars.fitForUpload($0) } : nil
+        return (name, photo, photo.map { FriendsUploadPolicy.fingerprint($0) } ?? (sharePhoto ? "none" : "off"))
+    }
+
+    /// A phone that joined an account records its own name and photo as sent without sending them,
+    /// once: what the account already shows stands. Nothing is sent here, so it does not wait for the
+    /// phone to be confirmed. With Photo off nothing is recorded for the picture, so `pushProfile`
+    /// still removes the account's.
+    private func recordAdoptedProfile(_ profile: ProfileStore) {
+        guard defaults.bool(forKey: Self.adoptProfileKey) else { return }
+        let (name, _, photoMark) = profileToSend(profile)
+        defaults.set(name, forKey: Self.pushedNameKey)
+        if sharePhoto { defaults.set(photoMark, forKey: Self.pushedPhotoKey) }
+        defaults.removeObject(forKey: Self.adoptProfileKey)
+    }
+
     /// Sends the profile's name and photo when the wearer changed them on this phone since they were
     /// last sent. Never because the server's differ: two phones of one account with different profiles
     /// would otherwise overwrite each other forever. Photo switched off is the one exception: it is
     /// the wearer's word about the account's picture, so the picture goes whoever sent it. `avatarRev`
     /// is the account's as this run read it: 0 when it has no picture.
     private func pushProfile(_ client: FriendsClient, profile: ProfileStore, avatarRev: Int, session: Int) async {
-        let name = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let photo = sharePhoto ? profile.avatarImageData.flatMap { FriendsAvatars.fitForUpload($0) } : nil
-        let photoMark = photo.map { FriendsUploadPolicy.fingerprint($0) } ?? (sharePhoto ? "none" : "off")
-        if defaults.bool(forKey: Self.adoptProfileKey) {
-            defaults.set(name, forKey: Self.pushedNameKey)
-            defaults.removeObject(forKey: Self.adoptProfileKey)
-            // With Photo off nothing is recorded for the picture, so the removal below still happens.
-            guard !sharePhoto else {
-                defaults.set(photoMark, forKey: Self.pushedPhotoKey)
-                return
-            }
-        }
+        let (name, photo, photoMark) = profileToSend(profile)
         do {
             if !name.isEmpty, name != defaults.string(forKey: Self.pushedNameKey) {
                 _ = try await client.update(name: name)

@@ -29,6 +29,9 @@ protocol FriendsKeyStorage: Sendable {
     func item(account: String) -> FriendsKeyItem
     func write(_ data: Data, account: String) -> Bool
     func delete(account: String)
+    /// Removes the account token API version 1 kept. No phone key is involved: that token is of no
+    /// use to any server since version 2.
+    func removeObsoleteToken()
 }
 
 /// What a storage answers for one item. "Nothing is kept" and "what is kept could not be read" are
@@ -209,6 +212,13 @@ struct FriendsKeychainStorage: FriendsKeyStorage {
     }
 
     func delete(account: String) { SecItemDelete(query(account) as CFDictionary) }
+
+    /// Version 1's token was a generic password of its own service, apart from the keys kept here.
+    func removeObsoleteToken() {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                       kSecAttrService as String: "com.renoop.friends",
+                       kSecAttrAccount as String: "token"] as CFDictionary)
+    }
 }
 
 /// Keys held in memory, for tests.
@@ -219,6 +229,18 @@ final class FriendsMemoryKeyStorage: FriendsKeyStorage, @unchecked Sendable {
     var refusesWrites = false
     private var readsFail = false
     private var writes = 0
+    private var obsoleteRemovals = 0
+
+    /// How many times the removal of version 1's token was asked for.
+    var obsoleteTokenRemovals: Int {
+        lock.lock(); defer { lock.unlock() }
+        return obsoleteRemovals
+    }
+
+    func removeObsoleteToken() {
+        lock.lock(); defer { lock.unlock() }
+        obsoleteRemovals += 1
+    }
 
     /// Set to make every read fail, as the Keychain does before the device's first unlock.
     var failsReads: Bool {

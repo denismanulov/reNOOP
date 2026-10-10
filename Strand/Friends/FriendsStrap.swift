@@ -78,8 +78,9 @@ enum FriendsStrap {
         return hasSerial ? .pending : .none
     }
 
-    /// The identity of the registry's active device: the id recorded for it where its serial was confirmed,
-    /// else its own id when that is already serial-derived. Before the registry exists, or with nothing active,
+    /// The identity of the registry's active device: its own id when that is already serial-derived, else
+    /// the id recorded for it where its serial was confirmed. An id that names its strap is never overruled
+    /// by a recorded value, which may be left from another strap. Before the registry exists, or with nothing active,
     /// nothing is known yet: that reads as a strap not read, never as no strap, so an account is not
     /// made unbound by a race with launch.
     @MainActor
@@ -93,7 +94,7 @@ enum FriendsStrap {
         guard let registry, let active = registry.devices.first(where: { $0.id == registry.activeDeviceId && $0.status == .active }) else {
             return .pending
         }
-        let adopted = adoptedId(forDeviceId: active.id, defaults: defaults) ?? serialDerivedId(active.id)
+        let adopted = serialDerivedId(active.id) ?? adoptedId(forDeviceId: active.id, defaults: defaults)
         return identity(hasSerial: hasSerial(active), adoptedId: adopted)
     }
 }
