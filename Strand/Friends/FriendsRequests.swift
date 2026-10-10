@@ -85,6 +85,9 @@ struct FriendsNotices: View {
 struct FriendsRequestsSection: View {
     @ObservedObject private var store = FriendsStore.shared
     @State private var working = false
+    /// Why the last answer failed. Kept here, not read from the store, so a refresh that clears the
+    /// store's text does not take the message away while it is being read.
+    @State private var failure: String?
 
     /// A phone that joined without confirmation answers nothing until it is confirmed itself.
     private var locked: Bool { working || store.probationUntil != nil }
@@ -107,6 +110,9 @@ struct FriendsRequestsSection: View {
             } footer: {
                 if store.probationUntil != nil {
                     Text("This phone joined without confirmation, so it cannot answer these.")
+                }
+                if let failure {
+                    Text(verbatim: failure).foregroundStyle(StrandPalette.settingsRed)
                 }
             }
         }
@@ -142,8 +148,11 @@ struct FriendsRequestsSection: View {
 
     private func run(_ answer: @escaping () async -> Void) {
         working = true
+        failure = nil
+        store.errorText = nil
         Task {
             await answer()
+            failure = store.errorText
             working = false
         }
     }
