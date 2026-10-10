@@ -14,6 +14,9 @@ struct SummarySnapshot {
     var effort: Double?
     /// Sleep performance, 0–100.
     var rest: Double?
+    /// The picked day's OWN sleep performance: `rest` without today's carry of the last scored night. The
+    /// Friends upload reads this one, since a day sent to a friend carries no "from last night" label.
+    var restOfDay: Double?
     var metrics: SummaryMetricInputs?
     /// Trailing 7-day values (oldest → newest) keyed by `SummaryMetricReading.seriesKey`.
     var series: [String: [Double]] = [:]
@@ -86,6 +89,18 @@ enum SummaryLoader {
         var unitSystem: UnitSystem
         var fahrenheit: Bool
         var skinTempKind: SkinTempDisplay.Kind
+
+        /// The preferences as stored, for a load with no screen alive (the Friends upload after a strap
+        /// sync). The same keys and fallbacks the Summary reads through `@AppStorage`.
+        static func stored(_ defaults: UserDefaults = .standard) -> Prefs {
+            let unitSystem = UnitSystem(rawValue: defaults.string(forKey: UnitPrefs.systemKey) ?? "") ?? .metric
+            let temperature = defaults.string(forKey: UnitPrefs.temperatureKey) ?? ""
+            return Prefs(
+                dayCycleMode: DayCycleMode.persisted(defaults.string(forKey: DayCycleMode.storageKey)),
+                unitSystem: unitSystem,
+                fahrenheit: UnitPrefs.resolveTemperature(system: unitSystem, override: temperature) == .fahrenheit,
+                skinTempKind: SkinTempDisplay.Kind(rawValue: defaults.string(forKey: UnitPrefs.skinTempDisplayKey) ?? "") ?? .absolute)
+        }
     }
 
     static let seriesDays = 7
@@ -136,6 +151,7 @@ enum SummaryLoader {
 
         let restSeries = await restA
         let restByDay = Dictionary(restSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
+        snap.restOfDay = restByDay[dayKey]
         snap.rest = DayScoreReadings.freshRestScore(todayValue: restByDay[dayKey], lastDay: restSeries.last?.day,
                                                     lastValue: restSeries.last?.value, isTodaySelected: isToday,
                                                     todayKey: dayKey)

@@ -522,36 +522,6 @@ struct SummaryView: View {
 
 
 private extension View {
-    /// iOS 26's soft scroll edge under the bar, so the page blurs away beneath the small title as Health's
-    /// does. A no-op before iOS 26.
-    @ViewBuilder
-    func softTopEdge() -> some View {
-        #if compiler(>=6.2) && os(iOS)
-        if #available(iOS 26.0, *) {
-            self.scrollEdgeEffectStyle(.soft, for: .top)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
-    /// Reports whether the scroll view has moved more than `offset` points from its top. iOS 18 API; on
-    /// iOS 17 nothing is reported, so the bar keeps no title (the page's own title row still shows).
-    @ViewBuilder
-    func onScrolledPast(_ offset: CGFloat, action: @escaping (Bool) -> Void) -> some View {
-        if #available(iOS 18.0, macOS 15.0, *) {
-            self.onScrollGeometryChange(for: Bool.self) { geo in
-                geo.contentOffset.y + geo.contentInsets.top > offset
-            } action: { _, away in
-                action(away)
-            }
-        } else {
-            self
-        }
-    }
-
     /// A light tick when the picked day changes; iOS 17 / macOS 14 API, a no-op before that.
     @ViewBuilder
     func sensoryFeedbackCompat(trigger: Int) -> some View {

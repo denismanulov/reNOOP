@@ -371,7 +371,7 @@ final class AppModel: ObservableObject {
         // no-op until the wearer has created an account there.
         repo.$days.dropFirst().sink { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in FriendsStore.shared.daysChanged(repo: self.repo) }
+            Task { @MainActor in FriendsStore.shared.daysChanged(repo: self.repo, profile: self.profile) }
         }.store(in: &hrCancellables)
         // A pending "I'm awake" mark is applied once the night it belongs to is on record. The cached
         // days change at the end of every scoring pass, which is when that can first be true. The short

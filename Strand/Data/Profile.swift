@@ -69,8 +69,9 @@ final class ProfileStore: ObservableObject {
 
     // ── Profile picture (optional, on-device only) ──────────────────────────────────────────────
     /// The user's chosen profile photo as JPEG bytes, or nil for the default SF-Symbol fallback.
-    /// LOCAL-ONLY — like every other field here it lives in UserDefaults on this device; NOOP is
-    /// fully offline so this is never uploaded anywhere. Always set via ``setAvatar(_:)`` (which
+    /// Like every other field here it lives in UserDefaults on this device. It leaves it in one case
+    /// only: the wearer has a Friends account (a reNOOP fork feature) and chose "Use My Profile Photo"
+    /// there, which sends this picture to their friends server. Always set via ``setAvatar(_:)`` (which
     /// downscales) rather than written directly, so the persisted blob stays small (~256px).
     @Published var avatarImageData: Data? {
         didSet {

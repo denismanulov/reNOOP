@@ -744,6 +744,9 @@ enum DemoScreens {
         // The running gym session (start one from "liftlog" first; it persists across launches).
         case "liftsession": return AnyView(LiftSessionView { })
         case "journal":  return AnyView(NavigationStack { JournalView() })
+        // Friends against the configured server, and the page the tab shows before an account exists.
+        case "friends":  return AnyView(FriendsView().tabRouteDestinations())
+        case "friendswelcome": return AnyView(FriendsWelcome(onStart: {}).background(StrandPalette.summaryCanvas.ignoresSafeArea()))
         case "insights": return AnyView(NavigationStack { InsightsHubView() })
         // Every notice state side by side (the shared NoticeCard, with each screen's real copy).
         case "notices": return AnyView(NoticeGalleryDemo())

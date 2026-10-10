@@ -17,8 +17,8 @@ import UniformTypeIdentifiers
 // compact Today header and the large Settings row reuse the same view. Pure presentation — it's
 // handed the stored JPEG bytes (`ProfileStore.avatarImageData`); it never touches storage.
 //
-// LOCAL-ONLY: the photo lives in UserDefaults on this device and is never uploaded (NOOP is
-// fully offline). This view just draws whatever bytes it's given.
+// The photo lives in UserDefaults on this device. This view just draws whatever bytes it's given,
+// which on the Friends tab can also be a friend's picture.
 
 struct ProfileAvatarView: View {
     /// The stored profile photo bytes, or nil to show the default icon.

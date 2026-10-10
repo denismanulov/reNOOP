@@ -1,7 +1,9 @@
 //  FriendDetailView.swift
-//  NOOP · Friends — one person's page, as Fitness shows a friend: their rings for the last seven days,
-//  the picked day's figures, then what they did that day. A section the person does not share is said
-//  in a line, never drawn as an empty card.
+//  NOOP · Friends — one person's page: their Summary, as far as they share it. It opens as Contacts
+//  opens a card (the picture and the name in the content, no title in the bar until they scroll away),
+//  then reads like the wearer's own Summary: the same ‹ day › pager, the same rings card, then the night,
+//  the workouts and the heart rate of that day, each a card headed by its category as the Summary's are.
+//  What the person does not share is said in one line under the cards, never drawn as an empty card.
 
 import SwiftUI
 import StrandAnalytics
@@ -11,6 +13,7 @@ struct FriendDetailView: View {
     let nick: String
 
     @ObservedObject private var store = FriendsStore.shared
+    @EnvironmentObject private var profile: ProfileStore
     @Environment(\.dismiss) private var dismiss
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
 
@@ -18,6 +21,10 @@ struct FriendDetailView: View {
     @State private var loaded = false
     @State private var selectedDay: String?
     @State private var confirmRemove = false
+    @State private var showDayPicker = false
+    @Environment(\.colorScheme) private var colorScheme
+    /// The hero has scrolled under the bar: the bar names the person.
+    @State private var heroScrolledAway = false
 
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
     private var isMe: Bool { nick == store.nick }
@@ -26,16 +33,22 @@ struct FriendDetailView: View {
         return days.first(where: { $0.day == selectedDay }) ?? days.first
     }
 
+    /// The hero's own height, roughly: past it the name is out of sight.
+    private static let heroFoldOffset: CGFloat = 150
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if let person {
-                    header(person)
-                    week(person)
+                    FriendsHero(name: person.name, nick: person.nick, own: isMe,
+                                imageData: profile.avatarImageData, avatarRev: person.avatarRev)
+                        .padding(.bottom, NoopMetrics.space2)
+                    pager(person)
                     scores(person)
                     sleep(person)
                     workouts(person)
                     heartRate(person)
+                    unshared(person)
                 } else if loaded {
                     Text(store.errorText ?? String(localized: "No one has this name."))
                         .font(StrandFont.pro(15))
@@ -46,19 +59,31 @@ struct FriendDetailView: View {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, NoopMetrics.space8)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, FriendsStyle.gutter)
             .padding(.bottom, NoopMetrics.space8)
             #if os(macOS)
             .frame(maxWidth: 680)
             .frame(maxWidth: .infinity)
             #endif
         }
-        .summaryBackdrop()
+        .background(StrandPalette.summaryCanvas.ignoresSafeArea())
+        #if os(iOS)
+        .onScrolledPast(Self.heroFoldOffset) { away in
+            withAnimation(.easeInOut(duration: 0.2)) { heroScrolledAway = away }
+        }
+        #endif
         .navigationTitle(Text(verbatim: person?.name ?? ""))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(verbatim: person?.name ?? "")
+                    .font(.headline)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .opacity(heroScrolledAway ? 1 : 0)
+                    .accessibilityHidden(!heroScrolledAway)
+            }
             if person != nil, !isMe {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -66,18 +91,21 @@ struct FriendDetailView: View {
                             Label("Remove Friend", systemImage: "person.badge.minus")
                         }
                     } label: {
-                        Image(systemName: "ellipsis")
+                        // The glyph in the label colour, as the bar's other buttons are; set here and
+                        // not as the menu's tint, which would grey the destructive row's icon too.
+                        Image(systemName: "ellipsis").foregroundStyle(StrandPalette.textPrimary)
                     }
                     .accessibilityLabel(Text("More"))
+                    // The dialog hangs off the button that asks for it, where iOS 26 points it.
+                    .confirmationDialog("Remove Friend", isPresented: $confirmRemove, titleVisibility: .visible) {
+                        Button("Remove Friend", role: .destructive) {
+                            Task { await store.unfriend(nick); dismiss() }
+                        }
+                    } message: {
+                        Text("You stop seeing each other's days. Either of you can send a new request later.")
+                    }
                 }
             }
-        }
-        .confirmationDialog("Remove Friend", isPresented: $confirmRemove, titleVisibility: .visible) {
-            Button("Remove Friend", role: .destructive) {
-                Task { await store.unfriend(nick); dismiss() }
-            }
-        } message: {
-            Text("You stop seeing each other's days. Either of you can send a new request later.")
         }
         .task(id: nick) {
             person = await store.person(nick)
@@ -86,73 +114,74 @@ struct FriendDetailView: View {
         }
     }
 
-    // MARK: - Header and week
+    // MARK: - Day
 
-    private func header(_ person: FriendProfile) -> some View {
-        VStack(spacing: 6) {
-            FriendAvatar(name: person.name, size: 76)
-            Text(verbatim: person.name)
-                .font(StrandFont.pro(22, weight: .bold))
-                .foregroundStyle(StrandPalette.textPrimary)
-            Text(verbatim: "@" + person.nick)
-                .font(StrandFont.pro(15))
-                .foregroundStyle(StrandPalette.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, NoopMetrics.space3)
-        .accessibilityElement(children: .combine)
+    /// The days the person has uploaded, newest first, and where the shown one is among them.
+    private func dayIndex(_ days: [FriendFeedDay]) -> Int {
+        days.firstIndex(where: { $0.day == day?.day }) ?? 0
     }
 
-    /// The last seven days as small rings, oldest on the left; a tap picks the day the page shows.
-    private func week(_ person: FriendProfile) -> some View {
-        let days = FriendWeek.days(ending: Date())
-        let byKey = Dictionary((person.days ?? []).map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
-        return SummaryCard(insets: EdgeInsets(top: 12, leading: 8, bottom: 12, trailing: 8)) {
-            HStack(spacing: 0) {
-                ForEach(days, id: \.key) { slot in
-                    let picked = slot.key == day?.day
-                    Button { selectedDay = slot.key } label: {
-                        VStack(spacing: 6) {
-                            Text(verbatim: slot.letter)
-                                .font(StrandFont.pro(11, weight: .semibold))
-                                .foregroundStyle(picked ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                            ActivityRingsView(rings: FriendsFormat.rings(byKey[slot.key]?.summary, glyphs: false),
-                                              diameter: 34)
+    private func dayTitle(_ key: String) -> String {
+        FriendsFormat.dayLabel(key, now: Repository.logicalDay(Date()))
+    }
+
+    /// ‹ day ›, the Summary's own pager, over the days this person has uploaded.
+    @ViewBuilder private func pager(_ person: FriendProfile) -> some View {
+        let days = person.days ?? []
+        if let shown = day {
+            let index = dayIndex(days)
+            DayPager(title: dayTitle(shown.day),
+                     canGoBack: index + 1 < days.count, canGoForward: index > 0,
+                     onBack: { selectedDay = days[index + 1].day }, onForward: { selectedDay = days[index - 1].day },
+                     showPicker: $showDayPicker) {
+                NavigationStack {
+                    List(days) { item in
+                        Button {
+                            selectedDay = item.day
+                            showDayPicker = false
+                        } label: {
+                            HStack {
+                                Text(verbatim: dayTitle(item.day)).foregroundStyle(StrandPalette.textPrimary)
+                                Spacer()
+                                if item.day == shown.day {
+                                    Image(systemName: "checkmark")
+                                        .font(StrandFont.pro(15, weight: .semibold))
+                                        .foregroundStyle(StrandPalette.accent)
+                                }
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(picked ? StrandPalette.hairline : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .buttonStyle(.plain)
-                    .disabled(byKey[slot.key] == nil)
-                    .accessibilityLabel(Text(verbatim: FriendsFormat.dayLabel(slot.key)))
-                    .accessibilityAddTraits(picked ? .isSelected : [])
+                    .navigationTitle(Text(verbatim: person.name))
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
                 }
             }
+            .padding(.horizontal, -8)
         }
     }
 
     // MARK: - Sections
 
+    /// The Summary's rings card, with this person's figures: the rings beside each score's name over its
+    /// figure in the ring's hue.
     @ViewBuilder private func scores(_ person: FriendProfile) -> some View {
-        FriendsSectionTitle(title: "Scores", subtitle: day.map { FriendsFormat.dayLabel($0.day) })
         if person.share?.scores == false {
             notShared(String(localized: "Doesn't share scores"))
         } else if let summary = day?.summary, FriendsFormat.hasScores(summary) {
-            SummaryCard {
-                HStack(alignment: .center, spacing: 16) {
-                    ActivityRingsView(rings: FriendsFormat.rings(summary, glyphs: true), diameter: 112)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 8) {
-                        scoreLine(String(localized: "Charge"), FriendsFormat.percent(summary.recovery),
+            SummaryCard(insets: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)) {
+                HStack(alignment: .center, spacing: 24) {
+                    // Fitness sets the rings straight on its dark card; on a white card they keep the disc.
+                    ActivityRingsView(rings: FriendsFormat.rings(summary, glyphs: true), diameter: 140,
+                                      fitness: true, disc: colorScheme == .light)
+                        .padding(.leading, 4)
+                    VStack(alignment: .leading, spacing: 3.5) {
+                        scoreLine(String(localized: "Charge"), FriendsFormat.percent(summary.recovery), unit: "",
                                   StrandPalette.activityMoveText)
-                        scoreLine(String(localized: "Effort"),
-                                  summary.strain == nil ? SummaryMetricReading.noValue
-                                      : FriendsFormat.strain(summary.strain, scale: effortScale) + "/"
-                                        + UnitFormatter.effortScaleMax(effortScale),
+                        scoreLine(String(localized: "Effort"), FriendsFormat.strain(summary.strain, scale: effortScale),
+                                  unit: summary.strain == nil ? "" : "/" + UnitFormatter.effortScaleMax(effortScale),
                                   StrandPalette.activityExerciseText)
-                        scoreLine(String(localized: "Rest"), FriendsFormat.percent(summary.sleepScore),
+                        scoreLine(String(localized: "Rest"), FriendsFormat.percent(summary.sleepScore), unit: "",
                                   StrandPalette.activityStandText)
                     }
                     Spacer(minLength: 0)
@@ -163,103 +192,78 @@ struct FriendDetailView: View {
         }
     }
 
-    private func scoreLine(_ label: String, _ value: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private func scoreLine(_ label: String, _ value: String, unit: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: -2.5) {
             Text(verbatim: label)
-                .font(StrandFont.pro(15))
+                .font(StrandFont.pro(17))
                 .foregroundStyle(StrandPalette.textPrimary)
-            Text(verbatim: value)
-                .font(StrandFont.rounded(24, weight: .semibold))
-                .foregroundStyle(color)
+                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(verbatim: value).font(StrandFont.rounded(24, weight: .semibold))
+                if !unit.isEmpty {
+                    Text(verbatim: unit).font(StrandFont.rounded(19, weight: .semibold))
+                }
+            }
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
         }
         .accessibilityElement(children: .combine)
     }
 
+    /// The night, as the Summary's Sleep card: the category row stamped with the night's hours, the time
+    /// asleep, and the stages as one bar.
     @ViewBuilder private func sleep(_ person: FriendProfile) -> some View {
-        FriendsSectionTitle(title: "Sleep")
-        if person.share?.sleep == false {
-            notShared(String(localized: "Doesn't share sleep"))
-        } else if let night = day?.summary.sleep {
+        if person.share?.sleep != false, let night = day?.summary.sleep {
             SummaryCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Time Asleep")
-                                .font(StrandFont.footnote.weight(.semibold))
-                                .foregroundStyle(StrandPalette.textSecondary)
-                            SleepCardValueText(value: .duration(Double(night.asleepMin)), size: 24)
-                        }
-                        Spacer(minLength: 8)
-                        Text(verbatim: "\(FriendsFormat.clock(night.startTs)) – \(FriendsFormat.clock(night.endTs))")
-                            .font(StrandFont.pro(15))
+                    SummaryCardTitleRow(icon: "bed.double.fill", title: String(localized: "Sleep"),
+                                        tint: StrandPalette.healthSleepDeep,
+                                        trailing: "\(FriendsFormat.clock(night.startTs)) – \(FriendsFormat.clock(night.endTs))",
+                                        chevron: false)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Time Asleep")
+                            .font(StrandFont.footnote.weight(.semibold))
                             .foregroundStyle(StrandPalette.textSecondary)
+                        SleepCardValueText(value: .duration(Double(night.asleepMin)), size: 24)
                     }
                     FriendStageBar(night: night)
+                        .padding(.top, 2)
                 }
             }
-        } else {
-            notShared(String(localized: "No sleep on this day"))
         }
     }
 
     @ViewBuilder private func workouts(_ person: FriendProfile) -> some View {
-        FriendsSectionTitle(title: "Workouts")
-        if person.share?.workouts == false {
-            notShared(String(localized: "Doesn't share workouts"))
-        } else if let list = day?.summary.workouts, !list.isEmpty {
-            SummaryCard(insets: .summaryCardList) {
-                VStack(spacing: 0) {
+        if person.share?.workouts != false, let list = day?.summary.workouts, !list.isEmpty {
+            SummaryCard(insets: EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16)) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SummaryCardTitleRow(icon: "figure.run", title: String(localized: "Workouts"),
+                                        tint: StrandPalette.activityTitle, chevron: false)
+                        .padding(.bottom, 4)
                     ForEach(Array(list.enumerated()), id: \.offset) { index, workout in
                         if index > 0 {
                             Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth)
+                                .padding(.leading, FriendWorkoutRow.iconCircle + FriendWorkoutRow.spacing)
                         }
-                        workoutRow(workout)
+                        FriendWorkoutRow(workout: workout, effortScale: effortScale)
                     }
                 }
             }
-        } else {
-            notShared(String(localized: "No workouts on this day"))
         }
-    }
-
-    private func workoutRow(_ workout: FriendsDay.Workout) -> some View {
-        var facts: [String] = [SleepCardValueFormat.duration(seconds: workout.durationS)]
-        if let strain = workout.strain {
-            facts.append(String(localized: "Effort") + " " + FriendsFormat.strain(strain, scale: effortScale))
-        }
-        if let avg = workout.avgHr { facts.append("\(avg) " + String(localized: "bpm")) }
-        if let kcal = workout.kcal { facts.append("\(kcal) " + String(localized: "kcal")) }
-        return HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                // The sport travels as the sender's own label; show it in this phone's language when
-                // the catalogue knows it, and as sent otherwise.
-                Text(verbatim: String(localized: String.LocalizationValue(workout.sport)))
-                    .font(StrandFont.pro(17))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                Text(verbatim: facts.joined(separator: " · "))
-                    .font(StrandFont.pro(15))
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Text(verbatim: FriendsFormat.clock(workout.startTs))
-                .font(StrandFont.pro(15))
-                .foregroundStyle(StrandPalette.textSecondary)
-        }
-        .padding(.vertical, 11)
-        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private func heartRate(_ person: FriendProfile) -> some View {
-        FriendsSectionTitle(title: "Heart Rate")
-        if person.share?.hr == false {
-            notShared(String(localized: "Doesn't share heart rate"))
-        } else if let hr = day?.summary.hr {
+        if person.share?.hr != false, let hr = day?.summary.hr {
             SummaryCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        hrFigure(String(localized: "Latest"), hr.lastBpm, stamp: FriendsFormat.clock(hr.lastTs))
-                        if let resting = hr.restingBpm { hrFigure(String(localized: "Resting Heart Rate"), resting, stamp: nil) }
+                    SummaryCardTitleRow(icon: "heart.fill", title: String(localized: "Heart Rate"),
+                                        tint: StrandPalette.healthHeart,
+                                        // Health stamps a card with when its value was recorded.
+                                        trailing: FriendsFormat.clock(hr.lastTs), chevron: false)
+                    HStack(alignment: .firstTextBaseline, spacing: 20) {
+                        hrFigure(String(localized: "Latest"), hr.lastBpm)
+                        if let resting = hr.restingBpm { hrFigure(String(localized: "Resting Heart Rate"), resting) }
                         Spacer(minLength: 0)
                     }
                     if let series = hr.series, series.count >= 2 {
@@ -271,32 +275,109 @@ struct FriendDetailView: View {
                     }
                 }
             }
-        } else {
-            notShared(String(localized: "No heart rate on this day"))
         }
     }
 
-    private func hrFigure(_ label: String, _ bpm: Int, stamp: String?) -> some View {
+    private func hrFigure(_ label: String, _ bpm: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: stamp.map { "\(label) · \($0)" } ?? label)
+            Text(verbatim: label)
                 .font(StrandFont.footnote.weight(.semibold))
                 .foregroundStyle(StrandPalette.textSecondary)
-            SleepCardValueText(value: .number("\(bpm)", unit: String(localized: "bpm")), size: 24,
-                               tint: StrandPalette.healthHeart)
+            SleepCardValueText(value: .number("\(bpm)", unit: String(localized: "bpm")), size: 24)
         }
         .accessibilityElement(children: .combine)
     }
 
+    /// What this person keeps to themselves, in one quiet line under the cards. A day that simply has no
+    /// night or no workout is not remarked on, as the Summary does not remark on its own.
+    @ViewBuilder private func unshared(_ person: FriendProfile) -> some View {
+        let notes = [
+            person.share?.sleep == false ? String(localized: "Doesn't share sleep") : nil,
+            person.share?.workouts == false ? String(localized: "Doesn't share workouts") : nil,
+            person.share?.hr == false ? String(localized: "Doesn't share heart rate") : nil
+        ].compactMap { $0 }
+        if !notes.isEmpty {
+            Text(verbatim: notes.joined(separator: " · "))
+                .font(StrandFont.footnote)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.top, NoopMetrics.space2)
+        }
+    }
+
     private func notShared(_ text: String) -> some View {
-        Text(verbatim: text)
-            .font(StrandFont.pro(15))
-            .foregroundStyle(StrandPalette.textSecondary)
-            .padding(.horizontal, 4)
-            .padding(.bottom, 2)
+        SummaryCard(insets: .summaryCardRow) {
+            Text(verbatim: text)
+                .font(StrandFont.pro(15))
+                .foregroundStyle(StrandPalette.textSecondary)
+        }
     }
 }
 
-/// A night's stages as one bar in Health's sleep hues, widths by minutes, with a legend under it.
+/// One workout, as Mail lists a message: the activity's glyph in a tinted circle, the activity with the
+/// time it began across from it, and the facts on the line under. Strain is named, since a bare figure
+/// does not say what it is.
+struct FriendWorkoutRow: View {
+    let workout: FriendsDay.Workout
+    let effortScale: EffortScale
+
+    static var iconCircle: CGFloat { 40 }
+    static var spacing: CGFloat { 12 }
+
+    // The sport travels as the sender's own label; show it in this phone's language when the catalogue
+    // knows it, and as sent otherwise.
+    private var sport: String { WorkoutSource.localizedSport(workout.sport) }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Self.spacing) {
+            WorkoutTypeIcon(workoutType: workout.sport, size: 20, weight: .semibold,
+                            color: StrandPalette.activityExerciseText)
+                .frame(width: Self.iconCircle, height: Self.iconCircle)
+                .background(Circle().fill(StrandPalette.fitnessCard))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(verbatim: sport)
+                        .font(StrandFont.headline)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(verbatim: FriendsFormat.clock(workout.startTs))
+                        .font(StrandFont.pro(13))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                facts
+                    .font(StrandFont.pro(15))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "25 min · Strain 43.5 · 128 bpm", the Strain in its ring's green.
+    private var facts: Text {
+        var line = Text(verbatim: FriendsFormat.duration(seconds: workout.durationS))
+            .foregroundColor(StrandPalette.textSecondary)
+        if let strain = workout.strain {
+            line = line + Text(verbatim: " · ").foregroundColor(StrandPalette.textSecondary)
+                + Text(verbatim: String(localized: "Effort") + " " + FriendsFormat.strain(strain, scale: effortScale))
+                    .foregroundColor(StrandPalette.activityExerciseText)
+        }
+        if let avg = workout.avgHr {
+            line = line + Text(verbatim: " · \(avg) " + String(localized: "bpm")).foregroundColor(StrandPalette.textSecondary)
+        }
+        return line
+    }
+}
+
+/// A night's stages as one bar in Health's sleep hues, widths by minutes, with each stage's name over
+/// its length under it.
 struct FriendStageBar: View {
     let night: FriendsDay.Sleep
 
@@ -310,7 +391,7 @@ struct FriendStageBar: View {
 
     var body: some View {
         let total = max(1, parts.reduce(0) { $0 + $1.minutes })
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             GeometryReader { geo in
                 HStack(spacing: 2) {
                     ForEach(parts, id: \.name) { part in
@@ -322,52 +403,29 @@ struct FriendStageBar: View {
             }
             .frame(height: 10)
             .accessibilityHidden(true)
-            // Two columns: four names with their durations do not fit one line in every language.
+            // Two columns, the name over the length: side by side the two do not fit a column in every
+            // language.
             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                      alignment: .leading, spacing: 4) {
+                      alignment: .leading, spacing: 10) {
                 ForEach(parts, id: \.name) { part in
-                    HStack(spacing: 6) {
-                        Circle().fill(part.color).frame(width: 8, height: 8)
-                        Text(verbatim: part.name)
-                            .font(StrandFont.pro(13))
-                            .foregroundStyle(StrandPalette.textSecondary)
-                        Text(verbatim: SleepCardValueFormat.duration(seconds: part.minutes * 60))
-                            .font(StrandFont.pro(13, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            Circle().fill(part.color).frame(width: 8, height: 8)
+                            Text(verbatim: part.name)
+                                .font(StrandFont.pro(13))
+                                .foregroundStyle(StrandPalette.textSecondary)
+                                .lineLimit(1)
+                        }
+                        Text(verbatim: FriendsFormat.duration(seconds: part.minutes * 60))
+                            .font(StrandFont.pro(15, weight: .semibold))
                             .foregroundStyle(StrandPalette.textPrimary)
+                            .lineLimit(1)
+                            // Under the name, past the dot.
+                            .padding(.leading, 13)
                     }
-                    .lineLimit(1)
                     .accessibilityElement(children: .combine)
                 }
             }
         }
-    }
-}
-
-/// The seven calendar days ending today, oldest first, each with its key and weekday letter.
-enum FriendWeek {
-    static func days(ending now: Date, calendar: Calendar = .current) -> [(key: String, letter: String)] {
-        let symbols = calendar.veryShortStandaloneWeekdaySymbols
-        var localized = calendar
-        localized.locale = AppLanguage.activeLocale
-        let letters = localized.veryShortStandaloneWeekdaySymbols
-        return (0..<7).reversed().compactMap { back in
-            guard let date = calendar.date(byAdding: .day, value: -back, to: now) else { return nil }
-            let weekday = calendar.component(.weekday, from: date) - 1
-            let letter = letters.indices.contains(weekday) ? letters[weekday] : symbols[weekday]
-            return (Repository.localDayKey(date), letter)
-        }
-    }
-}
-
-/// "1 h 12 min" / "45 min", in the active language.
-enum SleepCardValueFormat {
-    static func duration(seconds: Int) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute]
-        var calendar = Calendar.current
-        calendar.locale = AppLanguage.activeLocale
-        formatter.calendar = calendar
-        return formatter.string(from: TimeInterval(max(60, seconds))) ?? "\(seconds / 60)"
     }
 }

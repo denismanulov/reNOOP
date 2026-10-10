@@ -1,160 +1,303 @@
 import XCTest
 @testable import StrandAnalytics
 
-/// The one summary a phone uploads per day for the Friends tab: what it holds, how each figure is
-/// rounded and capped, and above all that a section whose sharing switch is off is not built at all.
+/// The day a phone uploads for the Friends tab (`friends-server/README.md`, "A day"): every member, what
+/// is left out when the app has no figure, each sharing switch, the heart-rate line's 300-point bound,
+/// the Strain axis and the wire text.
+///
+/// The cases and their expected literals are those of Android's `FriendsDayPayloadTest`, which is the
+/// reference for this builder: two friends on different platforms read each other's figures side by
+/// side. The oracle runs one way only (Kotlin's literals, checked here), so a change to either side has
+/// to be carried to the other by hand.
 final class FriendsDayTests: XCTestCase {
     private typealias Builder = FriendsDayBuilder
 
-    private let t0 = 1_791_500_000
+    private let now = 1_791_540_000
+    private let all = FriendsShare(scores: true, sleep: true, workouts: true, hr: true)
+    private let none = FriendsShare(scores: false, sleep: false, workouts: false, hr: false)
 
-    private func fullInput() -> Builder.Input {
+    private func full() -> Builder.Input {
         Builder.Input(
-            recovery: 80.6, strain: 38.64, sleepScore: 87.5,
-            sleep: .init(startTs: t0, endTs: t0 + 28_920, awakeMin: 18.2, remMin: 103.6, lightMin: 252.4,
-                         deepMin: 99.5, needMin: 495.4),
-            workouts: [.init(startTs: t0 + 30_400, endTs: t0 + 32_260, sport: "Running", durationS: 1860,
-                             strain: 35.24, avgHr: 139, maxHr: 162, kcal: 310.4)],
-            heartRate: [(t0 + 39_880, 64), (t0 + 40_000, 62)],
+            recovery: 80.6, strain: 38.604, sleepScore: 87.5,
+            sleep: .init(startTs: now - 30_000, endTs: now - 1_080, asleepMin: 474.4, awakeMin: 18.2,
+                         remMin: 104.0, lightMin: 252.49, deepMin: 99.6, needMin: 480.0),
+            workouts: [.init(startTs: now - 9_600, sport: "Running", durationS: 1_860.4, strain: 35.2,
+                             avgHr: 139, maxHr: 162, kcal: 310.3)],
+            heartRate: [(now - 120, 64), (now - 60, 62)],
             restingBpm: 51)
+    }
+
+    private func build(_ input: Builder.Input, _ share: FriendsShare? = nil) -> FriendsDay {
+        Builder.day(input, share: share ?? all, nowTs: now)
+    }
+
+    private func json(_ input: Builder.Input, _ share: FriendsShare? = nil) -> String {
+        Builder.json(build(input, share))
+    }
+
+    // MARK: - Every member
+
+    func testEveryMemberIsBuiltAndRoundedToTheWire() {
+        let day = build(full())
+        XCTAssertEqual(day.recovery, 81)
+        XCTAssertEqual(day.strain, 38.6)
+        XCTAssertEqual(day.sleepScore, 88)
+        XCTAssertEqual(day.sleep, FriendsDay.Sleep(startTs: now - 30_000, endTs: now - 1_080, asleepMin: 474,
+                                                   awakeMin: 18, remMin: 104, lightMin: 252, deepMin: 100,
+                                                   needMin: 480))
+        XCTAssertEqual(day.workouts, [FriendsDay.Workout(startTs: now - 9_600, sport: "Running", durationS: 1_860,
+                                                         strain: 35.2, avgHr: 139, maxHr: 162, kcal: 310)])
+        XCTAssertEqual(day.hr, FriendsDay.HeartRate(lastBpm: 62, lastTs: now - 60, restingBpm: 51,
+                                                    series: [[now - 120, 64], [now - 60, 62]]))
+    }
+
+    func testTheWireTextIsTheReadmesObjectInItsOrder() throws {
+        let text = json(full())
+        XCTAssertEqual(text,
+            "{\"recovery\":81,\"strain\":38.6,\"sleepScore\":88,"
+            + "\"sleep\":{\"startTs\":\(now - 30_000),\"endTs\":\(now - 1_080),\"asleepMin\":474,\"awakeMin\":18,"
+            + "\"remMin\":104,\"lightMin\":252,\"deepMin\":100,\"needMin\":480},"
+            + "\"workouts\":[{\"startTs\":\(now - 9_600),\"sport\":\"Running\",\"durationS\":1860,\"strain\":35.2,"
+            + "\"avgHr\":139,\"maxHr\":162,\"kcal\":310}],"
+            + "\"hr\":{\"lastBpm\":62,\"lastTs\":\(now - 60),\"restingBpm\":51,\"series\":[[\(now - 120),64],[\(now - 60),62]]}}")
+        // It is JSON a strict parser reads back as the same day, with no member the server would refuse.
+        XCTAssertEqual(try JSONDecoder().decode(FriendsDay.self, from: Data(text.utf8)), build(full()))
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        XCTAssertEqual(Set(parsed.keys), ["recovery", "strain", "sleepScore", "sleep", "workouts", "hr"])
+    }
+
+    // MARK: - Omission
+
+    func testADayWithNothingIsAnEmptyObjectNeverZeros() {
+        let day = build(Builder.Input())
+        XCTAssertEqual(day, FriendsDay())
+        XCTAssertEqual(Builder.json(day), "{}")
+    }
+
+    func testAMissingFigureIsLeftOutWhileItsNeighboursStay() throws {
+        var input = full()
+        input.recovery = nil
+        input.restingBpm = nil
+        let day = build(input)
+        XCTAssertNil(day.recovery)
+        XCTAssertEqual(day.strain, 38.6)
+        XCTAssertNil(try XCTUnwrap(day.hr).restingBpm)
+        let text = Builder.json(day)
+        XCTAssertFalse(text.contains("recovery"))
+        XCTAssertFalse(text.contains("restingBpm"))
+        XCTAssertTrue(text.contains("\"sleepScore\":88"))
+    }
+
+    func testOptionalSleepAndWorkoutMembersAreLeftOutNotNulled() {
+        let input = Builder.Input(
+            sleep: .init(startTs: now - 30_000, endTs: now - 1_000, asleepMin: 400.0),
+            workouts: [.init(startTs: now - 900, sport: "Strength", durationS: 600.0)])
+        XCTAssertEqual(json(input),
+            "{\"sleep\":{\"startTs\":\(now - 30_000),\"endTs\":\(now - 1_000),\"asleepMin\":400},"
+            + "\"workouts\":[{\"startTs\":\(now - 900),\"sport\":\"Strength\",\"durationS\":600}]}")
+    }
+
+    func testADayWithNoWorkoutSaysSoAndAnUnreadOneSaysNothing() {
+        XCTAssertEqual(json(Builder.Input(workouts: [])), "{\"workouts\":[]}")
+        XCTAssertEqual(json(Builder.Input(workouts: nil)), "{}")
+    }
+
+    func testNoHeartRateSampleMeansNoHeartRateSectionEvenWithARestingFigure() {
+        XCTAssertNil(build(Builder.Input(restingBpm: 51)).hr)
+    }
+
+    func testFiguresTheServerWouldRefuseAreLeftOutSoTheDayStillGoesUp() {
+        var input = full()
+        input.recovery = 140.0
+        input.strain = -3.0
+        input.sleepScore = .nan
+        input.workouts = [
+            .init(startTs: now - 900, sport: "Running", durationS: 600.0, strain: 250.0, avgHr: 300, maxHr: 10, kcal: 99_999.0),
+            .init(startTs: now - 800, sport: "   ", durationS: 600.0),
+            .init(startTs: 100, sport: "Cycling", durationS: 600.0),
+            .init(startTs: now - 700, sport: "Rowing", durationS: 200_000.0),
+        ]
+        input.heartRate = [(now - 60, 62), (now - 30, 400), (now + 10 * 86_400, 70)]
+        input.restingBpm = 5
+        let day = build(input)
+        XCTAssertNil(day.recovery)
+        XCTAssertNil(day.strain)
+        XCTAssertNil(day.sleepScore)
+        XCTAssertEqual(day.workouts, [FriendsDay.Workout(startTs: now - 900, sport: "Running", durationS: 600)])
+        XCTAssertEqual(day.hr, FriendsDay.HeartRate(lastBpm: 62, lastTs: now - 60, restingBpm: nil,
+                                                    series: [[now - 60, 62]]))
+    }
+
+    func testASleepThatEndsBeforeItStartsIsNotSent() {
+        XCTAssertNil(build(Builder.Input(sleep: .init(startTs: now - 100, endTs: now - 200, asleepMin: 60.0))).sleep)
+        XCTAssertNil(build(Builder.Input(sleep: .init(startTs: now - 200, endTs: now - 100, asleepMin: .nan))).sleep)
     }
 
     // MARK: - Sharing switches
 
-    func testEverySectionIsBuiltWhenItsSwitchIsOn() {
-        let day = Builder.day(fullInput(), share: FriendsShare(scores: true, sleep: true, workouts: true, hr: true))
-        XCTAssertEqual(day.recovery, 81)
-        XCTAssertEqual(day.strain, 38.6)
-        XCTAssertEqual(day.sleepScore, 88)
-        XCTAssertNotNil(day.sleep)
-        XCTAssertEqual(day.workouts?.count, 1)
-        XCTAssertNotNil(day.hr)
-        XCTAssertFalse(day.isEmpty)
+    func testScoresOffDropsTheThreeScoresOnly() {
+        var expected = build(full())
+        expected.recovery = nil
+        expected.strain = nil
+        expected.sleepScore = nil
+        XCTAssertEqual(build(full(), FriendsShare(scores: false, sleep: true, workouts: true, hr: true)), expected)
     }
 
-    /// What is not shared is not sent: the phone does not lean on the server to drop it.
-    func testASectionWhoseSwitchIsOffIsNotBuilt() {
-        let input = fullInput()
-        let noScores = Builder.day(input, share: FriendsShare(scores: false, sleep: true, workouts: true, hr: true))
-        XCTAssertNil(noScores.recovery); XCTAssertNil(noScores.strain); XCTAssertNil(noScores.sleepScore)
-        XCTAssertNotNil(noScores.sleep)
+    func testSleepOffDropsTheNightOnly() {
+        var expected = build(full())
+        expected.sleep = nil
+        XCTAssertEqual(build(full(), FriendsShare(scores: true, sleep: false, workouts: true, hr: true)), expected)
+    }
 
-        XCTAssertNil(Builder.day(input, share: FriendsShare(scores: true, sleep: false, workouts: true, hr: true)).sleep)
-        XCTAssertNil(Builder.day(input, share: FriendsShare(scores: true, sleep: true, workouts: false, hr: true)).workouts)
-        XCTAssertNil(Builder.day(input, share: FriendsShare(scores: true, sleep: true, workouts: true, hr: false)).hr)
+    func testWorkoutsOffDropsTheWorkoutsOnly() {
+        var expected = build(full())
+        expected.workouts = nil
+        XCTAssertEqual(build(full(), FriendsShare(scores: true, sleep: true, workouts: false, hr: true)), expected)
+    }
 
-        let nothing = Builder.day(input, share: FriendsShare(scores: false, sleep: false, workouts: false, hr: false))
-        XCTAssertTrue(nothing.isEmpty)
-        XCTAssertEqual(nothing, FriendsDay())
+    func testHeartRateOffDropsLatestLineAndRestingTogether() {
+        var expected = build(full())
+        expected.hr = nil
+        let day = build(full(), FriendsShare(scores: true, sleep: true, workouts: true, hr: false))
+        XCTAssertEqual(day, expected)
+        let text = Builder.json(day)
+        XCTAssertFalse(text.contains("hr"))
+        XCTAssertFalse(text.contains("restingBpm"))
+    }
+
+    func testEverySwitchOffSendsNothingAtAll() {
+        XCTAssertEqual(json(full(), none), "{}")
     }
 
     func testHeartRateIsOffByDefault() {
         XCTAssertEqual(FriendsShare(), FriendsShare(scores: true, sleep: true, workouts: true, hr: false))
-        XCTAssertNil(Builder.day(fullInput(), share: FriendsShare()).hr)
+        XCTAssertNil(build(full(), FriendsShare()).hr)
     }
 
-    // MARK: - Scores
+    // MARK: - Strain axis
 
-    func testScoresAreRoundedAndAnythingOutOfRangeIsDropped() {
-        XCTAssertEqual(Builder.percent(80.5), 81)
-        XCTAssertEqual(Builder.percent(0), 0)
-        XCTAssertEqual(Builder.percent(100), 100)
-        XCTAssertNil(Builder.percent(100.4))
-        XCTAssertNil(Builder.percent(-1))
-        XCTAssertNil(Builder.percent(.nan))
-        XCTAssertEqual(Builder.tenth(38.64, in: 0...100), 38.6)
-        XCTAssertEqual(Builder.tenth(38.65, in: 0...100), 38.7)
-        XCTAssertNil(Builder.tenth(120, in: 0...100))
+    func testStrainStaysOnTheStored0To100AxisForTheDayAndEachWorkout() {
+        // 59.05 stored is 12.4 on the 21 scale; the wire carries the stored value whatever the display scale.
+        let day = build(Builder.Input(strain: 59.05,
+                                      workouts: [.init(startTs: now - 900, sport: "Running", durationS: 600.0, strain: 100.0)]))
+        XCTAssertEqual(day.strain, 59.05)
+        XCTAssertEqual(day.workouts?.first?.strain, 100.0)
+        let text = Builder.json(day)
+        XCTAssertTrue(text.hasPrefix("{\"strain\":59.05,"), text)
+        XCTAssertTrue(text.contains("\"strain\":100}"), text)
     }
 
-    // MARK: - Sleep
-
-    /// Time asleep is the sum of the rounded stages, so the parts a friend sees add up to the total.
-    func testTimeAsleepIsTheSumOfItsRoundedStages() throws {
-        let sleep = try XCTUnwrap(Builder.day(fullInput(), share: FriendsShare()).sleep)
-        XCTAssertEqual(sleep, FriendsDay.Sleep(startTs: t0, endTs: t0 + 28_920, asleepMin: 104 + 252 + 100,
-                                               awakeMin: 18, remMin: 104, lightMin: 252, deepMin: 100,
-                                               needMin: 495))
+    func testStrainIsWrittenWithoutExponentOrTrailingZeros() {
+        func text(_ strain: Double) -> String { json(Builder.Input(strain: strain)) }
+        XCTAssertEqual(text(0.0), "{\"strain\":0}")
+        XCTAssertEqual(text(0.005), "{\"strain\":0.01}")
+        XCTAssertEqual(text(7.0), "{\"strain\":7}")
+        XCTAssertEqual(text(38.605), "{\"strain\":38.61}")
+        XCTAssertEqual(text(99.999), "{\"strain\":100}")
+        XCTAssertEqual(text(100.01), "{}")
+        // Not in the Kotlin test: figures a double prints with an exponent, and ones past any range.
+        XCTAssertEqual(text(0.00004), "{\"strain\":0}")
+        XCTAssertEqual(text(1e300), "{}")
+        XCTAssertEqual(text(.infinity), "{}")
     }
 
-    func testANightWithNoSpanOrNoTimeAsleepIsNotBuilt() {
-        XCTAssertNil(Builder.sleep(.init(startTs: t0, endTs: t0, awakeMin: 0, remMin: 60, lightMin: 60, deepMin: 60)))
-        XCTAssertNil(Builder.sleep(.init(startTs: t0, endTs: t0 + 3_600, awakeMin: 60, remMin: 0, lightMin: 0, deepMin: 0.2)))
+    // MARK: - Whole numbers
+
+    /// Halves go toward positive infinity, as Kotlin's `roundToInt` sends them, a negative one included.
+    func testWholeNumbersRoundHalfUpAndStayInRange() {
+        XCTAssertEqual(Builder.whole(80.5, in: 0...100), 81)
+        XCTAssertEqual(Builder.whole(80.49, in: 0...100), 80)
+        XCTAssertEqual(Builder.whole(-0.5, in: 0...100), 0)
+        XCTAssertNil(Builder.whole(-0.51, in: 0...100))
+        XCTAssertEqual(Builder.whole(100.49, in: 0...100), 100)
+        XCTAssertNil(Builder.whole(100.5, in: 0...100))
+        XCTAssertNil(Builder.whole(.nan, in: 0...100))
+        XCTAssertNil(Builder.whole(1e300, in: 0...100))
+        XCTAssertNil(Builder.whole(nil, in: 0...100))
+    }
+
+    // MARK: - The heart-rate line
+
+    func testADayAtOneSampleASecondIsThinnedToAtMost300Points() throws {
+        let start = now - 86_399
+        let samples = (0..<86_400).map { (ts: start + $0, bpm: 50 + ($0 / 600) % 90) }
+        let hr = try XCTUnwrap(build(Builder.Input(heartRate: samples)).hr)
+        let series = try XCTUnwrap(hr.series)
+        XCTAssertLessThanOrEqual(series.count, Builder.maxSeriesPoints)
+        XCTAssertGreaterThanOrEqual(series.count, 290)
+        // In order, inside the day, and ending on the newest sample itself.
+        XCTAssertEqual(series.map { $0[0] }, series.map { $0[0] }.sorted())
+        XCTAssertEqual(Set(series.map { $0[0] }).count, series.count)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(series.first)[0], start)
+        XCTAssertEqual(series.last, [samples[86_399].ts, samples[86_399].bpm])
+        XCTAssertEqual(hr.lastBpm, samples[86_399].bpm)
+        XCTAssertEqual(hr.lastTs, samples[86_399].ts)
+        XCTAssertTrue(series.allSatisfy { (20...250).contains($0[1]) })
+    }
+
+    func testTheBoundHoldsForEverySizeAroundIt() {
+        for n in [1, 2, 299, 300, 301, 302, 599, 600, 601, 5_000] {
+            let samples = (0..<n).map { (ts: now - n + $0, bpm: 60 + $0 % 40) }
+            let out = Builder.downsample(samples)
+            XCTAssertLessThanOrEqual(out.count, 300, "\(n)")
+            XCTAssertEqual(out.last?.ts, samples.last?.ts, "\(n)")
+            XCTAssertEqual(out.last?.bpm, samples.last?.bpm, "\(n)")
+            if n <= 300 {
+                XCTAssertEqual(out.map(\.ts), samples.map(\.ts), "\(n)")
+                XCTAssertEqual(out.map(\.bpm), samples.map(\.bpm), "\(n)")
+            }
+        }
+    }
+
+    func testAThinnedStretchIsTheMeanOfItsSamples() {
+        // 600 samples in two flat halves, thinned to 3 points: two stretches and the newest sample.
+        let samples = (0..<300).map { (ts: now - 600 + $0, bpm: 60) } + (300..<600).map { (ts: now - 600 + $0, bpm: 120) }
+        let out = Builder.downsample(samples, maxPoints: 3)
+        XCTAssertEqual(out.count, 3)
+        XCTAssertEqual(out[0].bpm, 60)
+        XCTAssertEqual(out[1].bpm, 120)
+        XCTAssertEqual(out[2].ts, samples[599].ts)
+        XCTAssertEqual(out[2].bpm, samples[599].bpm)
+    }
+
+    func testSamplesArriveInAnyOrderAndOnePerSecondIsKept() throws {
+        let hr = try XCTUnwrap(build(Builder.Input(heartRate: [(now - 10, 70), (now - 30, 60), (now - 10, 99)])).hr)
+        XCTAssertEqual(hr.series, [[now - 30, 60], [now - 10, 70]])
+        XCTAssertEqual(hr.lastBpm, 70)
     }
 
     // MARK: - Workouts
 
-    func testWorkoutsAreOrderedCappedAndTidied() {
-        var rows: [Builder.WorkoutInput] = (0..<23).map { i in
-            .init(startTs: t0 + i * 600, endTs: t0 + i * 600 + 300, sport: "Run \(i)")
-        }
-        rows.shuffle()
-        let built = Builder.workouts(rows)
-        XCTAssertEqual(built.count, 20)
-        XCTAssertEqual(built.first?.sport, "Run 3", "the three oldest are the ones dropped")
-        XCTAssertEqual(built.last?.sport, "Run 22")
-        XCTAssertEqual(built.map(\.startTs), built.map(\.startTs).sorted())
-        XCTAssertEqual(built.first?.durationS, 300, "a missing duration falls back to the span")
-
-        let tidy = Builder.workouts([
-            .init(startTs: t0, endTs: t0 + 60, sport: "  " + String(repeating: "x", count: 60) + " ",
-                  durationS: 59.5, strain: 12.34, avgHr: 10, maxHr: 300, kcal: -5),
-            .init(startTs: t0 + 100, endTs: t0 + 160, sport: "   "),
-        ])
-        XCTAssertEqual(tidy.count, 1, "a workout with no sport name is not sent")
-        XCTAssertEqual(tidy[0].sport.count, 40)
-        XCTAssertEqual(tidy[0].durationS, 60)
-        XCTAssertEqual(tidy[0].strain, 12.3)
-        XCTAssertNil(tidy[0].avgHr); XCTAssertNil(tidy[0].maxHr); XCTAssertNil(tidy[0].kcal)
+    func testAtMostTwentyWorkoutsGoUpAndTheNewestStay() throws {
+        let many = (0..<25).map { Builder.WorkoutInput(startTs: now - 50_000 + $0 * 1_000, sport: "Walking", durationS: 600.0) }
+        let sent = try XCTUnwrap(build(Builder.Input(workouts: many.shuffled())).workouts)
+        XCTAssertEqual(sent.count, Builder.maxWorkouts)
+        XCTAssertEqual(sent.map(\.startTs), many.dropFirst(5).map(\.startTs))
     }
 
-    // MARK: - Heart rate
-
-    func testTheLineIsTheMeanOfFiveMinuteBinsOnTheUnixClock() throws {
-        let bin = 1_791_500_100          // a multiple of 300
-        XCTAssertEqual(bin % 300, 0)
-        let hr = try XCTUnwrap(Builder.heartRate(
-            [(bin + 10, 60), (bin + 20, 61), (bin + 299, 61),        // mean 60.67 → 61
-             (bin + 300, 70), (bin + 301, 71),                        // mean 70.5 → 71 (half up)
-             (bin + 900, 55),
-             (bin + 950, 19), (bin + 960, 251)],                      // not readings
-            restingBpm: 51))
-        XCTAssertEqual(hr.series, [[bin, 61], [bin + 300, 71], [bin + 900, 55]])
-        XCTAssertEqual(hr.lastBpm, 55)
-        XCTAssertEqual(hr.lastTs, bin + 900)
-        XCTAssertEqual(hr.restingBpm, 51)
+    func testASportLabelIsTrimmedCutTo40AndStrippedOfControlCharacters() {
+        XCTAssertEqual(Builder.sportLabel("  Open-water swim \n"), "Open-water swim")
+        XCTAssertEqual(Builder.sportLabel(String(repeating: "a", count: 55)), String(repeating: "a", count: 40))
+        XCTAssertEqual(Builder.sportLabel("Trail\u{0007} run\u{200B}"), "Trail run")
+        XCTAssertEqual(Builder.sportLabel("Бег"), "Бег")
+        XCTAssertNil(Builder.sportLabel(" \t\n"))
     }
 
-    func testNoUsableSampleMeansNoHeartRateAtAll() {
-        XCTAssertNil(Builder.heartRate([], restingBpm: 51))
-        XCTAssertNil(Builder.heartRate([(t0, 0), (t0 + 1, 400)], restingBpm: 51))
+    func testASportLabelIsQuotedAsJson() throws {
+        let text = json(Builder.Input(workouts: [.init(startTs: now - 900, sport: "Push \"n\" pull\\", durationS: 60.0)]))
+        let day = try JSONDecoder().decode(FriendsDay.self, from: Data(text.utf8))
+        XCTAssertEqual(day.workouts?.first?.sport, "Push \"n\" pull\\")
     }
 
-    func testTheLineNeverExceedsTheServersCap() throws {
-        // Two days of one sample a minute: 576 bins, of which the newest 300 are kept.
-        let samples = (0..<2880).map { (ts: t0 + $0 * 60, bpm: 60 + $0 % 5) }
-        let hr = try XCTUnwrap(Builder.heartRate(samples, restingBpm: nil))
-        XCTAssertEqual(hr.series?.count, 300)
-        XCTAssertEqual(hr.series?.last?[0], (t0 + 2879 * 60) / 300 * 300)
-        XCTAssertEqual(hr.lastTs, t0 + 2879 * 60)
+    /// The recorded duration when it is a usable figure, else the span, never a negative one.
+    func testActiveTimeIsTheRecordedDurationOrTheSpan() {
+        XCTAssertEqual(Builder.activeSeconds(durationS: 1_860.4, startTs: 0, endTs: 3_600), 1_860.4)
+        XCTAssertEqual(Builder.activeSeconds(durationS: nil, startTs: 100, endTs: 400), 300)
+        XCTAssertEqual(Builder.activeSeconds(durationS: -5, startTs: 100, endTs: 400), 300)
+        XCTAssertEqual(Builder.activeSeconds(durationS: .nan, startTs: 400, endTs: 100), 0)
     }
 
-    // MARK: - The wire form
-
-    /// Members that are absent are omitted, not sent as null: the server reads a missing member as
-    /// "not shown" and refuses an unknown one.
-    func testADayEncodesToTheContractsJSON() throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let scoresOnly = FriendsDay(recovery: 81, strain: 38.6, sleepScore: 88)
-        XCTAssertEqual(String(decoding: try encoder.encode(scoresOnly), as: UTF8.self),
-                       #"{"recovery":81,"sleepScore":88,"strain":38.6}"#)
-        XCTAssertEqual(String(decoding: try encoder.encode(FriendsDay()), as: UTF8.self), "{}")
-
-        let hr = FriendsDay(hr: .init(lastBpm: 62, lastTs: 1_791_540_000, series: [[1_791_539_880, 64]]))
-        XCTAssertEqual(String(decoding: try encoder.encode(hr), as: UTF8.self),
-                       #"{"hr":{"lastBpm":62,"lastTs":1791540000,"series":[[1791539880,64]]}}"#)
-    }
+    // MARK: - Reading a day back
 
     /// The example in `friends-server/README.md`, as a friend's day comes back.
     func testTheContractsExampleDecodes() throws {
