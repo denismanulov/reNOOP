@@ -613,6 +613,153 @@ def h_me(app, req):
     return me_json(req.account, req.device, req.now)
 
 
+def new_claim_code():
+    return "%06d" % secrets.randbelow(1_000_000)
+
+
+def claim_json(db, claim):
+    matures = None
+    if claim["state"] == "pending":
+        seen = db.execute("SELECT trusted_seen FROM accounts WHERE id = ?", (claim["account_id"],)).fetchone()[0]
+        matures = max(claim["created_at"], seen) + SILENCE_S
+    return {"id": claim["id"], "kind": claim["kind"], "code": claim["code"], "state": claim["state"],
+            "platform": claim["platform"], "createdAt": claim["created_at"], "maturesAt": matures}
+
+
+def pending_claims(db, strap):
+    return db.execute("SELECT COUNT(*) FROM claims WHERE strap = ? AND state = 'pending'", (strap,)).fetchone()[0]
+
+
+def claim_blocked(db, strap, now, key_id=None, claimant_id=None):
+    """Whether this key (a join) or this account (a take) was turned down for this strap inside the last week."""
+    column, value = ("key_id", key_id) if key_id is not None else ("claimant_id", claimant_id)
+    return db.execute(
+        "SELECT 1 FROM claims WHERE strap = ? AND state = 'declined' AND settled_at > ? AND %s = ?" % column,
+        (strap, now - CLAIM_BLOCK_S, value)).fetchone() is not None
+
+
+def h_claim_file(app, req):
+    """A key that is not a phone of the account yet asks to become one, on the strength of the strap."""
+    body = req.json(("key", "strap", "platform"))
+    strap = app.strap_value(body.get("strap"))
+    platform = clean_platform(body.get("platform"))
+    db = app.db()
+    with db:
+        app.settle(db, strap, req.now)
+        if app.device(req.key_id) is not None:
+            raise ApiError(409, "already_enrolled", "")
+        owner = app.strap_owner(db, strap)
+        if owner is None:
+            raise ApiError(404, "strap_free", "")
+        waiting = db.execute(
+            "SELECT * FROM claims WHERE key_id = ? AND strap = ? AND state = 'pending'", (req.key_id, strap)).fetchone()
+        if waiting is not None:
+            return 201, {"claim": claim_json(db, waiting)}
+        if claim_blocked(db, strap, req.now, key_id=req.key_id):
+            raise ApiError(429, "claim_declined", "This request was declined. Try again in a week.")
+        if pending_claims(db, strap) >= MAX_PENDING_CLAIMS:
+            raise ApiError(429, "too_many_claims", "")
+        if app.device_count(db, owner["id"]) >= MAX_DEVICES:
+            raise ApiError(409, "too_many_devices", "")
+        # One claim per key: whatever it asked for before no longer stands.
+        db.execute("DELETE FROM claims WHERE key_id = ? AND state = 'pending'", (req.key_id,))
+        cur = db.execute(
+            "INSERT INTO claims(kind, strap, account_id, key_id, spki, platform, code, state, created_at) "
+            "VALUES ('join', ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (strap, owner["id"], req.key_id, req.spki, platform, new_claim_code(), req.now))
+        claim = db.execute("SELECT * FROM claims WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return 201, {"claim": claim_json(db, claim)}
+
+
+def h_claim_mine(app, req):
+    db = app.db()
+    with db:
+        claim = db.execute(
+            "SELECT * FROM claims WHERE key_id = ? AND kind = 'join' ORDER BY id DESC LIMIT 1", (req.key_id,)).fetchone()
+        if claim is None:
+            raise ApiError(404, "no_claim", "")
+        app.settle(db, claim["strap"], req.now)
+        claim = db.execute("SELECT * FROM claims WHERE id = ?", (claim["id"],)).fetchone()
+        if claim is None:
+            raise ApiError(404, "no_claim", "")
+        return {"claim": claim_json(db, claim)}
+
+
+def h_claim_withdraw(app, req):
+    db = app.db()
+    with db:
+        db.execute("DELETE FROM claims WHERE key_id = ? AND kind = 'join' AND state = 'pending'", (req.key_id,))
+    return 204, None
+
+
+def _claim_to_answer(app, db, req):
+    """A pending claim against the caller's account, with the clock already applied to it."""
+    claim = db.execute("SELECT * FROM claims WHERE id = ? AND account_id = ?",
+                       (int(req.match.group(1)), req.account["id"])).fetchone()
+    if claim is None:
+        raise ApiError(404, "no_claim", "")
+    app.settle(db, claim["strap"], req.now)
+    claim = db.execute("SELECT * FROM claims WHERE id = ?", (claim["id"],)).fetchone()
+    if claim is None or claim["state"] != "pending":
+        raise ApiError(409, "claim_settled", "")
+    return claim
+
+
+def h_claim_approve(app, req):
+    db = app.db()
+    with db:
+        app.admit(db, _claim_to_answer(app, db, req), req.now, probation=False)
+    return 204, None
+
+
+def h_claim_decline(app, req):
+    db = app.db()
+    with db:
+        app.close_claim(db, _claim_to_answer(app, db, req)["id"], "declined", req.now)
+    return 204, None
+
+
+def h_devices(app, req):
+    rows = app.db().execute(
+        "SELECT * FROM devices WHERE account_id = ? ORDER BY added_at, rowid", (req.account["id"],)).fetchall()
+    return {"devices": [{
+        "id": row["key_id"].hex(), "platform": row["platform"], "addedAt": row["added_at"],
+        "lastSeenAt": row["last_seen"],
+        "probationUntil": None if is_trusted(row, req.now) else row["probation_until"],
+        "current": row["key_id"] == req.key_id,
+    } for row in rows]}
+
+
+def _own_device(app, db, req):
+    target = db.execute("SELECT * FROM devices WHERE key_id = ? AND account_id = ?",
+                        (bytes.fromhex(req.match.group(1)), req.account["id"])).fetchone()
+    if target is None:
+        raise ApiError(404, "no_such_device", "")
+    return target
+
+
+def h_device_delete(app, req):
+    db = app.db()
+    with db:
+        target = _own_device(app, db, req)
+        mine = target["key_id"] == req.key_id
+        if not mine and not req.trusted:
+            raise ApiError(403, "probation", "")
+        if mine and req.trusted and app.trusted_count(db, req.account["id"], req.now) <= 1:
+            # With no password there would be no way back but a two-day claim.
+            raise ApiError(409, "last_device", "This is the account's only confirmed phone. Delete the account instead.")
+        db.execute("DELETE FROM devices WHERE key_id = ?", (target["key_id"],))
+    return 204, None
+
+
+def h_device_trust(app, req):
+    db = app.db()
+    with db:
+        target = _own_device(app, db, req)
+        db.execute("UPDATE devices SET probation_until = NULL WHERE key_id = ?", (target["key_id"],))
+    return 204, None
+
+
 class RawBody:
     def __init__(self, data, content_type, headers=None):
         self.data = data
@@ -621,7 +768,7 @@ class RawBody:
 
 
 # The calls other than reads that a device on probation may make. Every other change waits.
-PROBATION_OK = set()
+PROBATION_OK = {h_device_delete}
 
 # (method, path pattern, handler, who signs, largest accepted body, per-address limit before any signature maths)
 ROUTES = [
@@ -629,6 +776,14 @@ ROUTES = [
     ("GET", r"/v2/info", h_info, "none", 0, None),
     ("POST", r"/v2/enroll", h_enroll, "newkey", MAX_JSON_BYTES, ("enroll", 5, 3600)),
     ("GET", r"/v2/me", h_me, "device", 0, None),
+    ("POST", r"/v2/claims", h_claim_file, "newkey", MAX_JSON_BYTES, ("claim", 10, 3600)),
+    ("GET", r"/v2/claims/mine", h_claim_mine, "claimant", 0, None),
+    ("DELETE", r"/v2/claims/mine", h_claim_withdraw, "claimant", 0, None),
+    ("POST", r"/v2/claims/([0-9]{1,12})/approve", h_claim_approve, "device", 0, None),
+    ("POST", r"/v2/claims/([0-9]{1,12})/decline", h_claim_decline, "device", 0, None),
+    ("GET", r"/v2/me/devices", h_devices, "device", 0, None),
+    ("DELETE", r"/v2/me/devices/([0-9a-f]{64})", h_device_delete, "device", 0, None),
+    ("POST", r"/v2/me/devices/([0-9a-f]{64})/trust", h_device_trust, "device", 0, None),
 ]
 ROUTES = [(m, re.compile("^" + p + "$"), h, auth, size, limit) for m, p, h, auth, size, limit in ROUTES]
 

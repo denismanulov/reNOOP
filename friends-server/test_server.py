@@ -121,6 +121,20 @@ class FriendsServerTest(unittest.TestCase):
         phone.id = answer["me"]["id"]
         return phone
 
+    def file_claim(self, phone, serial):
+        return phone.call("POST", "/v2/claims", {
+            "key": phone.key_b64, "strap": handle(serial), "platform": phone.platform})
+
+    def joined_by_silence(self, serial):
+        """A phone that claims `serial` and gets in because nobody answered for two days: on probation."""
+        phone = Phone(self)
+        status, body = self.file_claim(phone, serial)
+        self.assertEqual(201, status, body)
+        self.advance(48 * HOUR + 1)
+        status, body = phone.call("GET", "/v2/claims/mine")
+        self.assertEqual("approved", body["claim"]["state"], body)
+        return phone
+
     # --- the frame ---
 
     def test_health_and_info_need_no_signature(self):
@@ -286,6 +300,189 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual(404, phone.call("GET", "/v2/nope")[0])
         self.assertEqual(404, phone.call("GET", "/v1/me")[0])
         self.assertEqual(405, phone.call("DELETE", "/v2/info", signed=False)[0])
+
+    # --- joining from a new phone ---
+
+    def test_a_new_phone_joins_when_the_old_one_confirms(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self, platform="android")
+        status, body = self.file_claim(new, "whoop-AAA111")
+        self.assertEqual(201, status, body)
+        claim = body["claim"]
+        self.assertEqual(("join", "pending", "android"), (claim["kind"], claim["state"], claim["platform"]))
+        self.assertRegex(claim["code"], r"^[0-9]{6}$")
+        self.assertEqual(int(self.now) + 48 * HOUR, claim["maturesAt"])
+        self.assertEqual((401, "unknown_key"), (new.call("GET", "/v2/me")[0], new.call("GET", "/v2/me")[1]["error"]))
+        self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        status, body = new.call("GET", "/v2/claims/mine")
+        self.assertEqual("approved", body["claim"]["state"])
+        status, me = new.call("GET", "/v2/me")
+        self.assertEqual(200, status)
+        self.assertEqual(old.id, me["id"])
+        self.assertIsNone(me["device"]["probationUntil"])
+        status, body = old.call("GET", "/v2/me/devices")
+        self.assertEqual([("ios", True), ("android", False)],
+                         [(d["platform"], d["current"]) for d in body["devices"]])
+
+    def test_filing_the_same_claim_twice_is_one_claim(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        first = self.file_claim(new, "whoop-AAA111")[1]["claim"]
+        status, body = self.file_claim(new, "whoop-AAA111")
+        self.assertEqual((201, first["id"], first["code"]), (status, body["claim"]["id"], body["claim"]["code"]))
+
+    def test_a_declined_claim_blocks_that_key_for_a_week(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        claim = self.file_claim(new, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(204, old.call("POST", "/v2/claims/%d/decline" % claim["id"])[0])
+        self.assertEqual("declined", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+        status, body = self.file_claim(new, "whoop-AAA111")
+        self.assertEqual((429, "claim_declined"), (status, body["error"]))
+        # A decision is made once.
+        status, body = old.call("POST", "/v2/claims/%d/approve" % claim["id"])
+        self.assertEqual((409, "claim_settled"), (status, body["error"]))
+        self.advance(7 * DAY + 1)
+        old.call("GET", "/v2/me")
+        self.assertEqual(201, self.file_claim(new, "whoop-AAA111")[0])
+
+    def test_a_claim_can_be_withdrawn(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        claim = self.file_claim(new, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(204, new.call("DELETE", "/v2/claims/mine")[0])
+        status, body = old.call("POST", "/v2/claims/%d/approve" % claim["id"])
+        self.assertEqual((404, "no_claim"), (status, body["error"]))
+        self.assertEqual(401, new.call("GET", "/v2/claims/mine")[0])
+
+    def test_someone_elses_claim_is_not_mine_to_answer(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        other = self.enroll("Max", serial="whoop-BBB222")
+        claim = self.file_claim(Phone(self), "whoop-AAA111")[1]["claim"]
+        status, body = other.call("POST", "/v2/claims/%d/approve" % claim["id"])
+        self.assertEqual((404, "no_claim"), (status, body["error"]))
+
+    def test_a_claim_needs_a_bound_strap_and_a_key_that_is_not_a_phone_yet(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        status, body = self.file_claim(Phone(self), "whoop-NOBODY")
+        self.assertEqual((404, "strap_free"), (status, body["error"]))
+        status, body = self.file_claim(anna, "whoop-AAA111")
+        self.assertEqual((409, "already_enrolled"), (status, body["error"]))
+
+    def test_two_days_of_silence_let_the_strap_alone_in_on_probation(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        self.file_claim(new, "whoop-AAA111")
+        self.advance(48 * HOUR - 1)
+        self.assertEqual("pending", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+        self.advance(2)
+        self.assertEqual("approved", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+        status, me = new.call("GET", "/v2/me")
+        self.assertEqual((200, old.id), (status, me["id"]))
+        self.assertEqual(int(self.now) + 7 * DAY, me["device"]["probationUntil"])
+
+    def test_a_trusted_phone_that_still_syncs_holds_the_door(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        self.file_claim(new, "whoop-AAA111")
+        self.advance(47 * HOUR)
+        self.assertEqual(200, old.call("GET", "/v2/me")[0])
+        self.advance(2 * HOUR)
+        claim = new.call("GET", "/v2/claims/mine")[1]["claim"]
+        self.assertEqual("pending", claim["state"])
+        self.assertEqual(int(self.now) + 46 * HOUR, claim["maturesAt"])
+        self.advance(46 * HOUR + 1)
+        self.assertEqual("approved", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+
+    def test_a_phone_on_probation_does_not_hold_the_door(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        intruder = self.joined_by_silence("whoop-AAA111")
+        owner = Phone(self)
+        self.file_claim(owner, "whoop-AAA111")
+        for _ in range(4):
+            self.advance(12 * HOUR)
+            self.assertEqual(200, intruder.call("GET", "/v2/me")[0])
+        self.advance(1)
+        self.assertEqual("approved", owner.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+
+    def test_probation_reads_but_decides_nothing(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = self.joined_by_silence("whoop-AAA111")
+        self.assertEqual(200, new.call("GET", "/v2/me/devices")[0])
+        claim = self.file_claim(Phone(self), "whoop-AAA111")[1]["claim"]
+        for method, path in (("POST", "/v2/claims/%d/approve" % claim["id"]),
+                             ("POST", "/v2/claims/%d/decline" % claim["id"]),
+                             ("DELETE", "/v2/me/devices/" + old.key_id),
+                             ("POST", "/v2/me/devices/%s/trust" % new.key_id)):
+            status, body = new.call(method, path)
+            self.assertEqual((403, "probation"), (status, body["error"]), path)
+        self.assertEqual(200, old.call("GET", "/v2/me")[0])
+
+    def test_probation_ends_by_itself_after_a_week(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        new = self.joined_by_silence("whoop-AAA111")
+        self.advance(7 * DAY + 1)
+        self.assertIsNone(new.call("GET", "/v2/me")[1]["device"]["probationUntil"])
+        self.assertEqual(200, new.call("GET", "/v2/me/devices")[0])
+        self.assertEqual([(None,), (None,)], self.rows("SELECT probation_until FROM devices"))
+
+    def test_a_trusted_phone_keeps_or_removes_one_on_probation(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        kept = self.joined_by_silence("whoop-AAA111")
+        self.assertEqual(204, old.call("POST", "/v2/me/devices/%s/trust" % kept.key_id)[0])
+        self.assertIsNone(kept.call("GET", "/v2/me")[1]["device"]["probationUntil"])
+        removed = self.joined_by_silence("whoop-AAA111")
+        self.assertEqual(204, old.call("DELETE", "/v2/me/devices/" + removed.key_id)[0])
+        status, body = removed.call("GET", "/v2/me")
+        self.assertEqual((401, "unknown_key"), (status, body["error"]))
+        status, body = old.call("DELETE", "/v2/me/devices/" + "0" * 64)
+        self.assertEqual((404, "no_such_device"), (status, body["error"]))
+
+    def test_the_last_trusted_phone_cannot_remove_itself(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        status, body = old.call("DELETE", "/v2/me/devices/" + old.key_id)
+        self.assertEqual((409, "last_device"), (status, body["error"]))
+        guest = self.joined_by_silence("whoop-AAA111")
+        # One on probation is not a second trusted phone, and may leave by itself.
+        self.assertEqual(409, old.call("DELETE", "/v2/me/devices/" + old.key_id)[0])
+        self.assertEqual(204, guest.call("DELETE", "/v2/me/devices/" + guest.key_id)[0])
+        second = Phone(self)
+        claim = self.file_claim(second, "whoop-AAA111")[1]["claim"]
+        old.call("POST", "/v2/claims/%d/approve" % claim["id"])
+        self.assertEqual(204, old.call("DELETE", "/v2/me/devices/" + old.key_id)[0])
+        self.assertEqual(200, second.call("GET", "/v2/me")[0])
+
+    def test_three_claims_wait_at_most_and_five_phones_is_the_cap(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        waiting = [Phone(self) for _ in range(3)]
+        claims = [self.file_claim(p, "whoop-AAA111")[1]["claim"] for p in waiting]
+        status, body = self.file_claim(Phone(self), "whoop-AAA111")
+        self.assertEqual((429, "too_many_claims"), (status, body["error"]))
+        for claim in claims:
+            self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        fifth = Phone(self)
+        claim = self.file_claim(fifth, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        status, body = self.file_claim(Phone(self), "whoop-AAA111")
+        self.assertEqual((409, "too_many_devices"), (status, body["error"]))
+
+    def test_a_claim_nobody_settles_expires_after_two_weeks(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        self.file_claim(new, "whoop-AAA111")
+        for _ in range(14):
+            self.advance(DAY)
+            self.assertEqual(200, old.call("GET", "/v2/me")[0])
+        self.advance(1)
+        self.assertEqual("expired", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+
+    def test_enrolling_supersedes_a_join_still_waiting(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        self.file_claim(new, "whoop-AAA111")
+        status, body = new.call("POST", "/v2/enroll", {"key": new.key_b64, "name": "New", "platform": "ios"})
+        self.assertEqual(201, status, body)
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM claims")[0][0])
 
 
 if __name__ == "__main__":
