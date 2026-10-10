@@ -22,6 +22,8 @@ struct FriendsView: View {
     @AppStorage("friends.sort") private var sortRaw = FriendsSort.name.rawValue
 
     @State private var showFriends = false
+    /// An invite code that arrived by a link and is being asked about.
+    @State private var promptCode: String?
     @State private var showServer = false
 
     private var sort: Binding<FriendsSort> {
@@ -42,6 +44,19 @@ struct FriendsView: View {
         #endif
         .toolbar { toolbar }
         .sheet(isPresented: $showFriends) { FriendsManageSheet() }
+        .alert("Add Friend", isPresented: Binding(get: { promptCode != nil }, set: { if !$0 { promptCode = nil } }),
+               presenting: promptCode) { code in
+            Button("Add") { Task { _ = await store.redeem(code) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("You opened an invite. Add this person as a friend? You will see each other's days.")
+        }
+        .task(id: "\(store.isOn)|\(store.pendingInviteCode ?? "")") {
+            // An invite that arrives while Friends is off waits here until it is on.
+            guard store.isOn, let code = store.pendingInviteCode else { return }
+            store.pendingInviteCode = nil
+            promptCode = code
+        }
         .sheet(isPresented: $showServer) { FriendsServerSheet() }
         .task(id: store.phase.stored) {
             // Opening the tab sends the wearer's own day first, so their card is never the stale one.

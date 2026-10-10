@@ -139,6 +139,10 @@ struct RootTabView: View {
             }
             if dest != nil { router.requestedDestination = nil }
         }
+        // Friends (fork feature): an invite opened by a link is answered on the Friends tab.
+        .onReceive(FriendsStore.shared.$pendingInviteCode) { code in
+            if code != nil { selectedTab = 3 }
+        }
         // A cold-launch selection is already pending when this shell appears; a warm selection arrives
         // through the change callback. Both navigate the same way.
         .onAppear {

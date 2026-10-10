@@ -225304,7 +225304,8 @@
     "Joined without confirmation": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вошёл без подтверждения"}}}},
     "What the Server Stores": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Что хранит сервер"}}}},
     "Everything the server holds about you, exactly as it holds it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Всё, что сервер хранит о вас, в том виде, в каком хранит."}}}},
-    "It stops reading and uploading at once. It can join again only if a phone of this account confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он сразу перестанет читать и отправлять данные. Вернуться он сможет, только если его подтвердит телефон этого аккаунта."}}}}
+    "It stops reading and uploading at once. It can join again only if a phone of this account confirms it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Он сразу перестанет читать и отправлять данные. Вернуться он сможет, только если его подтвердит телефон этого аккаунта."}}}},
+    "You opened an invite. Add this person as a friend? You will see each other's days.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вы открыли приглашение. Добавить этого человека в друзья? Вы будете видеть дни друг друга."}}}}
   },
   "version": "1.0"
 }

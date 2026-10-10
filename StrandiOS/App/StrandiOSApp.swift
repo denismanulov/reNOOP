@@ -1,6 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import ActivityKit
+import StrandAnalytics
 import StrandDesign
 import UserNotifications
 
@@ -365,10 +366,15 @@ struct StrandiOSApp: App {
                 //
                 // Widgets and Live Activities open `noop://<route>` (`WidgetLink`), which lands where the tap
                 // promised (`openWidgetLink`). Any other host (the Oura OAuth `noop://oura/callback`, which its
-                // web-auth session consumes itself) falls through untouched.
+                // web-auth session consumes itself) falls through untouched. An invite to Friends
+                // (`renoop://friends/add`) is handed to the Friends tab.
                 .onOpenURL { url in
                     if url.host == "import-health" {
                         model.handleHealthImportURL(url)
+                    } else if url.host == "friends", let code = FriendsInviteCode.extract(url.absoluteString) {
+                        // An invite (`renoop://friends/add?c=…`). Nobody is added by opening a link: the
+                        // Friends tab asks first.
+                        FriendsStore.shared.pendingInviteCode = code
                     } else if let link = WidgetLink(url: url) {
                         openWidgetLink(link)
                     }
