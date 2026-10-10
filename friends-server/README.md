@@ -154,7 +154,7 @@ status. `{id}` is an account id (16 hex), `{key}` a key id (64 hex), `{claimId}`
 | `POST /v2/claims` | the new key | `{"key", "strap", "platform"}` | `201 {"claim"}`; `404 strap_free`; `409 already_enrolled`; `409 too_many_devices`; `429 claim_declined`; `429 too_many_claims` |
 | `GET /v2/claims/mine` | the claiming key | | `{"claim"}`; `401 unknown_key` once the claim is gone and the key is not a phone; `404 no_claim` for a phone that has no claim |
 | `DELETE /v2/claims/mine` | the claiming key | | `204` |
-| `POST /v2/claims/{claimId}/approve` | a phone | | `204`; `404 no_claim`; `409 claim_settled` |
+| `POST /v2/claims/{claimId}/approve` | a phone | | `204`; `404 no_claim`; `409 claim_settled`; `409 too_many_devices` |
 | `POST /v2/claims/{claimId}/decline` | a phone | | `204`; `404 no_claim`; `409 claim_settled` |
 | `GET /v2/me` | a phone | | `me` |
 | `PATCH /v2/me` | a phone | `{"name"?, "share"?: {"scores"?, "sleep"?, "workouts"?, "hr"?}}` | `me` |
@@ -273,7 +273,7 @@ and a client works from the code. `clock_skew` also carries `serverTime`.
 | `strap_bound` | 409 | `POST /v2/enroll` with a strap that has an account |
 | `claim_settled` | 409 | Approving or declining a claim that is no longer pending |
 | `last_device` | 409 | Removing the account's only confirmed phone from itself |
-| `too_many_devices` | 409 | `POST /v2/claims` for an account that already has 5 phones |
+| `too_many_devices` | 409 | `POST /v2/claims` for an account that already has 5 phones; approving a join claim while it has 5 (the claim stays waiting) |
 | `too_many_invites` | 409 | `POST /v2/invites` with 10 waiting |
 | `too_many_friends` | 409 | `POST /v2/invites/redeem` when either account has 100 friends |
 | `length_required` | 411 | A request with a `Transfer-Encoding` header |

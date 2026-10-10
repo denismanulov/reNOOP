@@ -535,6 +535,24 @@ class FriendsServerTest(unittest.TestCase):
         status, body = self.file_claim(Phone(self), "whoop-AAA111")
         self.assertEqual((409, "too_many_devices"), (status, body["error"]))
 
+    def test_approving_a_join_the_cap_would_turn_away_is_refused_and_leaves_it_waiting(self):
+        old = self.enroll("Anna", serial="whoop-AAA111")
+        for _ in range(3):
+            claim = self.file_claim(Phone(self), "whoop-AAA111")[1]["claim"]
+            self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        fifth, sixth = Phone(self), Phone(self)
+        fifth_claim = self.file_claim(fifth, "whoop-AAA111")[1]["claim"]
+        sixth_claim = self.file_claim(sixth, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % fifth_claim["id"])[0])
+        status, body = old.call("POST", "/v2/claims/%d/approve" % sixth_claim["id"])
+        self.assertEqual((409, "too_many_devices"), (status, body["error"]))
+        self.assertEqual("pending", sixth.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+        # Room is made by removing a phone; the same claim is then approved.
+        self.assertEqual(204, old.call("DELETE", "/v2/me/devices/" + fifth.key_id)[0])
+        self.assertEqual(204, old.call("POST", "/v2/claims/%d/approve" % sixth_claim["id"])[0])
+        self.assertEqual("approved", sixth.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+        self.assertEqual(200, sixth.call("GET", "/v2/me")[0])
+
     def test_a_claim_nobody_settles_expires_after_two_weeks(self):
         old = self.enroll("Anna", serial="whoop-AAA111")
         new = Phone(self)

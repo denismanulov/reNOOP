@@ -768,7 +768,11 @@ def _claim_to_answer(app, db, req):
 def h_claim_approve(app, req):
     db = app.db()
     with db:
-        app.admit(db, _claim_to_answer(app, db, req), req.now, probation=False)
+        claim = _claim_to_answer(app, db, req)
+        if claim["kind"] == "join" and app.device_count(db, req.account["id"]) >= MAX_DEVICES:
+            # Admitting it would only expire it; the claim stays until a phone is removed.
+            raise ApiError(409, "too_many_devices", "")
+        app.admit(db, claim, req.now, probation=False)
     return 204, None
 
 
