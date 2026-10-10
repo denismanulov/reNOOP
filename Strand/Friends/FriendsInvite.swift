@@ -105,6 +105,8 @@ struct FriendsAddSections: View {
     @State private var code = ""
     @State private var working = false
     @State private var message: String?
+    /// Why the last Revoke did not go through.
+    @State private var revokeFailure: String?
 
     /// A phone that joined without confirmation leaves the friend list alone.
     private var locked: Bool { store.probationUntil != nil }
@@ -145,6 +147,10 @@ struct FriendsAddSections: View {
                 ForEach(invites) { invite in waiting(invite) }
             } header: {
                 Text("Invites Waiting")
+            } footer: {
+                if let revokeFailure {
+                    Text(verbatim: revokeFailure).foregroundStyle(StrandPalette.settingsRed)
+                }
             }
         }
     }
@@ -169,11 +175,11 @@ struct FriendsAddSections: View {
             }
             .buttonStyle(.plain)
             .disabled(code == nil)
-            Button { Task { await store.revokeInvite(invite.id) } } label: {
+            Button { revoke(invite) } label: {
                 Text("Revoke").font(StrandFont.pro(15, weight: .semibold)).lineLimit(1)
             }
             .friendsCapsuleButton(prominent: false)
-            .disabled(locked)
+            .disabled(working || locked)
         }
     }
 
@@ -191,6 +197,19 @@ struct FriendsAddSections: View {
             } else {
                 message = store.errorText
             }
+            working = false
+        }
+    }
+
+    /// A revoke that failed leaves the store's text as the reason; the invite stays in the list.
+    private func revoke(_ invite: FriendsInvite) {
+        guard !working else { return }
+        working = true
+        revokeFailure = nil
+        store.errorText = nil
+        Task {
+            let went = await store.revokeInvite(invite.id)
+            revokeFailure = went ? nil : store.errorText
             working = false
         }
     }

@@ -539,6 +539,23 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertNotNil(store.errorText, "the failed refresh is still reported, by the tab")
     }
 
+    /// A revoke reports whether the call itself went through, apart from the reload after it: a
+    /// refusal is a failure with a text, an accepted revoke is a success.
+    @MainActor
+    func testARevokeReportsWhetherTheServerTookIt() async throws {
+        let (store, _) = try await turnedOn(.handle(Self.handle))
+        Stub.answers["GET /v2/invites"] = [(200, #"{"invites":[]}"#)]
+        Stub.answers["DELETE /v2/invites/0123456789abcdef"] = [(404, #"{"error":"not_found","message":"That invite is gone"}"#)]
+        let refused = await store.revokeInvite("0123456789abcdef")
+        XCTAssertFalse(refused)
+        XCTAssertNotNil(store.errorText)
+
+        store.errorText = nil
+        Stub.answers["DELETE /v2/invites/0123456789abcdef"] = [(204, "")]
+        let accepted = await store.revokeInvite("0123456789abcdef")
+        XCTAssertTrue(accepted)
+    }
+
     /// A phone removed from the account by another one goes off, and keeps its key so that turning
     /// Friends on again asks to rejoin as the same phone.
     @MainActor

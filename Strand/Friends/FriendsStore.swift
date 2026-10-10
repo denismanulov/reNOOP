@@ -670,9 +670,12 @@ final class FriendsStore: ObservableObject {
         }
     }
 
-    func revokeInvite(_ id: String) async {
-        await actNoAnswer({ try await self.client().revokeInvite(id) }, refreshing: false)
+    /// Whether the revoke itself went through, apart from the reload of the list after it.
+    @discardableResult
+    func revokeInvite(_ id: String) async -> Bool {
+        let went = await actNoAnswer({ try await self.client().revokeInvite(id) }, refreshing: false)
         await loadInvites()
+        return went
     }
 
     /// Uses an invite: whatever was typed, pasted or opened is read for its code. Answers the new friend,
