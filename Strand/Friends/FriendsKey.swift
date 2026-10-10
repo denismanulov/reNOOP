@@ -26,14 +26,35 @@ protocol FriendsSigner: Sendable {
 /// Where a key's bytes are kept between launches: the Keychain in the app, memory in tests (an
 /// unsigned test host cannot reach the Keychain).
 protocol FriendsKeyStorage: Sendable {
-    func read(account: String) -> Data?
+    func item(account: String) -> FriendsKeyItem
     func write(_ data: Data, account: String) -> Bool
     func delete(account: String)
+}
+
+/// What a storage answers for one item. "Nothing is kept" and "what is kept could not be read" are
+/// told apart, because only the first may be answered by making a new key.
+enum FriendsKeyItem: Equatable, Sendable {
+    case data(Data)
+    /// There is no such item.
+    case missing
+    /// The item may be there but could not be read: before the device's first unlock, or on any other
+    /// failure of the storage.
+    case unreadable
+}
+
+extension FriendsKeyStorage {
+    /// The item's bytes, or nil when there is none or it could not be read.
+    func read(account: String) -> Data? {
+        if case let .data(data) = item(account: account) { return data }
+        return nil
+    }
 }
 
 enum FriendsKeyError: Error, Equatable {
     /// The key was made but could not be kept, so it would not survive a relaunch.
     case notKept
+    /// A key may be kept but could not be read just now, so none may be made in its place.
+    case notRead
 }
 
 struct FriendsKey: FriendsSigner, @unchecked Sendable {
@@ -79,9 +100,34 @@ struct FriendsKey: FriendsSigner, @unchecked Sendable {
         "key." + hex(SHA256.hash(data: Data(server.utf8))).prefix(32)
     }
 
-    /// The key kept for `server`, or nil when there is none or it can no longer be used on this device.
+    /// What is kept for a server.
+    enum Kept {
+        case key(FriendsKey)
+        /// Nothing is kept, or what is kept is not a key this device can use.
+        case absent
+        /// A key may be kept, but the storage could not be read just now.
+        case unreadable
+    }
+
+    /// What is kept for `server`. Unlike `load`, it tells a key that is not there from one that could
+    /// not be read, which is what decides whether a new key may be made.
+    static func find(server: String, storage: FriendsKeyStorage) -> Kept {
+        switch storage.item(account: account(forServer: server)) {
+        case .unreadable: return .unreadable
+        case .missing: return .absent
+        case let .data(blob): return decode(blob).map { .key($0) } ?? .absent
+        }
+    }
+
+    /// The key kept for `server`, or nil when there is none, it could not be read, or it can no longer
+    /// be used on this device.
     static func load(server: String, storage: FriendsKeyStorage) -> FriendsKey? {
-        guard let blob = storage.read(account: account(forServer: server)), let tag = blob.first else { return nil }
+        if case let .key(key) = find(server: server, storage: storage) { return key }
+        return nil
+    }
+
+    private static func decode(_ blob: Data) -> FriendsKey? {
+        guard let tag = blob.first else { return nil }
         let body = Data(blob.dropFirst())
         switch tag {
         case enclaveTag:
@@ -141,13 +187,17 @@ struct FriendsKeychainStorage: FriendsKeyStorage {
          kSecAttrAccount as String: account]
     }
 
-    func read(account: String) -> Data? {
+    func item(account: String) -> FriendsKeyItem {
         var q = query(account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess else { return nil }
-        return out as? Data
+        switch SecItemCopyMatching(q as CFDictionary, &out) {
+        case errSecSuccess: return (out as? Data).map { .data($0) } ?? .unreadable
+        case errSecItemNotFound: return .missing
+        // Every other status (the device not yet unlocked, a refused prompt) leaves the item in doubt.
+        default: return .unreadable
+        }
     }
 
     func write(_ data: Data, account: String) -> Bool {
@@ -167,14 +217,30 @@ final class FriendsMemoryKeyStorage: FriendsKeyStorage, @unchecked Sendable {
     private var items: [String: Data] = [:]
     /// Set to make every write fail, as a Keychain that refuses does.
     var refusesWrites = false
+    private var readsFail = false
+    private var writes = 0
 
-    func read(account: String) -> Data? {
+    /// Set to make every read fail, as the Keychain does before the device's first unlock.
+    var failsReads: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return readsFail }
+        set { lock.lock(); defer { lock.unlock() }; readsFail = newValue }
+    }
+
+    /// How many writes were asked for, refused ones included.
+    var writeCount: Int {
         lock.lock(); defer { lock.unlock() }
-        return items[account]
+        return writes
+    }
+
+    func item(account: String) -> FriendsKeyItem {
+        lock.lock(); defer { lock.unlock() }
+        if readsFail { return .unreadable }
+        return items[account].map { .data($0) } ?? .missing
     }
 
     func write(_ data: Data, account: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        writes += 1
         guard !refusesWrites else { return false }
         items[account] = data
         return true

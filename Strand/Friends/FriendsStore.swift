@@ -161,26 +161,34 @@ final class FriendsStore: ObservableObject {
             ?? FriendsServerAddress.standard
         let held = signer ?? FriendsKey.load(server: address, storage: keys)
         self.key = held
-        var phase = FriendsPhase.off
-        switch defaults.string(forKey: Self.phaseKey) {
-        case "on" where held != nil:
-            phase = .on
-        case "waiting" where held != nil:
-            let claim = defaults.data(forKey: Self.claimKey).flatMap { try? JSONDecoder().decode(FriendsClaim.self, from: $0) }
-            phase = claim.map { .waiting($0) } ?? .strapBound
-        case "strapBound":
-            phase = .strapBound
-        case "waitingForStrap":
-            phase = .waitingForStrap
-        default:
-            break
-        }
+        // A key that could not be read leaves Friends off for now with what is kept untouched:
+        // `recoverKey` brings the phase back once the key can be read.
+        let phase = Self.keptPhase(in: defaults, hasKey: held != nil)
         self.phase = phase
-        if phase == .on {
-            feed = cache?.read()
-            feedFetchedAt = defaults.integer(forKey: Self.feedAtKey)
-            lastUploadAt = defaults.object(forKey: Self.uploadedAtKey) as? Int
+        if phase == .on { loadKeptFeed() }
+    }
+
+    /// The phase kept between launches. On, and waiting on a claim, need this phone's key.
+    private static func keptPhase(in defaults: UserDefaults, hasKey: Bool) -> FriendsPhase {
+        switch defaults.string(forKey: phaseKey) {
+        case "on" where hasKey:
+            return .on
+        case "waiting" where hasKey:
+            let claim = defaults.data(forKey: claimKey).flatMap { try? JSONDecoder().decode(FriendsClaim.self, from: $0) }
+            return claim.map { .waiting($0) } ?? .strapBound
+        case "strapBound":
+            return .strapBound
+        case "waitingForStrap":
+            return .waitingForStrap
+        default:
+            return .off
         }
+    }
+
+    private func loadKeptFeed() {
+        feed = cache?.read()
+        feedFetchedAt = defaults.integer(forKey: Self.feedAtKey)
+        lastUploadAt = defaults.object(forKey: Self.uploadedAtKey) as? Int
     }
 
     var isOn: Bool { phase == .on }
@@ -218,10 +226,70 @@ final class FriendsStore: ObservableObject {
     }
 
     /// The same, making the key first when there is none. The key exists from the first Turn On and
-    /// never before it.
+    /// never before it. The storage is read again first, and a key is made only when it says none is
+    /// kept: one that is kept but cannot be read just now is never replaced.
     private func clientMakingKey() throws -> FriendsClient {
-        if key == nil { key = try FriendsKey.create(server: serverAddress, storage: keys) }
+        if key == nil {
+            switch FriendsKey.find(server: serverAddress, storage: keys) {
+            case let .key(found): key = found
+            case .absent: key = try FriendsKey.create(server: serverAddress, storage: keys)
+            case .unreadable: throw FriendsKeyError.notRead
+            }
+        }
         return try client()
+    }
+
+    /// How this phone's key stands before a step that would use one or make one.
+    private enum KeyCheck {
+        /// A key is in hand, or none is kept and one may be made.
+        case clear
+        /// The key was read again and brought back the phase kept between launches.
+        case resumed
+        /// A key may be kept but cannot be read just now: nothing may change until it can.
+        case unreadable
+    }
+
+    /// Reads the key again when this process holds none. A process the system started before the
+    /// device's first unlock could not read it, and came up off with `friends.phase` still saying on,
+    /// or waiting on a claim: with the key back, so is that phase.
+    private func checkKey() -> KeyCheck {
+        guard key == nil else { return .clear }
+        switch FriendsKey.find(server: serverAddress, storage: keys) {
+        case .absent:
+            return .clear
+        case .unreadable:
+            return .unreadable
+        case let .key(found):
+            key = found
+            let kept = Self.keptPhase(in: defaults, hasKey: true)
+            guard kept != phase else { return .clear }
+            phase = kept
+            if kept == .on { loadKeptFeed() }
+            return .resumed
+        }
+    }
+
+    /// Brings Friends back by itself after a launch that could not read the key. Asks the storage only
+    /// when what is kept says Friends was on or waiting on a claim, so a phone that never turned it on
+    /// reads nothing.
+    private func recoverKey() {
+        guard key == nil, let kept = defaults.string(forKey: Self.phaseKey), kept == "on" || kept == "waiting" else { return }
+        _ = checkKey()
+    }
+
+    /// Whether a step that turns Friends on may go on. It may not when the tap found Friends as it was
+    /// kept, and not while a kept key cannot be read: then nothing is made, sent or changed.
+    private func mayEnter() -> Bool {
+        switch checkKey() {
+        case .clear:
+            return true
+        case .resumed:
+            errorText = nil
+            return false
+        case .unreadable:
+            errorText = Self.message(for: FriendsKeyError.notRead)
+            return false
+        }
     }
 
     private func setPhase(_ next: FriendsPhase) {
@@ -256,6 +324,7 @@ final class FriendsStore: ObservableObject {
     /// Runs in a task of its own, so a view that goes away mid-request does not cut it short: an
     /// enrolment cut short would make the account and never show it.
     private func enter(name: String, bind: Bool) async {
+        guard mayEnter() else { return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             errorText = String(localized: "Enter your name first.")
@@ -294,6 +363,7 @@ final class FriendsStore: ObservableObject {
     }
 
     private func claimNow(name: String) async {
+        guard mayEnter() else { return }
         guard case let .handle(strap) = strapIdentity() else {
             setPhase(.waitingForStrap)
             return
@@ -450,8 +520,10 @@ final class FriendsStore: ObservableObject {
     /// strap that has since been read is enrolled with, a request to join is asked about. Once on it
     /// sends today and yesterday if they changed and reads the feed; an automatic call inside
     /// `autoRefreshEverySeconds` of the last good answer does nothing, so switching tabs back and forth
-    /// costs no request, and `force` (a pull, a change just made) always goes.
+    /// costs no request, and `force` (a pull, a change just made) always goes. A launch that could not
+    /// read the key is put right first, here and wherever else Friends is refreshed.
     func sync(repo: Repository, profile: ProfileStore, force: Bool) async {
+        recoverKey()
         switch phase {
         case .off, .strapBound:
             return
@@ -469,6 +541,7 @@ final class FriendsStore: ObservableObject {
     }
 
     func refresh() async {
+        recoverKey()
         guard isOn else { return }
         let session = epoch
         loading = feed == nil
@@ -632,6 +705,7 @@ final class FriendsStore: ObservableObject {
     /// refreshes becomes one upload, and an unchanged day is not sent at all. Does nothing while Friends
     /// is off, and the strap sync that led here never waits on it or learns how it went.
     func daysChanged(repo: Repository, profile: ProfileStore) {
+        recoverKey()
         guard isOn else { return }
         uploadTask?.cancel()
         uploadTask = Task { [weak self] in
@@ -801,8 +875,11 @@ final class FriendsStore: ObservableObject {
 
     /// The server's codes in the wearer's language; its own English sentence only as a last resort.
     static func message(for error: Error) -> String {
-        if error is FriendsKeyError {
-            return String(localized: "The key for Friends could not be saved on this device.")
+        if let key = error as? FriendsKeyError {
+            switch key {
+            case .notKept: return String(localized: "The key for Friends could not be saved on this device.")
+            case .notRead: return String(localized: "The key for Friends could not be read right now. Try again in a moment.")
+            }
         }
         guard let api = error as? FriendsAPIError else { return error.localizedDescription }
         switch api {

@@ -79,6 +79,8 @@ final class FriendsClientTests: XCTestCase {
     private static let fixedNonce = "AAAAAAAAAAAAAAAAAAAAAA"
     private static let annaID = "00000000000000aa"
     private static let me = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":true,"sleep":true,"workouts":true,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
+    /// The account with every sharing switch off, so an upload run reads nothing out of the app's data.
+    private static let meSharingNothing = #"{"id":"00000000000000aa","name":"Anna","avatarRev":0,"share":{"scores":false,"sleep":false,"workouts":false,"hr":false},"strapBound":true,"device":{"id":"k","probationUntil":null}}"#
     private static let emptyFeed = #"{"serverTime":1791540000,"me":\#(me),"friends":[],"claims":[],"strapClaim":null}"#
     private static let handle = "98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"
 
@@ -519,6 +521,122 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .off)
         XCTAssertNil(store.deviceID)
         XCTAssertNil(keys.read(account: FriendsKey.account(forServer: Self.base)))
+    }
+
+    // MARK: - The kept key
+
+    /// A store whose key is kept in `keys` and whose first read of it fails, as in a process the system
+    /// started before the device's first unlock. `phase` is what was kept between launches.
+    @MainActor
+    private func storeThatCouldNotReadItsKey(phase: String?, identity: FriendsStrap.Identity = .none) throws
+        -> (store: FriendsStore, defaults: UserDefaults, keys: FriendsMemoryKeyStorage, kept: FriendsKey) {
+        let keys = FriendsMemoryKeyStorage()
+        let kept = try FriendsKey.create(server: Self.base, storage: keys, enclave: false)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "friends-store-\(UUID().uuidString)"))
+        if let phase { defaults.set(phase, forKey: FriendsStore.phaseKey) }
+        keys.failsReads = true
+        let (store, _) = try store(identity, signer: nil, defaults: defaults, keys: keys)
+        return (store, defaults, keys, kept)
+    }
+
+    /// Friends looks off while the key cannot be read, with the kept phase left alone, and comes back
+    /// by itself once it can: the same key, nothing written in its place.
+    @MainActor
+    func testAKeyThatCouldNotBeReadComesBackWithItsPhase() async throws {
+        let (store, defaults, keys, kept) = try storeThatCouldNotReadItsKey(phase: "on")
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertNil(store.deviceID)
+        let repo = Repository(deviceId: "test-friends")
+        let profile = ProfileStore()
+        await store.sync(repo: repo, profile: profile, force: false)
+        XCTAssertEqual(store.phase, .off, "still unreadable: nothing changes")
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on", "the kept phase is not written over")
+        XCTAssertTrue(Stub.seen.isEmpty)
+
+        keys.failsReads = false
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.sync(repo: repo, profile: profile, force: false)
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(store.deviceID, kept.keyID)
+        XCTAssertEqual(keys.writeCount, 1, "the one write that made the key: nothing replaced it")
+        XCTAssertEqual(Stub.seen.first?.headers["X-Friends-Key"], kept.keyID)
+        XCTAssertFalse(Stub.seen.contains { $0.path == "/v2/enroll" })
+    }
+
+    /// A claim in flight comes back the same way, with its code.
+    @MainActor
+    func testAKeyThatCouldNotBeReadComesBackWithItsClaim() async throws {
+        let (store, defaults, keys, kept) = try storeThatCouldNotReadItsKey(phase: "waiting")
+        let claim = FriendsClaim(id: 3, kind: .join, code: "481902", state: .pending, platform: "ios",
+                                 createdAt: 1_791_540_000, maturesAt: 1_791_712_800)
+        defaults.set(try JSONEncoder().encode(claim), forKey: FriendsStore.claimKey)
+        XCTAssertEqual(store.phase, .off)
+        keys.failsReads = false
+        await store.refresh()
+        XCTAssertEqual(store.phase, .waiting(claim))
+        XCTAssertEqual(store.deviceID, kept.keyID)
+        XCTAssertEqual(keys.writeCount, 1)
+    }
+
+    /// Turn On is the one button the page offers while Friends looks off. With the key out of reach it
+    /// writes nothing, sends nothing and leaves the phase alone, whatever the strap says.
+    @MainActor
+    func testTurningOnNeverReplacesAKeyThatCannotBeRead() async throws {
+        for identity in [FriendsStrap.Identity.pending, .handle(Self.handle), .none] {
+            let (store, defaults, keys, _) = try storeThatCouldNotReadItsKey(phase: "on", identity: identity)
+            await store.turnOn(name: "Anna")
+            XCTAssertEqual(keys.writeCount, 1, "nothing was written over the kept key")
+            XCTAssertTrue(Stub.seen.isEmpty)
+            XCTAssertEqual(store.errorText, FriendsStore.message(for: FriendsKeyError.notRead))
+            XCTAssertEqual(store.phase, .off)
+            XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on")
+            store.errorText = nil
+            await store.turnOnWithoutStrap(name: "Anna")
+            XCTAssertEqual(keys.writeCount, 1)
+            XCTAssertTrue(Stub.seen.isEmpty)
+            XCTAssertNotNil(store.errorText)
+            XCTAssertEqual(defaults.string(forKey: FriendsStore.phaseKey), "on")
+        }
+    }
+
+    /// The key is read again before one is made. A tap on Turn On once it is readable finds Friends as
+    /// it was, and a phone that was not on enrols with the key it kept.
+    @MainActor
+    func testTurningOnReadsTheKeyAgainBeforeMakingOne() async throws {
+        let (store, _, keys, kept) = try storeThatCouldNotReadItsKey(phase: "on")
+        keys.failsReads = false
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on, "Friends was on all along")
+        XCTAssertEqual(store.deviceID, kept.keyID)
+        XCTAssertEqual(keys.writeCount, 1)
+        XCTAssertFalse(Stub.seen.contains { $0.path == "/v2/enroll" })
+
+        Stub.seen = []
+        let (fresh, _, freshKeys, freshKept) = try storeThatCouldNotReadItsKey(phase: nil)
+        freshKeys.failsReads = false
+        Stub.answers["POST /v2/enroll"] = [(200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await fresh.turnOn(name: "Anna")
+        XCTAssertEqual(fresh.phase, .on)
+        XCTAssertEqual(freshKeys.writeCount, 1, "the kept key was used, not replaced")
+        XCTAssertEqual(Stub.seen.first?.path, "/v2/enroll")
+        XCTAssertEqual(Stub.seen.first?.headers["X-Friends-Key"], freshKept.keyID)
+    }
+
+    /// With nothing kept, Turn On makes the key and enrols with it.
+    @MainActor
+    func testTurningOnWithNoKeyKeptMakesOneAndEnrols() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let (store, _) = try store(.none, signer: nil, keys: keys)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(keys.writeCount, 1)
+        XCTAssertEqual(Stub.seen.first?.path, "/v2/enroll")
+        XCTAssertEqual(Stub.seen.first?.headers["X-Friends-Key"], store.deviceID)
+        XCTAssertEqual(FriendsKey.load(server: Self.base, storage: keys)?.keyID, store.deviceID)
     }
 
     @MainActor

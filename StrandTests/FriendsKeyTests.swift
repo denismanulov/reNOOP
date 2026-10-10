@@ -64,6 +64,36 @@ final class FriendsKeyTests: XCTestCase {
         }
     }
 
+    /// The storage tells "nothing is kept" from "what is kept could not be read", and the key follows
+    /// it: only the first may ever be answered by making a new key.
+    func testTheStorageTellsNoKeyFromAKeyItCouldNotRead() throws {
+        let storage = FriendsMemoryKeyStorage()
+        let server = "https://a.example"
+        let account = FriendsKey.account(forServer: server)
+        XCTAssertEqual(storage.item(account: account), .missing)
+        guard case .absent = FriendsKey.find(server: server, storage: storage) else { return XCTFail("no item is no key") }
+
+        let key = try FriendsKey.create(server: server, storage: storage, enclave: false)
+        guard case let .data(blob) = storage.item(account: account) else { return XCTFail("the kept item was not read") }
+        XCTAssertEqual(storage.read(account: account), blob)
+        guard case let .key(found) = FriendsKey.find(server: server, storage: storage) else { return XCTFail("the kept key was not found") }
+        XCTAssertEqual(found.keyID, key.keyID)
+
+        storage.failsReads = true
+        XCTAssertEqual(storage.item(account: account), .unreadable)
+        XCTAssertNil(storage.read(account: account))
+        guard case .unreadable = FriendsKey.find(server: server, storage: storage) else { return XCTFail("a failed read is not an answer") }
+        XCTAssertNil(FriendsKey.load(server: server, storage: storage))
+
+        storage.failsReads = false
+        XCTAssertEqual(FriendsKey.load(server: server, storage: storage)?.keyID, key.keyID)
+        XCTAssertEqual(storage.writeCount, 1)
+
+        // What is kept but is not a key is "no key", as before: it can be replaced.
+        XCTAssertTrue(storage.write(Data([9, 1, 2, 3]), account: account))
+        guard case .absent = FriendsKey.find(server: server, storage: storage) else { return XCTFail("junk is no key") }
+    }
+
     /// Whatever kind of key this machine makes by default (the Secure Enclave's where there is one and
     /// the test host may use it, a software key otherwise), it loads back and signs.
     func testTheDefaultKeyOfThisMachineLoadsBackAndSigns() throws {

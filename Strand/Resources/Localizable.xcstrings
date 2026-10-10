@@ -225261,7 +225261,8 @@
     "This code is not valid any more.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот код больше не действует."}}}},
     "That is your own invite.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Это ваше собственное приглашение."}}}},
     "Too many invites are waiting. Revoke one first.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Слишком много приглашений ждёт. Сначала отзовите одно."}}}},
-    "This person is no longer here.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этого человека здесь больше нет."}}}}
+    "This person is no longer here.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этого человека здесь больше нет."}}}},
+    "The key for Friends could not be read right now. Try again in a moment.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Сейчас не удалось прочитать ключ «Друзей». Повторите чуть позже."}}}}
   },
   "version": "1.0"
 }
