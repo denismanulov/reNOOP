@@ -17,6 +17,74 @@ public enum FriendsWire {
     /// The text whose SHA-256 is a strap's handle. `adoptedId` is the registry's serial-derived id,
     /// such as "whoop-4A0123456".
     public static func strapHandleInput(adoptedId: String) -> String { strapHandlePrefix + adoptedId }
+
+    /// A JSON text laid out to be read: one member or element to a line, indented by `step` for each
+    /// level, a space after each colon. The text is walked, not parsed: every string, number and
+    /// literal is copied as it came, so a number keeps the digits the server wrote and members keep
+    /// their order. Only whitespace outside strings is replaced. Text that is not JSON comes out with
+    /// nothing lost. Kotlin twin: none yet (the page that shows it exists on Apple platforms only).
+    public static func indented(_ json: String, step: String = "  ") -> String {
+        let scalars = Array(json.unicodeScalars)
+        var out = String.UnicodeScalarView()
+        var depth = 0
+        var inString = false
+        var escaped = false
+        func isLayout(_ scalar: Unicode.Scalar) -> Bool {
+            scalar == " " || scalar == "\n" || scalar == "\t" || scalar == "\r"
+        }
+        func newLine() {
+            out.append("\n")
+            for _ in 0..<depth { out.append(contentsOf: step.unicodeScalars) }
+        }
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            index += 1
+            if inString {
+                out.append(scalar)
+                if escaped {
+                    escaped = false
+                } else if scalar == "\\" {
+                    escaped = true
+                } else if scalar == "\"" {
+                    inString = false
+                }
+                continue
+            }
+            switch scalar {
+            case _ where isLayout(scalar):
+                continue
+            case "\"":
+                inString = true
+                out.append(scalar)
+            case "{", "[":
+                out.append(scalar)
+                var next = index
+                while next < scalars.count, isLayout(scalars[next]) { next += 1 }
+                if next < scalars.count, scalars[next] == (scalar == "{" ? "}" : "]") {
+                    // An empty object or array stays on its line.
+                    out.append(scalars[next])
+                    index = next + 1
+                } else {
+                    depth += 1
+                    newLine()
+                }
+            case "}", "]":
+                depth = max(0, depth - 1)
+                newLine()
+                out.append(scalar)
+            case ",":
+                out.append(scalar)
+                newLine()
+            case ":":
+                out.append(scalar)
+                out.append(" ")
+            default:
+                out.append(scalar)
+            }
+        }
+        return String(out)
+    }
 }
 
 /// An invite code: ten characters of a 32-letter alphabet that leaves out the letters read as digits.

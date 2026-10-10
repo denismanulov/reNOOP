@@ -163,7 +163,7 @@ struct FriendsExportPage: View {
             Group {
                 if let text {
                     Text(verbatim: text)
-                        .font(StrandFont.pro(13).monospaced())
+                        .font(StrandFont.mono)
                         .foregroundStyle(StrandPalette.textPrimary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1305,6 +1305,25 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertFalse(defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix(FriendsStore.putPrefix) })
     }
 
+    /// What the server stores is shown as it came: laid out to be read, with every figure the one the
+    /// server wrote and the members in the server's order.
+    @MainActor
+    func testWhatTheServerStoresIsShownWithItsOwnFigures() async throws {
+        let (store, _) = try await turnedOn(.none)
+        let wire = #"{"me":{"name":"Anna"},"days":[{"day":"2026-10-10","strain":38.6,"workouts":[{"strain":35.2,"kcal":12.0}]}],"e":1e-7}"#
+        Stub.answers["GET /v2/me/export"] = [(200, wire)]
+        let shown = await store.exportText()
+        let text = try XCTUnwrap(shown)
+        XCTAssertTrue(text.contains(#""strain": 38.6,"#), text)
+        XCTAssertFalse(text.contains("38.60"), text)
+        XCTAssertTrue(text.contains(#""strain": 35.2,"#))
+        XCTAssertTrue(text.contains(#""kcal": 12.0"#))
+        XCTAssertTrue(text.contains(#""e": 1e-7"#))
+        XCTAssertGreaterThan(text.split(separator: "\n").count, 10, "one member to a line")
+        XCTAssertEqual(text.filter { !$0.isWhitespace }, wire, "nothing but layout was added")
+        XCTAssertTrue(text.hasPrefix("{\n  \"me\": {"), "the server's order, not the alphabet's")
+    }
+
     // MARK: - Not now
 
     /// Turn On can be taken back while the page waits for the strap: Friends is off again, nothing was

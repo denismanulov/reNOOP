@@ -787,16 +787,12 @@ final class FriendsStore: ObservableObject {
     }
 
     /// Everything the server holds for the account, laid out to be read; nil when it cannot be fetched.
+    /// The answer is indented as text and never parsed, so every figure is the one the server wrote.
     func exportText() async -> String? {
         let session = epoch
         do {
             let raw = try await client().export()
-            guard let object = try? JSONSerialization.jsonObject(with: raw),
-                  let pretty = try? JSONSerialization.data(
-                    withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else {
-                return String(decoding: raw, as: UTF8.self)
-            }
-            return String(decoding: pretty, as: UTF8.self)
+            return FriendsWire.indented(String(decoding: raw, as: UTF8.self))
         } catch {
             handle(error, session: session)
             return nil
