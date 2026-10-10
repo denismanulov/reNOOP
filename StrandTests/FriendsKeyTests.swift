@@ -99,6 +99,8 @@ final class FriendsKeyTests: XCTestCase {
     func testTheDefaultKeyOfThisMachineLoadsBackAndSigns() throws {
         let storage = FriendsMemoryKeyStorage()
         let key = try FriendsKey.create(server: "https://hw.example", storage: storage)
+        XCTAssertEqual(key.isHardwareBacked, SecureEnclave.isAvailable,
+                       "where there is a Secure Enclave the key is made in it, not beside it")
         let again = try XCTUnwrap(FriendsKey.load(server: "https://hw.example", storage: storage))
         XCTAssertEqual(again.keyID, key.keyID)
         XCTAssertEqual(again.isHardwareBacked, key.isHardwareBacked)

@@ -243,6 +243,26 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertFalse(try isSigned(sent, by: signer, target: "/v2/feed"))
     }
 
+    /// A server mounted under a prefix by its proxy is asked under that prefix, and sees the path
+    /// without it: what is signed is the target beginning "/v2/", the query included.
+    func testAServerUnderAPathPrefixIsSignedWithoutThePrefix() async throws {
+        let signer = TestSigner()
+        var prefixed = FriendsClient(baseURL: try XCTUnwrap(FriendsServerAddress.baseURL("https://friends.example/friends/")),
+                                     signer: signer, session: stubbedSession())
+        prefixed.offset = FriendsClockOffset()
+        prefixed.now = { Self.fixedNow }
+        prefixed.nonce = { Self.fixedNonce }
+        Stub.answers["GET /friends/v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["PUT /friends/v2/me/days/2026-10-10"] = [(204, "")]
+        _ = try await prefixed.feed()
+        try await prefixed.upload(json: #"{"recovery":81}"#, on: "2026-10-10")
+        XCTAssertEqual(Stub.seen.map(\.path), ["/friends/v2/feed?days=7", "/friends/v2/me/days/2026-10-10"])
+        XCTAssertTrue(try isSigned(Stub.seen[0], by: signer, target: "/v2/feed?days=7"))
+        XCTAssertFalse(try isSigned(Stub.seen[0], by: signer, target: "/friends/v2/feed?days=7"))
+        XCTAssertTrue(try isSigned(Stub.seen[1], by: signer, target: "/v2/me/days/2026-10-10"))
+        XCTAssertFalse(try isSigned(Stub.seen[1], by: signer, target: "/friends/v2/me/days/2026-10-10"))
+    }
+
     func testInfoIsTheOneCallThatIsNotSigned() async throws {
         Stub.answers["GET /v2/info"] = [(200, #"{"name":"renoop-friends","api":2,"time":1791540000}"#)]
         let info = try await client(nil).info()
@@ -688,6 +708,53 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .on)
     }
 
+    /// The page that waits for the strap finishes by itself: a sync while the strap is still unread
+    /// sends nothing, and the first one after it is read enrols with it.
+    @MainActor
+    func testSyncFinishesTurningOnOnceTheStrapIsRead() async throws {
+        let (store, _) = try store(.pending)
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna")
+        await store.turnOn(profile: profile)
+        XCTAssertEqual(store.phase, .waitingForStrap)
+        await store.sync(repo: repo, profile: profile, force: false)
+        XCTAssertEqual(store.phase, .waitingForStrap)
+        XCTAssertTrue(Stub.seen.isEmpty)
+
+        store.strapIdentity = { .handle(Self.handle) }
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.sync(repo: repo, profile: profile, force: false)
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(Stub.seen.first?.path, "/v2/enroll")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(Stub.seen.first).body) as? [String: String])
+        XCTAssertEqual(body["strap"], Self.handle)
+        XCTAssertEqual(body["name"], "Anna")
+        XCTAssertEqual(sent("POST", "/v2/enroll").count, 1)
+    }
+
+    /// "Start a New Account" beside a strap that belongs to another account enrols without it: the
+    /// strap is asked for afterwards, by the upload run.
+    @MainActor
+    func testStartingANewAccountBesideABoundStrapSendsNoStrap() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#), (201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .strapBound)
+        await store.turnOnWithoutStrap(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        let enrolments = sent("POST", "/v2/enroll")
+        XCTAssertEqual(enrolments.count, 2)
+        let first = try XCTUnwrap(JSONSerialization.jsonObject(with: enrolments[0].body) as? [String: String])
+        let second = try XCTUnwrap(JSONSerialization.jsonObject(with: enrolments[1].body) as? [String: String])
+        XCTAssertEqual(first["strap"], Self.handle)
+        XCTAssertNil(second["strap"])
+        XCTAssertEqual(second["name"], "Anna")
+        XCTAssertTrue(sent("POST", "/v2/claims").isEmpty)
+        XCTAssertNil(defaults.string(forKey: FriendsStore.boundHandleKey))
+    }
+
     @MainActor
     func testAStrapWithAnAccountAsksWhoseItIsAndAClaimSurvivesARelaunch() async throws {
         let signer = TestSigner()
@@ -842,6 +909,11 @@ final class FriendsClientTests: XCTestCase {
         Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed), (401, #"{"error":"unknown_key","message":""}"#)]
         await store.turnOn(name: "Anna")
         XCTAssertEqual(store.phase, .on)
+        // An upload run has the strap accepted, so there is something on record to forget.
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PUT /v2/me/strap"] = [(200, #"{"bound":true}"#)]
+        await store.uploadRecentDays(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"))
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.boundHandleKey), Self.handle)
         let epoch = store.epoch
         await store.refresh()
         XCTAssertEqual(store.phase, .off)
@@ -869,6 +941,35 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.phase, .off)
         XCTAssertNil(store.deviceID)
         XCTAssertNil(keys.read(account: FriendsKey.account(forServer: Self.base)))
+    }
+
+    /// Removing this phone from the account deletes its key, since the account lives on elsewhere.
+    /// Refused for the account's only confirmed phone, nothing changes: Friends stays on, with its key.
+    @MainActor
+    func testRemovingThisPhoneDeletesItsKeyAndARefusalKeepsIt() async throws {
+        let keys = FriendsMemoryKeyStorage()
+        let (store, _) = try store(.none, signer: nil, keys: keys)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        let id = try XCTUnwrap(store.deviceID)
+        let account = FriendsKey.account(forServer: Self.base)
+
+        Stub.answers["DELETE /v2/me/devices/\(id)"] = [(409, #"{"error":"last_device","message":""}"#)]
+        let refused = await store.removeThisPhone()
+        XCTAssertFalse(refused)
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertEqual(store.deviceID, id)
+        XCTAssertNotNil(keys.read(account: account), "a refusal keeps the key")
+        XCTAssertEqual(store.errorText, FriendsStore.message(for: FriendsAPIError.server(code: "last_device", message: "", status: 409)))
+
+        Stub.answers["DELETE /v2/me/devices/\(id)"] = [(204, "")]
+        let left = await store.removeThisPhone()
+        XCTAssertTrue(left)
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertNil(store.deviceID)
+        XCTAssertNil(keys.read(account: account), "the phone left by its own doing: its key goes")
+        XCTAssertEqual(sent("DELETE", "/v2/me/devices/\(id)").count, 2)
     }
 
     // MARK: - The kept key
