@@ -1446,6 +1446,42 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(store.nameFriendsSee(fallback: "Other"), "Anna")
     }
 
+    // MARK: - A pull to refresh
+
+    private static let feedWithAFriend = #"{"serverTime":1791540000,"me":\#(me),"friends":[{"id":"00000000000000bb","name":"Max","avatarRev":0}],"claims":[],"strapClaim":null}"#
+
+    /// A pull runs in a task the screen owns, and the screen may cancel it while the server is still
+    /// answering. What the server answers is shown all the same: a pull that ended with the board
+    /// unchanged and nothing said would leave a new friend out of sight until the next one.
+    @MainActor
+    func testAPullWhoseTaskIsCancelledStillShowsWhatTheServerAnswered() async throws {
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna")
+        // Cancelled while the feed is on its way back.
+        let (store, _) = try await turnedOn(.none)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.feedWithAFriend)]
+        Stub.delays["GET /v2/feed?days=7"] = 0.4
+        let pull = Task { await store.sync(repo: repo, profile: profile, force: true) }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(sent("GET", "/v2/feed?days=7").count, 1, "the feed was asked for")
+        pull.cancel()
+        await pull.value
+        XCTAssertEqual(store.feed?.friends.map(\.name), ["Max"])
+        XCTAssertNil(store.errorText)
+
+        // Cancelled earlier, while the upload run before it is still asking about the account.
+        let (early, _) = try await turnedOn(.none)
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.feedWithAFriend)]
+        Stub.delays = ["GET /v2/me": 0.4]
+        let earlyPull = Task { await early.sync(repo: repo, profile: profile, force: true) }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        earlyPull.cancel()
+        await earlyPull.value
+        XCTAssertEqual(sent("GET", "/v2/feed?days=7").count, 1)
+        XCTAssertEqual(early.feed?.friends.map(\.name), ["Max"])
+    }
+
     // MARK: - Invite codes
 
     private static let madeInvite = #"{"id":"0123456789abcdef","code":"K7QM2-XRD4P","expiresAt":1792144800}"#

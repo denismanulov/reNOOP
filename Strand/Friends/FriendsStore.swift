@@ -707,9 +707,13 @@ final class FriendsStore: ObservableObject {
         case .on:
             let age = Int(Date().timeIntervalSince1970) - feedFetchedAt
             if !force, feed != nil, !lastRefreshFailed, (0..<Self.autoRefreshEverySeconds).contains(age) { return }
-            // The upload first, so the wearer's own card is what the server holds as of now.
-            await uploadRecentDays(repo: repo, profile: profile)
-            await refresh()
+            // The upload first, so the wearer's own card is what the server holds as of now. In a task of
+            // its own: a pull runs in a task the screen owns and may cancel while the server is still
+            // answering, and a cancelled request is dropped without a word, answered or not.
+            await Task {
+                await self.uploadRecentDays(repo: repo, profile: profile)
+                await self.refresh()
+            }.value
         }
     }
 
