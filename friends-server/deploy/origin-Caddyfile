@@ -1,0 +1,44 @@
+# /etc/caddy/Caddyfile on the origin. Needs Caddy 2.7 or later (the PROXY protocol listener is built in
+# from that version; Debian's and Ubuntu's own packages are older, so install from Caddy's repository).
+#
+# Caddy listens only on the WireGuard address, so nothing on the internet can reach it. It terminates
+# TLS here, on the machine that holds the data: the proxy in front forwards bytes and cannot read them.
+# The certificate is obtained by the TLS-ALPN challenge, which arrives on port 443 through the proxy
+# like any other connection.
+#
+# Replace the name below with the one that points at the proxy.
+
+{
+	# No listener on port 80: nothing forwards it here.
+	auto_https disable_redirects
+
+	servers {
+		listener_wrappers {
+			# The proxy says which address each connection came from. Only the proxy is believed.
+			proxy_protocol {
+				timeout 5s
+				allow 10.77.0.2/32
+			}
+			tls
+		}
+	}
+}
+
+renoop.duckdns.org {
+	bind 10.77.0.1
+
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	encode gzip
+	request_body {
+		max_size 256KB
+	}
+
+	# Caddy passes the caller's address on as X-Forwarded-For; the server reads the last hop of it
+	# (FRIENDS_TRUST_PROXY=1, the default).
+	reverse_proxy 127.0.0.1:8787
+}
