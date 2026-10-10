@@ -187,15 +187,23 @@ class NonceCache:
         self._lock = threading.Lock()
 
     def seen(self, key_id, nonce, now):
+        """The cheap early check. `add` is the one that decides."""
         with self._lock:
             at = self._seen.get((key_id, nonce))
-            return at is not None and at > now - NONCE_KEEP_S
+            return at is not None and at >= now - NONCE_KEEP_S
 
     def add(self, key_id, nonce, now):
+        """Records the nonce and answers True, or answers False when it is already live. A nonce stays live
+        for as long as the time window can still admit the request that carried it: a stamp up to 300 s
+        ahead is admitted until 300 s past it, so up to 600 s after the nonce was first accepted."""
         with self._lock:
+            at = self._seen.get((key_id, nonce))
+            if at is not None and at >= now - NONCE_KEEP_S:
+                return False
             if len(self._seen) > 100_000:
-                self._seen = {k: v for k, v in self._seen.items() if v > now - NONCE_KEEP_S}
+                self._seen = {k: v for k, v in self._seen.items() if v >= now - NONCE_KEEP_S}
             self._seen[(key_id, nonce)] = now
+            return True
 
 
 # --- signatures ---------------------------------------------------------------------------------
@@ -1355,7 +1363,8 @@ class Handler(BaseHTTPRequestHandler):
                     spki = spki_in_body(req.body, key_id)
                 verify(spki, signature, signing_string(self.command, self.path, ts, nonce, req.body))
                 # Recorded only now: a request that failed could not use a nonce up.
-                app.nonces.add(key_id, nonce, now)
+                if not app.nonces.add(key_id, nonce, now):
+                    raise ApiError(401, "replayed", "")
                 req.key_id, req.spki = key_id, spki
                 if auth == "device":
                     req.device, req.account = app.touch(device, now)
@@ -1377,6 +1386,8 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except Exception as err:  # noqa: BLE001 - one request must never take the server down
+            if not body_read:
+                self.close_connection = True
             sys.stderr.write("internal error on %s %s: %r\n" % (self.command, log_path(url.path), err))
             self._send(500, {"error": "internal", "message": ""})
 

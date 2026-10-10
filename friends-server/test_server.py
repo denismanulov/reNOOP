@@ -263,6 +263,24 @@ class FriendsServerTest(unittest.TestCase):
         # A request that failed its signature did not use its nonce up.
         self.assertEqual(401, phone.call("GET", "/v2/me", nonce="twice-twice-twice-twice", sign_body=b"x")[0])
         self.assertEqual(200, phone.call("GET", "/v2/me", nonce="twice-twice-twice-twice")[0])
+        # It is remembered as long as its time can still be admitted: a request stamped at the edge of the
+        # window is good until 300 s past its stamp, which is 600 s after the first such request.
+        stamp = int(self.now) + 300
+        self.assertEqual(200, phone.call("GET", "/v2/me", ts=stamp, nonce="late-late-late-late")[0])
+        for later in (300, 300):
+            self.advance(later)
+            status, body = phone.call("GET", "/v2/me", ts=stamp, nonce="late-late-late-late")
+            self.assertEqual((401, "replayed"), (status, body.get("error")), self.now)
+        self.advance(1)
+        status, body = phone.call("GET", "/v2/me", ts=stamp, nonce="late-late-late-late")
+        self.assertEqual((401, "clock_skew"), (status, body["error"]))
+
+    def test_adding_a_live_nonce_again_is_refused_in_the_same_step(self):
+        cache = server.NonceCache()
+        self.assertTrue(cache.add(b"k", "n", 1000))
+        self.assertFalse(cache.add(b"k", "n", 1000))
+        self.assertFalse(cache.add(b"k", "n", 1600))
+        self.assertTrue(cache.add(b"k", "n", 1601))
 
     def test_the_key_in_the_body_must_be_a_p256_key_and_the_one_in_the_header(self):
         phone = Phone(self)
