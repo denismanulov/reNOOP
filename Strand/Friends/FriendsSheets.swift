@@ -172,6 +172,21 @@ struct FriendsSharingPage: View {
             }
             .disabled(onProbation)
             Section {
+                NavigationLink {
+                    FriendsPhonesPage(onAccountLeft: onAccountLeft)
+                } label: {
+                    SettingsRowLabel(title: "Phones", icon: "iphone", color: StrandPalette.settingsBlue)
+                }
+                NavigationLink {
+                    FriendsExportPage()
+                } label: {
+                    SettingsRowLabel(title: "What the Server Stores", icon: "doc.text.magnifyingglass",
+                                     color: StrandPalette.settingsIndigo)
+                }
+            } footer: {
+                Text("Everything the server holds about you, exactly as it holds it.")
+            }
+            Section {
                 LabeledContent {
                     Text(verbatim: FriendsServerAddress.baseURL(store.serverAddress)?.host ?? store.serverAddress)
                 } label: {

@@ -225295,7 +225295,15 @@
     "Valid until %@. It works once.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Действует до %@. Работает один раз."}}}},
     "Share Invite": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Поделиться приглашением"}}}},
     "Whoever uses this code becomes your friend at once and sees what you share. Give it only to the person you mean.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Тот, кто введёт этот код, сразу станет вашим другом и увидит то, чем вы делитесь. Давайте его только тому, кому хотите."}}}},
-    "Add me on reNOOP Friends: %@\nOr enter the code %@ on the Friends tab.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Добавь меня в друзья в reNOOP: %@\nИли введи код %@ на вкладке «Друзья»."}}}}
+    "Add me on reNOOP Friends: %@\nOr enter the code %@ on the Friends tab.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Добавь меня в друзья в reNOOP: %@\nИли введи код %@ на вкладке «Друзья»."}}}},
+    "Phones": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Телефоны"}}}},
+    "This Phone": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Этот телефон"}}}},
+    "Each phone holds its own key. Removing one stops it reading and uploading at once.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "У каждого телефона свой ключ. Убранный телефон сразу перестаёт читать и отправлять данные."}}}},
+    "Remove This Phone": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Убрать этот телефон"}}}},
+    "Friends turns off on this phone. The account stays on your other phone.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "«Друзья» выключатся на этом телефоне. Аккаунт останется на другом вашем телефоне."}}}},
+    "Joined without confirmation": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Вошёл без подтверждения"}}}},
+    "What the Server Stores": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Что хранит сервер"}}}},
+    "Everything the server holds about you, exactly as it holds it.": {"localizations": {"ru": {"stringUnit": {"state": "translated", "value": "Всё, что сервер хранит о вас, в том виде, в каком хранит."}}}}
   },
   "version": "1.0"
 }
