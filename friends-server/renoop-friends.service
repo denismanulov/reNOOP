@@ -10,7 +10,7 @@ UMask=0077
 Environment=FRIENDS_DB=/var/lib/renoop-friends/friends.db
 Environment=FRIENDS_BIND=127.0.0.1
 Environment=FRIENDS_PORT=8787
-# Optional overrides, e.g. FRIENDS_INVITE_CODE=...
+# Required here: FRIENDS_STRAP_PEPPER=<at least 32 characters>. Optional: FRIENDS_MAX_USERS=...
 EnvironmentFile=-/etc/renoop-friends.env
 ExecStart=/usr/bin/python3 /opt/renoop-friends/server.py
 Restart=on-failure

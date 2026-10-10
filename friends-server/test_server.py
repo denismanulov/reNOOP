@@ -823,6 +823,79 @@ class FriendsServerTest(unittest.TestCase):
             self.assertEqual((403, "probation"), (status, answer["error"]), path)
         self.assertEqual("Anna", anna.call("GET", "/v2/me")[1]["name"])
 
+    # --- export, deletion, the idle sweep ---
+
+    def test_the_export_is_everything_held_about_the_account(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        max_ = self.enroll("Max")
+        self.befriend(anna, max_)
+        anna.call("PUT", "/v2/me/avatar", raw=b"\xff\xd8\xff\xe0" + b"0" * 60)
+        anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())
+        invite = anna.call("POST", "/v2/invites")[1]
+        claim = self.file_claim(Phone(self), "whoop-AAA111")[1]["claim"]
+        status, export = anna.call("GET", "/v2/me/export")
+        self.assertEqual(200, status, export)
+        self.assertEqual({"id": anna.id, "name": "Anna",
+                          "share": {"scores": True, "sleep": True, "workouts": True, "hr": False},
+                          "avatarRev": 1, "avatarBytes": 64, "strapBound": True,
+                          "createdAt": int(self.now), "lastSeenAt": int(self.now)}, export["account"])
+        self.assertEqual([anna.key_id], [d["id"] for d in export["devices"]])
+        self.assertEqual([{"id": max_.id, "name": "Max"}], export["friends"])
+        self.assertEqual([invite["id"]], [i["id"] for i in export["invites"]])
+        self.assertEqual([claim["id"]], [c["id"] for c in export["claims"]])
+        self.assertEqual(81, export["days"][0]["recovery"])
+        self.assertNotIn("hr", export["days"][0])  # never stored: the switch was off
+        text = json.dumps(export)
+        self.assertNotIn(handle("whoop-AAA111"), text)
+        self.assertNotIn(invite["code"].replace("-", ""), text)
+
+    def test_deleting_an_account_removes_every_trace_and_frees_the_strap(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        max_ = self.enroll("Max")
+        self.befriend(anna, max_)
+        anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())
+        anna.call("POST", "/v2/invites")
+        self.assertEqual(204, anna.call("POST", "/v2/me/delete")[0])
+        status, body = anna.call("GET", "/v2/me")
+        self.assertEqual((401, "unknown_key"), (status, body["error"]))
+        self.assertEqual([], max_.call("GET", "/v2/feed")[1]["friends"])
+        for table in ("devices", "days", "invites", "friendships", "claims"):
+            left = self.rows("SELECT COUNT(*) FROM %s" % table)[0][0]
+            self.assertEqual(1 if table == "devices" else 0, left, table)
+        again = self.enroll("Anna again", serial="whoop-AAA111")
+        self.assertNotEqual(anna.id, again.id)
+
+    def test_probation_cannot_delete_the_account(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        guest = self.joined_by_silence("whoop-AAA111")
+        status, body = guest.call("POST", "/v2/me/delete")
+        self.assertEqual((403, "probation"), (status, body["error"]))
+        self.assertEqual(200, guest.call("GET", "/v2/me/export")[0])
+        self.assertEqual(200, anna.call("GET", "/v2/me")[0])
+
+    def test_an_account_nobody_used_for_half_a_year_is_forgotten(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        max_ = self.enroll("Max")
+        self.advance(180 * DAY - 10)
+        self.assertEqual(200, max_.call("GET", "/v2/me")[0])
+        self.advance(20)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys=ON")
+        with conn:
+            self.app.sweep_idle(conn, int(self.now))
+        conn.close()
+        self.assertEqual([(max_.id,)], self.rows("SELECT pub_id FROM accounts"))
+        self.assertEqual(1, self.rows("SELECT COUNT(*) FROM devices")[0][0])
+        self.assertEqual(401, anna.call("GET", "/v2/me")[0])
+
+    def test_a_full_server_makes_room_by_forgetting_the_idle(self):
+        self.app.max_users = 1
+        self.enroll("Anna")
+        self.advance(180 * DAY + 1)
+        self.enroll("Max")
+        self.assertEqual([("Max",)], self.rows("SELECT name FROM accounts"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

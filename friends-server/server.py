@@ -1033,6 +1033,47 @@ def h_feed(app, req):
         return result
 
 
+def h_export(app, req):
+    """Everything the server holds for the caller's account, as it is stored. The picture is given by
+    its size, and the strap only as bound or not: its stored value is a keyed hash that means nothing
+    outside this server."""
+    me = req.account
+    db = app.db()
+    devices = h_devices(app, req)["devices"]
+    friends = db.execute(
+        "SELECT u.pub_id, u.name FROM friendships f JOIN accounts u ON u.id = CASE WHEN f.a = ? THEN f.b ELSE f.a END "
+        "WHERE f.a = ? OR f.b = ? ORDER BY u.name COLLATE NOCASE", (me["id"], me["id"], me["id"])).fetchall()
+    claims = db.execute(
+        "SELECT * FROM claims WHERE account_id = ? OR claimant_id = ? ORDER BY id", (me["id"], me["id"])).fetchall()
+    days = db.execute(
+        "SELECT day, payload, updated_at FROM days WHERE account_id = ? ORDER BY day DESC", (me["id"],)).fetchall()
+    out_days = []
+    for row in days:
+        entry = json.loads(row["payload"])
+        entry["day"] = row["day"]
+        entry["updatedAt"] = row["updated_at"]
+        out_days.append(entry)
+    return {
+        "account": {"id": me["pub_id"], "name": me["name"], "share": share_of(me),
+                    "avatarRev": me["avatar_rev"] if me["avatar"] else 0,
+                    "avatarBytes": len(me["avatar"]) if me["avatar"] else 0,
+                    "strapBound": me["strap"] is not None,
+                    "createdAt": me["created_at"], "lastSeenAt": me["last_seen"]},
+        "devices": devices,
+        "friends": [{"id": f["pub_id"], "name": f["name"]} for f in friends],
+        "invites": h_invites(app, req)["invites"],
+        "claims": [claim_json(db, claim) for claim in claims],
+        "days": out_days,
+    }
+
+
+def h_delete_account(app, req):
+    db = app.db()
+    with db:
+        db.execute("DELETE FROM accounts WHERE id = ?", (req.account["id"],))
+    return 204, None
+
+
 INVITE_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1101,6 +1142,8 @@ ROUTES = [
     ("GET", r"/v2/feed", h_feed, "device", 0, None),
     ("GET", r"/v2/users/([0-9a-f]{16})/days", h_user_days, "device", 0, None),
     ("GET", r"/v2/users/([0-9a-f]{16})/avatar", h_user_avatar, "device", 0, None),
+    ("GET", r"/v2/me/export", h_export, "device", 0, None),
+    ("POST", r"/v2/me/delete", h_delete_account, "device", 0, None),
 ]
 ROUTES = [(m, re.compile("^" + p + "$"), h, auth, size, limit) for m, p, h, auth, size, limit in ROUTES]
 
