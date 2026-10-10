@@ -18,7 +18,8 @@ import WhoopStore
 /// The rules of the upload skip. A day goes up unless its text is the one the server last accepted for
 /// it; what the phone keeps to tell the two apart is the text's SHA-256, not the text. And a phone does
 /// not introduce a day with nothing to show: an upload replaces the day, and another phone of the
-/// account may have uploaded it.
+/// account may have uploaded it. A day this phone may itself have sent is never held back for being
+/// empty, or the server would go on showing friends what the wearer has since removed.
 enum FriendsUploadPolicy {
     static func fingerprint(_ json: String) -> String {
         SHA256.hash(data: Data(json.utf8)).map { byte in
@@ -31,9 +32,11 @@ enum FriendsUploadPolicy {
     static func fingerprint(_ data: Data) -> String { FriendsKey.hex(SHA256.hash(data: data)) }
 
     /// `isEmpty` is whether the day built has nothing to show a friend (`FriendsDay.isEmpty`). Such a
-    /// day goes up only over one this phone sent before, which it then replaces.
-    static func shouldUpload(lastAcceptedFingerprint: String?, json: String, isEmpty: Bool) -> Bool {
-        guard let lastAcceptedFingerprint else { return !isEmpty }
+    /// day goes up only over one this phone sent before, which it then replaces. `mayHaveSent` is
+    /// whether this phone ever sent the day at all: no accepted text on record does not say it did not,
+    /// since an upload whose answer was lost left none, and a change of the sharing switches drops them.
+    static func shouldUpload(lastAcceptedFingerprint: String?, json: String, isEmpty: Bool, mayHaveSent: Bool) -> Bool {
+        guard let lastAcceptedFingerprint else { return !isEmpty || mayHaveSent }
         return lastAcceptedFingerprint != fingerprint(json)
     }
 }
@@ -107,6 +110,8 @@ final class FriendsStore: ObservableObject {
     static let uploadedAtKey = "friends.uploadedAt"
     /// One fingerprint per uploaded day, under this prefix and the day's key.
     static let markPrefix = "friends.uploaded."
+    /// Under this prefix and a day's key: this phone has sent that day, whether or not an answer came.
+    static let putPrefix = "friends.put."
     /// What this phone last sent of the wearer's profile, so it sends again only after a change made here.
     static let pushedNameKey = "friends.pushedName"
     static let pushedPhotoKey = "friends.pushedPhoto"
@@ -584,6 +589,9 @@ final class FriendsStore: ObservableObject {
             defaults.removeObject(forKey: name)
         }
         clearUploadMarks()
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.putPrefix) {
+            defaults.removeObject(forKey: key)
+        }
         cache?.clear()
         clearPictures()
         feed = nil
@@ -853,7 +861,9 @@ final class FriendsStore: ObservableObject {
             let built = FriendsDayBuilder.day(day.input, share: share, nowTs: now)
             let json = FriendsDayBuilder.json(built)
             guard FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: uploadMark(day.key), json: json,
-                                                   isEmpty: built.isEmpty) else { continue }
+                                                   isEmpty: built.isEmpty, mayHaveSent: hasPut(day.key)) else { continue }
+            // Recorded before the request goes out: one whose answer is lost still reached the server.
+            notePut(day.key, keep: keep)
             do {
                 try await client.upload(json: json, on: day.key)
                 guard session == epoch else { return }
@@ -932,6 +942,18 @@ final class FriendsStore: ObservableObject {
         defaults.set(fingerprint, forKey: Self.markPrefix + day)
         defaults.set(now, forKey: Self.uploadedAtKey)
         lastUploadAt = now
+    }
+
+    /// Whether this phone has sent `day` to this account, with or without an answer.
+    private func hasPut(_ day: String) -> Bool { defaults.bool(forKey: Self.putPrefix + day) }
+
+    /// Records that `day` is being sent and forgets the records of every day not in `keep`. Unlike the
+    /// fingerprints these outlive a change of the sharing switches; they go when the account does.
+    private func notePut(_ day: String, keep: Set<String>) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.putPrefix) {
+            if !keep.contains(String(key.dropFirst(Self.putPrefix.count))) { defaults.removeObject(forKey: key) }
+        }
+        defaults.set(true, forKey: Self.putPrefix + day)
     }
 
     /// Forgets every fingerprint, so the next upload sends each day again. Needed whenever the server

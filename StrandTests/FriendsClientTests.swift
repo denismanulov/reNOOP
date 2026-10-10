@@ -368,11 +368,11 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(FriendsUploadPolicy.fingerprint(Data("{}".utf8)), FriendsUploadPolicy.fingerprint("{}"))
         XCTAssertNotEqual(FriendsUploadPolicy.fingerprint("{}"), FriendsUploadPolicy.fingerprint("{ }"))
         let json = FriendsDayBuilder.json(FriendsDay(recovery: 81))
-        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: json, isEmpty: false))
+        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: json, isEmpty: false, mayHaveSent: false))
         let accepted = FriendsUploadPolicy.fingerprint(json)
-        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted, json: json, isEmpty: false))
+        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted, json: json, isEmpty: false, mayHaveSent: false))
         XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: accepted,
-                                                       json: FriendsDayBuilder.json(FriendsDay(recovery: 82)), isEmpty: false))
+                                                       json: FriendsDayBuilder.json(FriendsDay(recovery: 82)), isEmpty: false, mayHaveSent: false))
     }
 
     /// A phone does not introduce a day with nothing to show: another phone of the account may have
@@ -383,13 +383,39 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(empty, "{}")
         XCTAssertTrue(FriendsDay().isEmpty)
         XCTAssertFalse(FriendsDay(recovery: 81).isEmpty)
-        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: empty, isEmpty: true),
-                       "nothing to show and nothing sent before")
+        XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: nil, json: empty, isEmpty: true,
+                                                        mayHaveSent: false), "nothing to show and nothing sent before")
         let sent = FriendsUploadPolicy.fingerprint(FriendsDayBuilder.json(FriendsDay(recovery: 81)))
-        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: sent, json: empty, isEmpty: true),
-                      "what this phone sent is replaced by nothing")
+        XCTAssertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: sent, json: empty, isEmpty: true,
+                                                       mayHaveSent: true), "what this phone sent is replaced by nothing")
         XCTAssertFalse(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: FriendsUploadPolicy.fingerprint(empty),
-                                                        json: empty, isEmpty: true), "and only once")
+                                                        json: empty, isEmpty: true, mayHaveSent: true), "and only once")
+    }
+
+    /// The whole decision. No accepted text on record is not the same as never sent: an upload whose
+    /// answer was lost reached the server, and the records of accepted texts are dropped whenever the
+    /// sharing switches change. So an empty day is held back only when this phone never put that day.
+    func testTheUploadDecisionByWhatIsOnRecordForTheDay() {
+        let empty = FriendsDayBuilder.json(FriendsDay())
+        let full = FriendsDayBuilder.json(FriendsDay(recovery: 81))
+        let other = FriendsUploadPolicy.fingerprint(FriendsDayBuilder.json(FriendsDay(recovery: 82)))
+        let cases: [(accepted: String?, json: String, isEmpty: Bool, mayHaveSent: Bool, goes: Bool, why: String)] = [
+            (nil, empty, true, false, false, "empty, never put: another phone's day is left alone"),
+            (nil, empty, true, true, true, "empty, put before with no accepted text on record: it may be on the server"),
+            (nil, full, false, false, true, "something to show, never put"),
+            (nil, full, false, true, true, "something to show, put before"),
+            (FriendsUploadPolicy.fingerprint(empty), empty, true, true, false, "the empty day was accepted already"),
+            (FriendsUploadPolicy.fingerprint(empty), empty, true, false, false, "the same without the record"),
+            (FriendsUploadPolicy.fingerprint(full), full, false, true, false, "unchanged"),
+            (FriendsUploadPolicy.fingerprint(full), empty, true, true, true, "became empty after it was accepted"),
+            (FriendsUploadPolicy.fingerprint(full), empty, true, false, true, "the same without the record"),
+            (other, full, false, true, true, "changed"),
+        ]
+        for c in cases {
+            XCTAssertEqual(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint: c.accepted, json: c.json,
+                                                            isEmpty: c.isEmpty, mayHaveSent: c.mayHaveSent),
+                           c.goes, c.why)
+        }
     }
 
     /// A workout goes to a friend under its English label, whatever language this phone is in, with its
@@ -1225,6 +1251,58 @@ final class FriendsClientTests: XCTestCase {
         await store.turnOn(name: "Anna")
         XCTAssertEqual(store.phase, .on)
         XCTAssertFalse(store.sharePhoto)
+    }
+
+    /// An upload whose answer was lost may have reached the server, and leaves no accepted text on
+    /// record. When that day then has nothing to show, the empty day still goes up: the server would
+    /// otherwise go on showing friends what the wearer has removed.
+    @MainActor
+    func testAnEmptyDayGoesUpAfterAnUploadWhoseAnswerWasLost() async throws {
+        let (store, _) = try await turnedOn(.none)
+        let profile = profile(name: "Anna")
+        let (repo, today) = try await repoWithAWorkoutToday()
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingWorkouts)]
+        Stub.failures["PUT /v2/me/days/\(today)"] = .networkConnectionLost
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sentDays().map(\.path), ["/v2/me/days/\(today)"], "the day was sent")
+        XCTAssertNil(store.uploadMark(today), "and no answer came")
+
+        // The workout is gone from this phone, and the server answers again.
+        Stub.failures = [:]
+        Stub.answers["PUT /v2/me/days/\(today)"] = [(204, "")]
+        let nothing = Repository(deviceId: "test-friends")
+        await store.uploadRecentDays(repo: nothing, profile: profile)
+        XCTAssertEqual(sentDays().count, 2)
+        XCTAssertEqual(sentDays().last.map { String(decoding: $0.body, as: UTF8.self) }, #"{"workouts":[]}"#)
+        await store.uploadRecentDays(repo: nothing, profile: profile)
+        XCTAssertEqual(sentDays().count, 2, "accepted, so not sent again")
+    }
+
+    /// Changing a sharing switch drops the accepted texts, so every day goes up again. A day this
+    /// phone sent before and that now has nothing to show goes up empty all the same.
+    @MainActor
+    func testAnEmptyDayGoesUpAfterTheSharingSwitchesChanged() async throws {
+        let (store, defaults) = try await turnedOn(.none)
+        let profile = profile(name: "Anna")
+        let (repo, today) = try await repoWithAWorkoutToday()
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingWorkouts)]
+        Stub.answers["PUT /v2/me/days/\(today)"] = [(204, "")]
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertNotNil(store.uploadMark(today))
+
+        Stub.seen = []
+        Stub.answers["PATCH /v2/me"] = [(200, Self.meSharingWorkouts)]
+        var share = store.share
+        share.scores.toggle()
+        await store.setShare(share, repo: Repository(deviceId: "test-friends"), profile: profile)
+        XCTAssertEqual(sent("PATCH", "/v2/me").count, 1)
+        XCTAssertEqual(sentDays().map { String(decoding: $0.body, as: UTF8.self) }, [#"{"workouts":[]}"#])
+
+        // Friends going off forgets which days were put, with everything else about the account.
+        Stub.answers["GET /v2/feed?days=7"] = [(401, #"{"error":"unknown_key","message":""}"#)]
+        await store.refresh()
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertFalse(defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix(FriendsStore.putPrefix) })
     }
 
     // MARK: - Not now
