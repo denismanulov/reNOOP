@@ -576,11 +576,11 @@ final class FriendsStore: ObservableObject {
         setPhase(.off)
     }
 
-    /// Everything kept about the account except the server address and the key.
+    /// Everything kept about the account except the server address and the key. Whether the photo is
+    /// shared stays too: it is the wearer's choice about their picture, not a fact about one account.
     private func forgetAccount() {
         for name in [Self.feedAtKey, Self.uploadedAtKey, Self.pushedNameKey, Self.pushedPhotoKey,
-                     Self.adoptProfileKey, Self.enrolPendingKey, Self.sharePhotoKey, Self.boundHandleKey,
-                     Self.inviteCodesKey] {
+                     Self.adoptProfileKey, Self.enrolPendingKey, Self.boundHandleKey, Self.inviteCodesKey] {
             defaults.removeObject(forKey: name)
         }
         clearUploadMarks()
@@ -842,7 +842,7 @@ final class FriendsStore: ObservableObject {
         // wait until it is confirmed.
         if account.device?.probationUntil == nil {
             await bindStrap(client, session: session)
-            await pushProfile(client, profile: profile, session: session)
+            await pushProfile(client, profile: profile, avatarRev: account.avatarRev, session: session)
         }
         let days = await FriendsUploader.recentDays(repo: repo, profile: profile, share: share)
         let keep = Set(days.map(\.key))
@@ -883,16 +883,21 @@ final class FriendsStore: ObservableObject {
 
     /// Sends the profile's name and photo when the wearer changed them on this phone since they were
     /// last sent. Never because the server's differ: two phones of one account with different profiles
-    /// would otherwise overwrite each other forever.
-    private func pushProfile(_ client: FriendsClient, profile: ProfileStore, session: Int) async {
+    /// would otherwise overwrite each other forever. Photo switched off is the one exception: it is
+    /// the wearer's word about the account's picture, so the picture goes whoever sent it. `avatarRev`
+    /// is the account's as this run read it: 0 when it has no picture.
+    private func pushProfile(_ client: FriendsClient, profile: ProfileStore, avatarRev: Int, session: Int) async {
         let name = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = sharePhoto ? profile.avatarImageData.flatMap { FriendsAvatars.fitForUpload($0) } : nil
         let photoMark = photo.map { FriendsUploadPolicy.fingerprint($0) } ?? (sharePhoto ? "none" : "off")
         if defaults.bool(forKey: Self.adoptProfileKey) {
             defaults.set(name, forKey: Self.pushedNameKey)
-            defaults.set(photoMark, forKey: Self.pushedPhotoKey)
             defaults.removeObject(forKey: Self.adoptProfileKey)
-            return
+            // With Photo off nothing is recorded for the picture, so the removal below still happens.
+            guard !sharePhoto else {
+                defaults.set(photoMark, forKey: Self.pushedPhotoKey)
+                return
+            }
         }
         do {
             if !name.isEmpty, name != defaults.string(forKey: Self.pushedNameKey) {
@@ -902,9 +907,10 @@ final class FriendsStore: ObservableObject {
             }
             let sent = defaults.string(forKey: Self.pushedPhotoKey)
             guard photoMark != sent else { return }
+            let sentAPicture = sent != nil && sent != "none" && sent != "off"
             if let photo {
                 _ = try await client.putAvatar(photo)
-            } else if let sent, sent != "none", sent != "off" {
+            } else if sentAPicture || (!sharePhoto && avatarRev > 0) {
                 try await client.deleteAvatar()
             }
             guard session == epoch else { return }

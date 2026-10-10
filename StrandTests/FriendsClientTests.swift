@@ -1159,6 +1159,74 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertEqual(sent("PUT", "/v2/me/avatar").count, 1)
     }
 
+    /// The account's picture may be one this phone never sent: another phone's, or this phone's own
+    /// from before a reinstall. Switching Photo off removes it all the same, once.
+    @MainActor
+    func testSwitchingThePhotoOffRemovesAPictureThisPhoneDidNotSend() async throws {
+        let withPicture = Self.meSharingNothing.replacingOccurrences(of: #""avatarRev":0"#, with: #""avatarRev":3"#)
+        XCTAssertNotEqual(withPicture, Self.meSharingNothing)
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna")
+
+        // Photo is switched off before this phone has made any run of its own.
+        let (store, defaults) = try await turnedOn(.none, enrolAnswer: 200)
+        Stub.answers["GET /v2/me"] = [(200, withPicture)]
+        Stub.answers["DELETE /v2/me/avatar"] = [(204, "")]
+        await store.setSharePhoto(false, repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedPhotoKey), "off")
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty, "the phone joined: its name is not sent")
+        await store.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1, "a copy already removed is not removed again")
+
+        // The same after a run that recorded this phone as having no picture to send.
+        let (later, laterDefaults) = try await turnedOn(.none, enrolAnswer: 200)
+        Stub.answers["GET /v2/me"] = [(200, withPicture)]
+        await later.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(laterDefaults.string(forKey: FriendsStore.pushedPhotoKey), "none")
+        XCTAssertTrue(sent("DELETE", "/v2/me/avatar").isEmpty, "joining removes nothing")
+        await later.setSharePhoto(false, repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1)
+        XCTAssertEqual(laterDefaults.string(forKey: FriendsStore.pushedPhotoKey), "off")
+        await later.uploadRecentDays(repo: repo, profile: profile)
+        XCTAssertEqual(sent("DELETE", "/v2/me/avatar").count, 1)
+    }
+
+    /// An account with no picture has nothing to remove.
+    @MainActor
+    func testSwitchingThePhotoOffSendsNothingWhenTheAccountHasNoPicture() async throws {
+        let (store, defaults) = try await turnedOn(.none, enrolAnswer: 200)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        await store.setSharePhoto(false, repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"))
+        XCTAssertTrue(sent("DELETE", "/v2/me/avatar").isEmpty)
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedPhotoKey), "off")
+    }
+
+    /// Photo off is the wearer's choice about their picture, not a fact about one account: it stands
+    /// when the phone drops off the account and joins again, and when another server is named.
+    @MainActor
+    func testPhotoOffOutlivesTheAccountItWasSetOn() async throws {
+        let (store, _) = try await turnedOn(.none)
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        await store.setSharePhoto(false, repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna"))
+        XCTAssertFalse(store.sharePhoto)
+
+        Stub.answers["GET /v2/feed?days=7"] = [(401, #"{"error":"unknown_key","message":""}"#)]
+        await store.refresh()
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertFalse(store.sharePhoto)
+        XCTAssertEqual(store.setServerAddress(Self.otherServer), .done)
+        XCTAssertFalse(store.sharePhoto)
+        XCTAssertEqual(store.setServerAddress(Self.base), .done)
+
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertFalse(store.sharePhoto)
+    }
+
     // MARK: - Not now
 
     /// Turn On can be taken back while the page waits for the strap: Friends is off again, nothing was
