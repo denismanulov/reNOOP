@@ -53,12 +53,33 @@ enum FriendsStrap {
         SourceIdentity.isWhoop(device) || device.id.hasPrefix(ExperimentalBrand.oura.idPrefix + "-")
     }
 
+    /// `deviceId` itself when it is already serial-derived (`whoop-<SERIAL>`, `oura-<SERIAL>`), else nil.
+    /// A remainder that is a UUID is refused: the wizard mints `whoop-<UUID>` and `oura-<UUID>` from the
+    /// peripheral's identifier before any serial is read, so that id names a pairing, not a strap. A WHOOP
+    /// id must also be the one `WhoopSerialIdentity` would produce from its own remainder. The legacy
+    /// `my-whoop` seed has neither prefix and relies on the value recorded where its serial is confirmed.
+    static func serialDerivedId(_ deviceId: String) -> String? {
+        let whoopPrefix = WhoopSerialIdentity.idPrefix + "-"
+        let ouraPrefix = ExperimentalBrand.oura.idPrefix + "-"
+        let remainder: String
+        if deviceId.hasPrefix(whoopPrefix) {
+            remainder = String(deviceId.dropFirst(whoopPrefix.count))
+            guard WhoopSerialIdentity.adoptedId(serial: remainder) == deviceId else { return nil }
+        } else if deviceId.hasPrefix(ouraPrefix) {
+            remainder = String(deviceId.dropFirst(ouraPrefix.count))
+        } else {
+            return nil
+        }
+        return remainder.isEmpty || UUID(uuidString: remainder) != nil ? nil : deviceId
+    }
+
     static func identity(hasSerial: Bool, adoptedId: String?) -> Identity {
         if let adoptedId { return .handle(handle(adoptedId: adoptedId)) }
         return hasSerial ? .pending : .none
     }
 
-    /// The identity of the registry's active device. Before the registry exists, or with nothing active,
+    /// The identity of the registry's active device: the id recorded for it where its serial was confirmed,
+    /// else its own id when that is already serial-derived. Before the registry exists, or with nothing active,
     /// nothing is known yet: that reads as a strap not read, never as no strap, so an account is not
     /// made unbound by a race with launch.
     @MainActor
@@ -69,9 +90,10 @@ enum FriendsStrap {
             return .handle(handle(adoptedId: CommandLine.arguments[flag + 1]))
         }
         #endif
-        guard let registry, let active = registry.devices.first(where: { $0.id == registry.activeDeviceId }) else {
+        guard let registry, let active = registry.devices.first(where: { $0.id == registry.activeDeviceId && $0.status == .active }) else {
             return .pending
         }
-        return identity(hasSerial: hasSerial(active), adoptedId: adoptedId(forDeviceId: active.id, defaults: defaults))
+        let adopted = adoptedId(forDeviceId: active.id, defaults: defaults) ?? serialDerivedId(active.id)
+        return identity(hasSerial: hasSerial(active), adoptedId: adopted)
     }
 }
