@@ -108,6 +108,8 @@ final class FriendsStore: ObservableObject {
     /// Set when this phone joined an account that already had a profile: the next run records this
     /// phone's profile as sent without sending it.
     static let adoptProfileKey = "friends.adoptProfile"
+    /// Set while an enrolment has been sent and no answer to it has come: the account may exist.
+    static let enrolPendingKey = "friends.enrolPending"
     static let sharePhotoKey = "friends.sharePhoto"
     /// The strap handle the server last accepted for the account.
     static let boundHandleKey = "friends.boundHandle"
@@ -371,9 +373,11 @@ final class FriendsStore: ObservableObject {
     }
 
     /// Runs in a task of its own, so a view that goes away mid-request does not cut it short: an
-    /// enrolment cut short would make the account and never show it.
+    /// enrolment cut short would make the account and never show it. One at a time, and never once
+    /// Friends is on: the tab asks again by itself while a strap is waited for, and a second enrolment
+    /// with the same key would be answered as an account the key already had.
     private func enter(name: String, bind: Bool) async {
-        guard mayEnter() else { return }
+        guard mayEnter(), !loading, phase != .on else { return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             errorText = String(localized: "Enter your name first.")
@@ -393,17 +397,26 @@ final class FriendsStore: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            let enrolled = try await clientMakingKey().enroll(name: name, strap: strap)
+            let client = try clientMakingKey()
+            // An earlier enrolment that got no answer may have made the account all the same.
+            let unanswered = defaults.bool(forKey: Self.enrolPendingKey)
+            defaults.set(true, forKey: Self.enrolPendingKey)
+            let enrolled = try await client.enroll(name: name, strap: strap)
             // The strap sent is not recorded as accepted: the upload run's own request is what says so.
             // A key that was already a phone of an account joined that account as it stands, so this
-            // phone sends neither its name nor its picture on joining.
-            becomeOn(me: enrolled.me, pushedName: enrolled.isNew ? name : nil)
-            if !enrolled.isNew { defaults.set(true, forKey: Self.adoptProfileKey) }
+            // phone sends neither its name nor its picture on joining. An account that an unanswered
+            // enrolment of this phone's own made is not one it joined.
+            let own = enrolled.isNew || unanswered
+            becomeOn(me: enrolled.me, pushedName: own ? name : nil)
+            if !own { defaults.set(true, forKey: Self.adoptProfileKey) }
             await refresh()
         } catch let error as FriendsAPIError where error.isStrapBound {
+            defaults.removeObject(forKey: Self.enrolPendingKey)
             errorText = nil
             setPhase(.strapBound)
         } catch {
+            // A refusal is an answer: no account was made. No answer leaves that in doubt.
+            if let api = error as? FriendsAPIError, !api.isOffline { defaults.removeObject(forKey: Self.enrolPendingKey) }
             if !(error is CancellationError) { errorText = Self.message(for: error) }
         }
     }
@@ -425,7 +438,7 @@ final class FriendsStore: ObservableObject {
     }
 
     private func claimNow(name: String) async {
-        guard mayEnter() else { return }
+        guard mayEnter(), !loading, phase != .on else { return }
         guard case let .handle(strap) = strapIdentity() else {
             setPhase(.waitingForStrap)
             return
@@ -561,7 +574,8 @@ final class FriendsStore: ObservableObject {
     /// Everything kept about the account except the server address and the key.
     private func forgetAccount() {
         for name in [Self.feedAtKey, Self.uploadedAtKey, Self.pushedNameKey, Self.pushedPhotoKey,
-                     Self.adoptProfileKey, Self.sharePhotoKey, Self.boundHandleKey, Self.inviteCodesKey] {
+                     Self.adoptProfileKey, Self.enrolPendingKey, Self.sharePhotoKey, Self.boundHandleKey,
+                     Self.inviteCodesKey] {
             defaults.removeObject(forKey: name)
         }
         clearUploadMarks()

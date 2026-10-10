@@ -57,6 +57,9 @@ final class FriendsClientTests: XCTestCase {
         nonisolated(unsafe) static var seen: [Seen] = []
         /// Requests that fail in the transport, keyed like `answers`, before any answer arrives.
         nonisolated(unsafe) static var failures: [String: URLError.Code] = [:]
+        /// Requests answered only after this many seconds, keyed like `answers`: long enough for
+        /// another call to begin while the first is still in flight.
+        nonisolated(unsafe) static var delays: [String: TimeInterval] = [:]
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -80,6 +83,7 @@ final class FriendsClientTests: XCTestCase {
             let key = method + " " + path
             Self.seen.append(Seen(method: method, host: url.host ?? "", path: path,
                                   headers: request.allHTTPHeaderFields ?? [:], body: body))
+            if let delay = Self.delays[key] { Thread.sleep(forTimeInterval: delay) }
             if let code = Self.failures[key] {
                 client?.urlProtocol(self, didFailWithError: URLError(code))
                 return
@@ -154,6 +158,7 @@ final class FriendsClientTests: XCTestCase {
         Stub.answers = [:]
         Stub.redirects = [:]
         Stub.failures = [:]
+        Stub.delays = [:]
         Stub.seen = []
     }
 
@@ -509,6 +514,101 @@ final class FriendsClientTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: FriendsStore.boundHandleKey))
         XCTAssertNil(defaults.string(forKey: FriendsStore.pushedNameKey), "the name sent was not taken")
         XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+    }
+
+    /// Turn On runs once. A second tap, or the tab asking again by itself, while the first enrolment
+    /// is still in flight sends nothing: a second enrolment with the same key would be answered as an
+    /// account the key already had, and read as joining someone's account.
+    @MainActor
+    func testTurningOnTwiceAtOnceEnrolsOnce() async throws {
+        let (store, defaults) = try store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#), (200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.delays["POST /v2/enroll"] = 0.3
+        async let first: Void = store.turnOn(name: "Anna")
+        async let second: Void = store.turnOn(name: "Anna")
+        _ = await (first, second)
+        XCTAssertEqual(sent("POST", "/v2/enroll").count, 1)
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Anna")
+        // On already: one more tap sends nothing either.
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(sent("POST", "/v2/enroll").count, 1)
+    }
+
+    /// The page that waits for the strap asks again every few seconds, and so does every appearance
+    /// of the tab. With the strap read and an enrolment under way, asking again sends nothing.
+    @MainActor
+    func testSyncWhileAnEnrolmentIsInFlightSendsNoSecondOne() async throws {
+        let (store, defaults) = try store(.pending)
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .waitingForStrap)
+        store.strapIdentity = { .handle(Self.handle) }
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#), (200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.delays["POST /v2/enroll"] = 0.3
+        let repo = Repository(deviceId: "test-friends")
+        let profile = profile(name: "Anna")
+        async let appeared: Void = store.sync(repo: repo, profile: profile, force: false)
+        async let ticked: Void = store.sync(repo: repo, profile: profile, force: false)
+        _ = await (appeared, ticked)
+        XCTAssertEqual(sent("POST", "/v2/enroll").count, 1)
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+    }
+
+    /// An enrolment whose answer was lost on the way made the account all the same. Turning on again
+    /// is answered with that account (`200`): it is this phone's own, made a moment ago, so the phone
+    /// does not behave as one that joined somebody's account, and its picture goes up.
+    @MainActor
+    func testAnEnrolmentWhoseAnswerWasLostIsNotReadAsJoiningAnAccount() async throws {
+        let (store, defaults) = try store(.none)
+        Stub.failures["POST /v2/enroll"] = .timedOut
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertNotNil(store.errorText)
+        XCTAssertTrue(defaults.bool(forKey: FriendsStore.enrolPendingKey), "no answer leaves the enrolment in doubt")
+
+        Stub.failures = [:]
+        Stub.answers["POST /v2/enroll"] = [(200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertEqual(defaults.string(forKey: FriendsStore.pushedNameKey), "Anna")
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.enrolPendingKey))
+
+        Stub.seen = []
+        Stub.answers["GET /v2/me"] = [(200, Self.meSharingNothing)]
+        Stub.answers["PATCH /v2/me"] = [(200, Self.me)]
+        Stub.answers["PUT /v2/me/avatar"] = [(200, Self.me)]
+        await store.uploadRecentDays(repo: Repository(deviceId: "test-friends"), profile: profile(name: "Anna", photo: Self.jpeg))
+        XCTAssertEqual(sent("PUT", "/v2/me/avatar").map(\.body), [Self.jpeg])
+        XCTAssertTrue(sent("PATCH", "/v2/me").isEmpty, "the name went with the enrolment")
+    }
+
+    /// A refusal is an answer: nothing is in doubt after it, and a later `200` is an account the key
+    /// already had, joined as it stands.
+    @MainActor
+    func testARefusedEnrolmentLeavesNothingInDoubt() async throws {
+        let (store, defaults) = try store(.none)
+        Stub.answers["POST /v2/enroll"] = [(500, #"{"error":"server_error","message":""}"#), (200, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .off)
+        XCTAssertFalse(defaults.bool(forKey: FriendsStore.enrolPendingKey))
+        await store.turnOn(name: "Anna")
+        XCTAssertEqual(store.phase, .on)
+        XCTAssertTrue(defaults.bool(forKey: FriendsStore.adoptProfileKey))
+        XCTAssertNil(defaults.string(forKey: FriendsStore.pushedNameKey))
+
+        let (bound, boundDefaults) = try self.store(.handle(Self.handle))
+        Stub.answers["POST /v2/enroll"] = [(409, #"{"error":"strap_bound","message":""}"#)]
+        await bound.turnOn(name: "Anna")
+        XCTAssertEqual(bound.phase, .strapBound)
+        XCTAssertFalse(boundDefaults.bool(forKey: FriendsStore.enrolPendingKey))
     }
 
     @MainActor
