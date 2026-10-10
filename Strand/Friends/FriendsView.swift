@@ -156,11 +156,11 @@ struct FriendsView: View {
 // MARK: - Before Friends is on
 
 /// The tab before Friends is on, after the Fitness app's "Share Activity" page: the wearer's own picture
-/// with a ring and an activity beside it, what the tab is for in a sentence, then what leaves the phone
-/// and the one button at the foot of the page. There is no form. The name and photo are the profile's
-/// and the account is tied to the strap, so turning on is one tap. The same page carries the three
-/// places turning on can pause: a strap not read yet, a strap that already has an account, and a
-/// request to join that account waiting for an answer.
+/// with a ring and an activity beside it and their name under it, what the tab is for in a sentence,
+/// then what leaves the phone and the one button at the foot of the page. There is no form. The name
+/// and photo are the profile's and the account is tied to the strap, so turning on is one tap. The
+/// same page carries the three places turning on can pause: a strap not read yet, a strap that already
+/// has an account, and a request to join that account waiting for an answer.
 struct FriendsWelcome: View {
     @ObservedObject private var store = FriendsStore.shared
     @EnvironmentObject private var repo: Repository
@@ -181,6 +181,13 @@ struct FriendsWelcome: View {
                     }
                     FriendsWelcomeHero(imageData: profile.avatarImageData, initials: profile.initials)
                         .padding(.top, NoopMetrics.space5)
+                    if !asksForName, !nameToShare.isEmpty {
+                        Text(verbatim: nameToShare)
+                            .font(StrandFont.pro(20))
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .lineLimit(1)
+                            .padding(.top, NoopMetrics.space2)
+                    }
                     Text(title)
                         .font(StrandFont.pro(34))
                         .foregroundStyle(StrandPalette.textPrimary)
@@ -214,6 +221,10 @@ struct FriendsWelcome: View {
         .onAppear { asksForName = profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         .task(id: store.phase.stored) { await watch() }
     }
+
+    /// The profile's name as it is sent, shown under the picture so the wearer sees who friends will
+    /// see before anything leaves the phone. While the page is asking for a name the field shows it.
+    private var nameToShare: String { profile.displayName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var title: LocalizedStringKey {
         switch store.phase {
