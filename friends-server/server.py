@@ -798,6 +798,115 @@ def h_strap_put(app, req):
         return 202, {"claim": claim_json(db, claim)}
 
 
+def normalize_code(value):
+    """An invite code as it is stored: ten characters of the code alphabet. Typed input is forgiven its
+    case, its dash and spaces, and the letters that look like digits. None when it is not a code."""
+    if not isinstance(value, str):
+        return None
+    code = "".join(ch for ch in value.upper() if ch not in "- \t\r\n")
+    code = code.replace("O", "0").replace("I", "1").replace("L", "1")
+    if len(code) != 10 or any(ch not in CODE_ALPHABET for ch in code):
+        return None
+    return code
+
+
+def show_code(code):
+    return code[:5] + "-" + code[5:]
+
+
+def h_invite_create(app, req):
+    app.limiter.check(("invite", req.key_id), 20, 3600)
+    me = req.account["id"]
+    db = app.db()
+    with db:
+        db.execute("DELETE FROM invites WHERE expires_at <= ?", (req.now,))
+        if db.execute("SELECT COUNT(*) FROM invites WHERE account_id = ?", (me,)).fetchone()[0] >= MAX_INVITES:
+            raise ApiError(409, "too_many_invites", "Too many invites are waiting. Revoke one first.")
+        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(10))
+        digest = hashlib.sha256(code.encode()).digest()
+        expires = req.now + INVITE_TTL_S
+        db.execute("INSERT INTO invites(code_hash, id, account_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+                   (digest, digest.hex()[:16], me, req.now, expires))
+    # The one time the code is said. The database holds only its hash.
+    return 201, {"id": digest.hex()[:16], "code": show_code(code), "expiresAt": expires}
+
+
+def h_invites(app, req):
+    rows = app.db().execute(
+        "SELECT id, created_at, expires_at FROM invites WHERE account_id = ? AND expires_at > ? ORDER BY created_at, rowid",
+        (req.account["id"], req.now)).fetchall()
+    return {"invites": [{"id": r["id"], "createdAt": r["created_at"], "expiresAt": r["expires_at"]} for r in rows]}
+
+
+def h_invite_revoke(app, req):
+    db = app.db()
+    with db:
+        db.execute("DELETE FROM invites WHERE id = ? AND account_id = ?", (req.match.group(1), req.account["id"]))
+    return 204, None
+
+
+def h_invite_redeem(app, req):
+    app.limiter.check(("redeem", req.key_id), 10, 3600)
+    body = req.json(("code",))
+    code = normalize_code(body.get("code"))
+    me = req.account["id"]
+    db = app.db()
+    with db:
+        invite = None
+        if code is not None:
+            invite = db.execute("SELECT * FROM invites WHERE code_hash = ? AND expires_at > ?",
+                                (hashlib.sha256(code.encode()).digest(), req.now)).fetchone()
+        if invite is None:
+            # Unknown, expired and already used all read the same.
+            raise ApiError(404, "no_such_invite", "This code is not valid any more.")
+        if invite["account_id"] == me:
+            raise ApiError(400, "own_invite", "That is your own invite.")
+        friend = app.account(invite["account_id"])
+        if not app.are_friends(db, me, friend["id"]):
+            app.befriend(db, me, friend["id"], req.now)
+            db.execute("DELETE FROM invites WHERE code_hash = ?", (invite["code_hash"],))
+    return {"friend": public_profile(friend)}
+
+
+def h_unfriend(app, req):
+    db = app.db()
+    with db:
+        other = app.account_by_pub(db, req.match.group(1))
+        me = req.account["id"]
+        db.execute("DELETE FROM friendships WHERE a = ? AND b = ?", (min(me, other["id"]), max(me, other["id"])))
+    return 204, None
+
+
+INVITE_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>reNOOP invite</title>
+<style>
+body{font:17px/1.4 -apple-system,system-ui,sans-serif;margin:0;padding:56px 24px;text-align:center;background:#000;color:#fff}
+a.open{display:inline-block;margin:28px 0 20px;padding:14px 28px;border-radius:999px;background:#a6ff00;color:#000;font-weight:600;text-decoration:none}
+code{font:600 24px/1.2 ui-monospace,Menlo,monospace;letter-spacing:2px}
+p.note{color:#8e8e93;font-size:15px;margin:8px 0}
+</style></head>
+<body>
+<h1>reNOOP</h1>
+<p>You are invited to share your day with a friend.</p>
+<p><a class="open" href="renoop://friends/add?c=%(code)s">Open in reNOOP</a></p>
+<p class="note">Or enter this code on the Friends tab:</p>
+<p><code>%(code)s</code></p>
+</body></html>
+"""
+
+
+def h_invite_page(app, req):
+    """A page that hands an invite code to the app. It reads nothing from the database, so it says
+    nothing about whether the code is real. The route's pattern is what makes the code safe to print."""
+    page = INVITE_PAGE % {"code": req.match.group(1).upper()}
+    return 200, RawBody(page.encode("utf-8"), "text/html; charset=utf-8", {
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    })
+
+
 class RawBody:
     def __init__(self, data, content_type, headers=None):
         self.data = data
@@ -823,6 +932,12 @@ ROUTES = [
     ("GET", r"/v2/me/devices", h_devices, "device", 0, None),
     ("DELETE", r"/v2/me/devices/([0-9a-f]{64})", h_device_delete, "device", 0, None),
     ("POST", r"/v2/me/devices/([0-9a-f]{64})/trust", h_device_trust, "device", 0, None),
+    ("GET", r"/i/([0-9A-Za-z-]{10,11})", h_invite_page, "none", 0, None),
+    ("POST", r"/v2/invites", h_invite_create, "device", 0, None),
+    ("GET", r"/v2/invites", h_invites, "device", 0, None),
+    ("DELETE", r"/v2/invites/([0-9a-f]{16})", h_invite_revoke, "device", 0, None),
+    ("POST", r"/v2/invites/redeem", h_invite_redeem, "device", MAX_JSON_BYTES, None),
+    ("DELETE", r"/v2/friends/([0-9a-f]{16})", h_unfriend, "device", 0, None),
 ]
 ROUTES = [(m, re.compile("^" + p + "$"), h, auth, size, limit) for m, p, h, auth, size, limit in ROUTES]
 

@@ -138,6 +138,13 @@ class FriendsServerTest(unittest.TestCase):
     def put_strap(self, phone, serial):
         return phone.call("PUT", "/v2/me/strap", {"strap": handle(serial)})
 
+    def befriend(self, a, b):
+        status, invite = a.call("POST", "/v2/invites")
+        self.assertEqual(201, status, invite)
+        status, body = b.call("POST", "/v2/invites/redeem", {"code": invite["code"]})
+        self.assertEqual(200, status, body)
+        return invite
+
     # --- the frame ---
 
     def test_health_and_info_need_no_signature(self):
@@ -553,6 +560,128 @@ class FriendsServerTest(unittest.TestCase):
         guest = self.joined_by_silence("whoop-AAA111")
         status, body = self.put_strap(guest, "whoop-MINE99")
         self.assertEqual((403, "probation"), (status, body["error"]))
+
+    # --- invites ---
+
+    def friendships(self):
+        return self.rows("SELECT COUNT(*) FROM friendships")[0][0]
+
+    def test_an_invite_makes_two_friends_once(self):
+        anna, max_, zoe = self.enroll("Anna"), self.enroll("Max"), self.enroll("Zoe")
+        status, invite = anna.call("POST", "/v2/invites")
+        self.assertEqual(201, status, invite)
+        self.assertRegex(invite["code"], r"^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$")
+        self.assertEqual(int(self.now) + 7 * DAY, invite["expiresAt"])
+        status, body = max_.call("POST", "/v2/invites/redeem", {"code": invite["code"]})
+        self.assertEqual(200, status, body)
+        self.assertEqual({"id": anna.id, "name": "Anna", "avatarRev": 0}, body["friend"])
+        self.assertEqual(1, self.friendships())
+        status, body = zoe.call("POST", "/v2/invites/redeem", {"code": invite["code"]})
+        self.assertEqual((404, "no_such_invite"), (status, body["error"]))
+        self.assertEqual({"invites": []}, anna.call("GET", "/v2/invites")[1])
+
+    def test_a_code_is_read_as_it_is_typed(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        self.assertEqual("0123456789", server.normalize_code(" o12-3456 789 ".replace("o", "O")))
+        self.assertEqual("1100ABCDEF", server.normalize_code("ilooabcdef"))
+        self.assertIsNone(server.normalize_code("ABCDE-1234"))
+        self.assertIsNone(server.normalize_code("ABCDE-1234U"))
+        self.assertIsNone(server.normalize_code(12))
+        code = anna.call("POST", "/v2/invites")[1]["code"]
+        self.assertEqual(200, max_.call("POST", "/v2/invites/redeem", {"code": " " + code.lower().replace("-", " ")})[0])
+        status, body = max_.call("POST", "/v2/invites/redeem", {"code": "nonsense"})
+        self.assertEqual((404, "no_such_invite"), (status, body["error"]))
+
+    def test_an_invite_is_not_for_its_maker_and_is_kept_between_friends(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        self.befriend(anna, max_)
+        code = anna.call("POST", "/v2/invites")[1]["code"]
+        status, body = anna.call("POST", "/v2/invites/redeem", {"code": code})
+        self.assertEqual((400, "own_invite"), (status, body["error"]))
+        status, body = max_.call("POST", "/v2/invites/redeem", {"code": code})
+        self.assertEqual((200, anna.id), (status, body["friend"]["id"]))
+        self.assertEqual(1, self.friendships())
+        # Already friends: the invite is still there for someone else.
+        self.assertEqual(1, len(anna.call("GET", "/v2/invites")[1]["invites"]))
+
+    def test_an_invite_expires_after_a_week(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        code = anna.call("POST", "/v2/invites")[1]["code"]
+        self.advance(7 * DAY)
+        status, body = max_.call("POST", "/v2/invites/redeem", {"code": code})
+        self.assertEqual((404, "no_such_invite"), (status, body["error"]))
+
+    def test_invites_are_listed_without_their_codes_and_can_be_revoked(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        invite = anna.call("POST", "/v2/invites")[1]
+        listed = anna.call("GET", "/v2/invites")[1]["invites"]
+        self.assertEqual([{"id": invite["id"], "createdAt": int(self.now), "expiresAt": invite["expiresAt"]}], listed)
+        self.assertRegex(invite["id"], r"^[0-9a-f]{16}$")
+        self.assertEqual({"invites": []}, max_.call("GET", "/v2/invites")[1])
+        self.assertEqual(204, max_.call("DELETE", "/v2/invites/" + invite["id"])[0])
+        self.assertEqual(1, len(anna.call("GET", "/v2/invites")[1]["invites"]))
+        self.assertEqual(204, anna.call("DELETE", "/v2/invites/" + invite["id"])[0])
+        self.assertEqual(404, max_.call("POST", "/v2/invites/redeem", {"code": invite["code"]})[0])
+        # The database never holds a code, only its hash.
+        text = "".join(str(v) for row in self.rows("SELECT * FROM invites") for v in row)
+        self.assertNotIn(invite["code"].replace("-", ""), text)
+
+    def test_ten_invites_wait_at_most(self):
+        anna = self.enroll("Anna")
+        for _ in range(10):
+            self.assertEqual(201, anna.call("POST", "/v2/invites")[0])
+        status, body = anna.call("POST", "/v2/invites")
+        self.assertEqual((409, "too_many_invites"), (status, body["error"]))
+        self.advance(7 * DAY)
+        self.assertEqual(201, anna.call("POST", "/v2/invites")[0])
+
+    def test_guessing_codes_is_limited_per_phone(self):
+        max_ = self.enroll("Max")
+        for _ in range(10):
+            self.assertEqual(404, max_.call("POST", "/v2/invites/redeem", {"code": "AAAAA-AAAAA"})[0])
+        status, body = max_.call("POST", "/v2/invites/redeem", {"code": "AAAAA-AAAAA"})
+        self.assertEqual((429, "rate_limited"), (status, body["error"]))
+
+    def test_unfriending_cuts_both_directions(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        self.befriend(anna, max_)
+        self.assertEqual(204, max_.call("DELETE", "/v2/friends/" + anna.id)[0])
+        self.assertEqual(0, self.friendships())
+        self.assertEqual(404, max_.call("DELETE", "/v2/friends/" + "0" * 16)[0])
+
+    def test_probation_cannot_touch_the_friend_list(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        max_ = self.enroll("Max")
+        self.befriend(anna, max_)
+        code = max_.call("POST", "/v2/invites")[1]["code"]
+        guest = self.joined_by_silence("whoop-AAA111")
+        for method, path, body in (("POST", "/v2/invites", None),
+                                   ("POST", "/v2/invites/redeem", {"code": code}),
+                                   ("DELETE", "/v2/friends/" + max_.id, None)):
+            status, answer = guest.call(method, path, body)
+            self.assertEqual((403, "probation"), (status, answer["error"]), path)
+        self.assertEqual(200, guest.call("GET", "/v2/invites")[0])
+        self.assertEqual(1, self.friendships())
+
+    def test_the_invite_page_shows_a_code_and_asks_the_database_nothing(self):
+        anyone = Phone(self)
+        status, page = anyone.call("GET", "/i/K7QM2-XRD4P", signed=False)
+        self.assertEqual(200, status)
+        text = page.decode("utf-8")
+        self.assertIn('href="renoop://friends/add?c=K7QM2-XRD4P"', text)
+        self.assertIn("<code>K7QM2-XRD4P</code>", text)
+        headers = anyone.last_headers
+        self.assertTrue(headers["Content-Type"].startswith("text/html"))
+        self.assertEqual("no-store", headers["Cache-Control"])
+        self.assertEqual("no-referrer", headers["Referrer-Policy"])
+        self.assertEqual("default-src 'none'; style-src 'unsafe-inline'", headers["Content-Security-Policy"])
+        for bad in ("/i/short", "/i/%3Cscript%3Ealert(1)", "/i/K7QM2-XRD4P-TOOLONG", "/i/"):
+            self.assertEqual(404, anyone.call("GET", bad, signed=False)[0], bad)
+        self.assertEqual("/i/…", server.log_path("/i/K7QM2-XRD4P"))
+        self.assertEqual("/v2/feed", server.log_path("/v2/feed"))
+        self.assertEqual("/v2/friends/…", server.log_path("/v2/friends/c0aa3cd1d44734dd"))
+        self.assertEqual("/v2/me/devices/…/trust", server.log_path("/v2/me/devices/" + "ab" * 32 + "/trust"))
+        self.assertEqual("/v2/me/days/2026-10-10", server.log_path("/v2/me/days/2026-10-10"))
 
 
 if __name__ == "__main__":
