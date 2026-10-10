@@ -377,6 +377,11 @@ def clean_platform(value):
     return value
 
 
+def oldest_kept_day(now):
+    """The earliest calendar day (UTC) still inside the 35-day window, as `YYYY-MM-DD`."""
+    return (datetime.fromtimestamp(now, timezone.utc).date() - timedelta(days=KEEP_DAYS)).isoformat()
+
+
 def is_trusted(device, now):
     """A device is trusted unless it joined by silence and its probation is still running."""
     return device["probation_until"] is None or device["probation_until"] <= now
@@ -477,8 +482,20 @@ class App:
             (account_id, now)).fetchone()[0]
 
     def sweep_idle(self, db, now):
-        """Deletes every account not heard from in 180 days, with all it owns. Its days expired long before."""
+        """Deletes every account not heard from in 180 days, with all it owns, its days included."""
         db.execute("DELETE FROM accounts WHERE last_seen < ?", (now - IDLE_DELETE_S,))
+
+    def sweep(self, db, now):
+        """Applies every retention rule to the whole database, inside the caller's transaction: idle
+        accounts, days older than the window, invites past their week, claims nobody settled in 14 days,
+        and settled claims a week after they settled. An upload prunes its own account's days and a
+        request settles the claims it reads; this is for the accounts and claims nobody asks about."""
+        self.sweep_idle(db, now)
+        db.execute("DELETE FROM days WHERE day < ?", (oldest_kept_day(now),))
+        db.execute("DELETE FROM invites WHERE expires_at <= ?", (now,))
+        db.execute("UPDATE claims SET state = 'expired', settled_at = ? WHERE state = 'pending' AND created_at + ? <= ?",
+                   (now, CLAIM_TTL_S, now))
+        db.execute("DELETE FROM claims WHERE state != 'pending' AND settled_at < ?", (now - SETTLED_KEEP_S,))
 
     # --- straps and claims ---
 
@@ -1002,8 +1019,7 @@ def h_day_put(app, req):
             "INSERT INTO days(account_id, day, payload, updated_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(account_id, day) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
             (me, day, json.dumps(payload, separators=(",", ":")), req.now))
-        db.execute("DELETE FROM days WHERE account_id = ? AND day < ?",
-                   (me, (today - timedelta(days=KEEP_DAYS)).isoformat()))
+        db.execute("DELETE FROM days WHERE account_id = ? AND day < ?", (me, oldest_kept_day(req.now)))
     return 204, None
 
 
@@ -1388,15 +1404,16 @@ def make_server(app, host="127.0.0.1", port=8787, quiet=False):
 
 
 def sweep_forever(app):
-    """Once a day, forgets the accounts nobody has used for 180 days."""
+    """Applies the retention rules (App.sweep) at start and then once a day, so a server restarted more
+    often than daily still sweeps. A failed sweep is reported and the next one still runs."""
     while True:
-        time.sleep(86400)
         try:
             db = app.db()
             with db:
-                app.sweep_idle(db, app.now())
-        except sqlite3.Error as err:
+                app.sweep(db, app.now())
+        except Exception as err:  # noqa: BLE001 - one failure must not end the thread
             sys.stderr.write("idle sweep failed: %r\n" % (err,))
+        time.sleep(86400)
 
 
 def main():

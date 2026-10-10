@@ -903,14 +903,48 @@ class FriendsServerTest(unittest.TestCase):
         self.advance(180 * DAY - 10)
         self.assertEqual(200, max_.call("GET", "/v2/me")[0])
         self.advance(20)
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA foreign_keys=ON")
-        with conn:
-            self.app.sweep_idle(conn, int(self.now))
-        conn.close()
+        self.sweep()
         self.assertEqual([(max_.id,)], self.rows("SELECT pub_id FROM accounts"))
         self.assertEqual(1, self.rows("SELECT COUNT(*) FROM devices")[0][0])
         self.assertEqual(401, anna.call("GET", "/v2/me")[0])
+
+    def sweep(self):
+        """The periodic sweep, on a connection of its own as the sweeping thread has."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys=ON")
+        with conn:
+            self.app.sweep(conn, int(self.now))
+        conn.close()
+
+    def test_days_past_the_window_go_without_an_upload(self):
+        anna = self.enroll("Anna")
+        anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())
+        self.advance(34 * DAY)
+        self.sweep()
+        self.assertEqual(1, self.rows("SELECT COUNT(*) FROM days")[0][0])
+        self.advance(2 * DAY)
+        self.sweep()
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM days")[0][0])
+        self.assertEqual([(anna.id,)], self.rows("SELECT pub_id FROM accounts"))
+
+    def test_the_sweep_clears_expired_invites_and_claims_past_their_time(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        anna.call("POST", "/v2/invites")
+        self.file_claim(Phone(self), "whoop-AAA111")
+        self.advance(7 * DAY)
+        self.sweep()
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM invites")[0][0])
+        self.assertEqual([("pending",)], self.rows("SELECT state FROM claims"))
+        self.advance(7 * DAY)
+        self.sweep()
+        self.assertEqual([("expired",)], self.rows("SELECT state FROM claims"))
+        self.advance(7 * DAY)
+        self.sweep()
+        self.assertEqual([("expired",)], self.rows("SELECT state FROM claims"))
+        self.advance(1)
+        self.sweep()
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM claims")[0][0])
+        self.assertEqual(1, self.rows("SELECT COUNT(*) FROM accounts")[0][0])
 
     def test_a_full_server_makes_room_by_forgetting_the_idle(self):
         self.app.max_users = 1
