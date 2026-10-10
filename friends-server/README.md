@@ -316,8 +316,8 @@ python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
 If it is lost, accounts go on working (a phone is known by its key) but no stored strap matches any
-more; each phone binds its strap again on its next sync, and a claim filed before then finds the
-strap free.
+more: the bindings are lost, and an account's comes back only when one of its phones is given another
+strap or has Friends turned on again, so until then a claim finds the strap free.
 
 `renoop-friends.service` runs the server as a throwaway user with the database in
 `/var/lib/renoop-friends` and reads the pepper from `/etc/renoop-friends.env`.
