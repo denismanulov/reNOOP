@@ -28,6 +28,30 @@ def handle(adopted_id):
     return hashlib.sha256(("renoop-friends-strap-v1\n" + adopted_id).encode()).hexdigest()
 
 
+def together(*calls):
+    """Runs the calls on threads released at the same instant and answers their results in order. A call
+    that raised is reported here, not left to print from its thread."""
+    gate = threading.Barrier(len(calls))
+    results = [None] * len(calls)
+    errors = []
+
+    def run(index, call):
+        try:
+            gate.wait(timeout=10)
+            results[index] = call()
+        except BaseException as err:  # noqa: BLE001 - collected and asserted below
+            errors.append(err)
+
+    threads = [threading.Thread(target=run, args=(i, call)) for i, call in enumerate(calls)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise AssertionError("calls raised: %r" % (errors,))
+    return results
+
+
 class Phone:
     """One phone: its key, its address, and calls signed the way the apps sign them."""
 
@@ -894,6 +918,81 @@ class FriendsServerTest(unittest.TestCase):
         self.advance(180 * DAY + 1)
         self.enroll("Max")
         self.assertEqual([("Max",)], self.rows("SELECT name FROM accounts"))
+
+    # --- requests that arrive together ---
+
+    ROUNDS = 20
+
+    def two_confirmed_phones(self, serial):
+        first = self.enroll("Anna", serial=serial)
+        second = Phone(self)
+        claim = self.file_claim(second, serial)[1]["claim"]
+        self.assertEqual(204, first.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        return first, second
+
+    def phones_of(self, phone):
+        return self.rows("SELECT COUNT(*) FROM devices WHERE account_id = (SELECT id FROM accounts WHERE pub_id = ?)",
+                         (phone.id,))[0][0]
+
+    def test_one_code_redeemed_by_two_at_once_makes_one_friend(self):
+        for n in range(self.ROUNDS):
+            anna, max_, zoe = self.enroll("Anna"), self.enroll("Max"), self.enroll("Zoe")
+            code = anna.call("POST", "/v2/invites")[1]["code"]
+            answers = together(lambda: max_.call("POST", "/v2/invites/redeem", {"code": code}),
+                               lambda: zoe.call("POST", "/v2/invites/redeem", {"code": code}))
+            self.assertEqual([200, 404], sorted(status for status, _ in answers), "round %d: %r" % (n, answers))
+            self.assertEqual(n + 1, self.friendships(), "round %d" % n)
+
+    def test_two_confirmed_phones_leaving_at_once_leave_one(self):
+        for n in range(self.ROUNDS):
+            first, second = self.two_confirmed_phones("whoop-LEAVE%03d" % n)
+            answers = together(lambda: first.call("DELETE", "/v2/me/devices/" + first.key_id),
+                               lambda: second.call("DELETE", "/v2/me/devices/" + second.key_id))
+            self.assertEqual([204, 409], sorted(status for status, _ in answers), "round %d: %r" % (n, answers))
+            self.assertEqual("last_device", [body for status, body in answers if status == 409][0]["error"])
+            self.assertEqual(1, self.phones_of(first), "round %d" % n)
+
+    def test_two_confirmed_phones_removing_each_other_leave_one(self):
+        for n in range(self.ROUNDS):
+            first, second = self.two_confirmed_phones("whoop-CROSS%03d" % n)
+            answers = together(lambda: first.call("DELETE", "/v2/me/devices/" + second.key_id),
+                               lambda: second.call("DELETE", "/v2/me/devices/" + first.key_id))
+            self.assertEqual([204, 401], sorted(status for status, _ in answers), "round %d: %r" % (n, answers))
+            self.assertEqual("unknown_key", [body for status, body in answers if status == 401][0]["error"])
+            self.assertEqual(1, self.phones_of(first), "round %d" % n)
+
+    def test_one_key_enrolling_twice_at_once_is_one_account(self):
+        for serial in (None, "whoop-TWICE%03d"):
+            for n in range(self.ROUNDS):
+                phone = Phone(self)
+                body = {"key": phone.key_b64, "name": "Anna", "platform": "ios"}
+                if serial:
+                    body["strap"] = handle(serial % n)
+                # Two requests from one phone, so the nonces are fixed here and not counted by the phone.
+                answers = together(
+                    lambda: phone.call("POST", "/v2/enroll", body, nonce="race-%s-%d-aaaaaaaaaa" % (bool(serial), n)),
+                    lambda: phone.call("POST", "/v2/enroll", body, nonce="race-%s-%d-bbbbbbbbbb" % (bool(serial), n)))
+                self.assertEqual([200, 201], sorted(status for status, _ in answers),
+                                 "strap %s, round %d: %r" % (bool(serial), n, answers))
+                self.assertEqual(answers[0][1]["me"]["id"], answers[1][1]["me"]["id"])
+        self.assertEqual(2 * self.ROUNDS, self.rows("SELECT COUNT(*) FROM accounts")[0][0])
+
+    def test_an_upload_racing_a_switch_off_stores_nothing_of_that_section(self):
+        for n in range(self.ROUNDS):
+            anna = self.enroll("Anna")
+            answers = together(lambda: anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day()),
+                               lambda: anna.call("PATCH", "/v2/me", {"share": {"sleep": False}}))
+            self.assertEqual([200, 204], sorted(status for status, _ in answers), "round %d: %r" % (n, answers))
+            stored = self.rows("SELECT payload FROM days WHERE account_id = (SELECT id FROM accounts WHERE pub_id = ?)",
+                               (anna.id,))
+            self.assertEqual(1, len(stored), "round %d" % n)
+            self.assertNotIn("sleep", json.loads(stored[0][0]), "round %d" % n)
+
+    def test_every_handler_that_changes_something_or_settles_a_claim_holds_the_write_lock(self):
+        # A handler added later that writes without the decorator would reopen all of the above.
+        for method, pattern, handler, auth, size, limit in server.ROUTES:
+            if method != "GET" or handler in (server.h_feed, server.h_claim_mine):
+                self.assertTrue(getattr(handler, "writes", False), "%s %s" % (method, pattern.pattern))
 
 
 

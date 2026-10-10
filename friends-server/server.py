@@ -11,6 +11,7 @@ signatures, meant to sit behind a TLS-terminating reverse proxy on loopback.
 import base64
 import binascii
 import collections
+import functools
 import hashlib
 import hmac
 import json
@@ -463,6 +464,8 @@ class App:
                 else:
                     db.execute("UPDATE accounts SET last_seen = ? WHERE id = ?", (now, device["account_id"]))
             device = self.device(device["key_id"])
+            if device is None:
+                return None, None  # removed while this request was being served
         return device, self.account(device["account_id"])
 
     def device_count(self, db, account_id):
@@ -569,6 +572,33 @@ def me_json(account, device, now):
 # --- handlers -----------------------------------------------------------------------------------
 
 
+def writes(handler):
+    """Marks a handler that changes the database or settles claims. It runs holding the write lock
+    from before its first read, and the caller's own rows are read again under that lock: a phone
+    removed a moment ago is no longer a phone."""
+    @functools.wraps(handler)
+    def run(app, req):
+        db = app.db()
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            if req.device is not None:
+                device = app.device(req.key_id)
+                if device is None:
+                    raise ApiError(401, "unknown_key", "")
+                account = app.account(device["account_id"])
+                if account is None:
+                    raise ApiError(401, "unknown_key", "")
+                req.device, req.account = device, account
+            result = handler(app, req)
+            db.commit()
+            return result
+        except BaseException:
+            db.rollback()
+            raise
+    run.writes = True
+    return run
+
+
 def h_health(app, req):
     return {"ok": True}
 
@@ -577,6 +607,7 @@ def h_info(app, req):
     return {"name": "renoop-friends", "api": API_VERSION, "time": req.now}
 
 
+@writes
 def h_enroll(app, req):
     body = req.json(("key", "name", "platform", "strap"))
     name = clean_name(body.get("name"))
@@ -638,6 +669,7 @@ def claim_blocked(db, strap, now, key_id=None, claimant_id=None):
         (strap, now - CLAIM_BLOCK_S, value)).fetchone() is not None
 
 
+@writes
 def h_claim_file(app, req):
     """A key that is not a phone of the account yet asks to become one, on the strength of the strap."""
     body = req.json(("key", "strap", "platform"))
@@ -671,6 +703,7 @@ def h_claim_file(app, req):
         return 201, {"claim": claim_json(db, claim)}
 
 
+@writes
 def h_claim_mine(app, req):
     db = app.db()
     with db:
@@ -685,6 +718,7 @@ def h_claim_mine(app, req):
         return {"claim": claim_json(db, claim)}
 
 
+@writes
 def h_claim_withdraw(app, req):
     db = app.db()
     with db:
@@ -705,6 +739,7 @@ def _claim_to_answer(app, db, req):
     return claim
 
 
+@writes
 def h_claim_approve(app, req):
     db = app.db()
     with db:
@@ -712,6 +747,7 @@ def h_claim_approve(app, req):
     return 204, None
 
 
+@writes
 def h_claim_decline(app, req):
     db = app.db()
     with db:
@@ -738,6 +774,7 @@ def _own_device(app, db, req):
     return target
 
 
+@writes
 def h_device_delete(app, req):
     db = app.db()
     with db:
@@ -752,6 +789,7 @@ def h_device_delete(app, req):
     return 204, None
 
 
+@writes
 def h_device_trust(app, req):
     db = app.db()
     with db:
@@ -760,6 +798,7 @@ def h_device_trust(app, req):
     return 204, None
 
 
+@writes
 def h_strap_put(app, req):
     """Binds the caller's account to the strap it now wears. A free strap is bound at once and the
     previous one let go; one bound to another account is asked for, and that claim settles like a join."""
@@ -814,6 +853,7 @@ def show_code(code):
     return code[:5] + "-" + code[5:]
 
 
+@writes
 def h_invite_create(app, req):
     app.limiter.check(("invite", req.key_id), 20, 3600)
     me = req.account["id"]
@@ -838,6 +878,7 @@ def h_invites(app, req):
     return {"invites": [{"id": r["id"], "createdAt": r["created_at"], "expiresAt": r["expires_at"]} for r in rows]}
 
 
+@writes
 def h_invite_revoke(app, req):
     db = app.db()
     with db:
@@ -845,6 +886,7 @@ def h_invite_revoke(app, req):
     return 204, None
 
 
+@writes
 def h_invite_redeem(app, req):
     app.limiter.check(("redeem", req.key_id), 10, 3600)
     body = req.json(("code",))
@@ -862,12 +904,15 @@ def h_invite_redeem(app, req):
         if invite["account_id"] == me:
             raise ApiError(400, "own_invite", "That is your own invite.")
         friend = app.account(invite["account_id"])
+        if friend is None:
+            raise ApiError(404, "no_such_invite", "This code is not valid any more.")
         if not app.are_friends(db, me, friend["id"]):
             app.befriend(db, me, friend["id"], req.now)
             db.execute("DELETE FROM invites WHERE code_hash = ?", (invite["code_hash"],))
     return {"friend": public_profile(friend)}
 
 
+@writes
 def h_unfriend(app, req):
     db = app.db()
     with db:
@@ -877,6 +922,7 @@ def h_unfriend(app, req):
     return 204, None
 
 
+@writes
 def h_me_patch(app, req):
     body = req.json(("name", "share"))
     me = req.account["id"]
@@ -903,6 +949,7 @@ def h_me_patch(app, req):
     return me_json(account, req.device, req.now)
 
 
+@writes
 def h_avatar_put(app, req):
     kind = sniff_image(req.body)
     if kind is None:
@@ -915,6 +962,7 @@ def h_avatar_put(app, req):
     return me_json(account, req.device, req.now)
 
 
+@writes
 def h_avatar_delete(app, req):
     db = app.db()
     with db:
@@ -935,6 +983,7 @@ def h_user_avatar(app, req):
     return 200, RawBody(other["avatar"], other["avatar_type"])
 
 
+@writes
 def h_day_put(app, req):
     app.limiter.check(("upload", req.key_id), 120, 3600)
     day = req.match.group(1)
@@ -996,6 +1045,7 @@ def h_user_days(app, req):
     return profile
 
 
+@writes
 def h_feed(app, req):
     """Everyone at a glance, and whatever waits for this account's answer. Carries the latest heart
     rate but not the day's line, which is the bulk of a day."""
@@ -1067,6 +1117,7 @@ def h_export(app, req):
     }
 
 
+@writes
 def h_delete_account(app, req):
     db = app.db()
     with db:
@@ -1292,6 +1343,8 @@ class Handler(BaseHTTPRequestHandler):
                 req.key_id, req.spki = key_id, spki
                 if auth == "device":
                     req.device, req.account = app.touch(device, now)
+                    if req.device is None or req.account is None:
+                        raise ApiError(401, "unknown_key", "")
                     if not req.trusted and self.command != "GET" and handler not in PROBATION_OK:
                         raise ApiError(403, "probation",
                                        "This phone joined without confirmation and can only read and upload for now.")
