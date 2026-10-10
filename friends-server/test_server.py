@@ -135,6 +135,9 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual("approved", body["claim"]["state"], body)
         return phone
 
+    def put_strap(self, phone, serial):
+        return phone.call("PUT", "/v2/me/strap", {"strap": handle(serial)})
+
     # --- the frame ---
 
     def test_health_and_info_need_no_signature(self):
@@ -483,6 +486,73 @@ class FriendsServerTest(unittest.TestCase):
         status, body = new.call("POST", "/v2/enroll", {"key": new.key_b64, "name": "New", "platform": "ios"})
         self.assertEqual(201, status, body)
         self.assertEqual(0, self.rows("SELECT COUNT(*) FROM claims")[0][0])
+
+    # --- moving the strap ---
+
+    def test_a_new_strap_takes_the_account_over_and_the_old_one_is_free(self):
+        anna = self.enroll("Anna", serial="whoop-OLD111")
+        self.assertEqual((200, {"bound": True}), self.put_strap(anna, "whoop-NEW222"))
+        self.assertEqual((200, {"bound": True}), self.put_strap(anna, "whoop-NEW222"))
+        self.assertTrue(anna.call("GET", "/v2/me")[1]["strapBound"])
+        # The strap left behind belongs to nobody: whoever wears it next starts their own account.
+        self.enroll("Buyer", serial="whoop-OLD111")
+        second = Phone(self)
+        status, body = second.call("POST", "/v2/enroll", {
+            "key": second.key_b64, "name": "X", "platform": "ios", "strap": handle("whoop-NEW222")})
+        self.assertEqual((409, "strap_bound"), (status, body["error"]))
+
+    def test_an_account_without_a_strap_binds_one(self):
+        anna = self.enroll("Anna")
+        self.assertFalse(anna.call("GET", "/v2/me")[1]["strapBound"])
+        self.assertEqual(200, self.put_strap(anna, "whoop-AAA111")[0])
+        self.assertTrue(anna.call("GET", "/v2/me")[1]["strapBound"])
+        status, body = anna.call("PUT", "/v2/me/strap", {"strap": "zz"})
+        self.assertEqual((400, "bad_strap"), (status, body["error"]))
+
+    def test_a_strap_bound_elsewhere_is_asked_for_and_its_owner_lets_it_go(self):
+        seller = self.enroll("Seller", serial="whoop-AAA111")
+        buyer = self.enroll("Buyer")
+        status, body = self.put_strap(buyer, "whoop-AAA111")
+        self.assertEqual(202, status, body)
+        claim = body["claim"]
+        self.assertEqual(("take", "pending"), (claim["kind"], claim["state"]))
+        # Asking again is the same claim, and the buyer's account works meanwhile.
+        self.assertEqual(claim["id"], self.put_strap(buyer, "whoop-AAA111")[1]["claim"]["id"])
+        self.assertEqual(200, buyer.call("GET", "/v2/me")[0])
+        self.assertEqual(204, seller.call("POST", "/v2/claims/%d/approve" % claim["id"])[0])
+        self.assertEqual((200, {"bound": True}), self.put_strap(buyer, "whoop-AAA111"))
+        self.assertFalse(seller.call("GET", "/v2/me")[1]["strapBound"])
+        self.assertEqual(200, seller.call("GET", "/v2/me")[0])
+
+    def test_a_take_matures_after_two_days_of_silence(self):
+        seller = self.enroll("Seller", serial="whoop-AAA111")
+        buyer = self.enroll("Buyer")
+        self.assertEqual(202, self.put_strap(buyer, "whoop-AAA111")[0])
+        self.advance(48 * HOUR + 1)
+        self.assertEqual((200, {"bound": True}), self.put_strap(buyer, "whoop-AAA111"))
+        self.assertEqual([(None,)], self.rows("SELECT strap FROM accounts WHERE pub_id = ?", (seller.id,)))
+
+    def test_a_declined_take_blocks_that_account_for_a_week(self):
+        owner = self.enroll("Owner", serial="whoop-AAA111")
+        other = self.enroll("Other")
+        claim = self.put_strap(other, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(204, owner.call("POST", "/v2/claims/%d/decline" % claim["id"])[0])
+        status, body = self.put_strap(other, "whoop-AAA111")
+        self.assertEqual((429, "claim_declined"), (status, body["error"]))
+        self.assertTrue(owner.call("GET", "/v2/me")[1]["strapBound"])
+
+    def test_letting_a_strap_go_ends_the_claims_that_waited_on_it(self):
+        anna = self.enroll("Anna", serial="whoop-OLD111")
+        new = Phone(self)
+        self.file_claim(new, "whoop-OLD111")
+        self.assertEqual(200, self.put_strap(anna, "whoop-NEW222")[0])
+        self.assertEqual("expired", new.call("GET", "/v2/claims/mine")[1]["claim"]["state"])
+
+    def test_a_phone_on_probation_cannot_move_the_strap(self):
+        self.enroll("Anna", serial="whoop-AAA111")
+        guest = self.joined_by_silence("whoop-AAA111")
+        status, body = self.put_strap(guest, "whoop-MINE99")
+        self.assertEqual((403, "probation"), (status, body["error"]))
 
 
 if __name__ == "__main__":

@@ -760,6 +760,44 @@ def h_device_trust(app, req):
     return 204, None
 
 
+def h_strap_put(app, req):
+    """Binds the caller's account to the strap it now wears. A free strap is bound at once and the
+    previous one let go; one bound to another account is asked for, and that claim settles like a join."""
+    body = req.json(("strap",))
+    strap = app.strap_value(body.get("strap"))
+    me = req.account["id"]
+    db = app.db()
+    with db:
+        app.settle(db, strap, req.now)
+        owner = app.strap_owner(db, strap)
+        if owner is not None and owner["id"] == me:
+            return {"bound": True}
+        if owner is None:
+            db.execute("UPDATE accounts SET strap = ? WHERE id = ?", (strap, me))
+            # What waited on the strap just let go was aimed at this account through it; a take of this
+            # account's own has nothing left to ask for.
+            db.execute(
+                "UPDATE claims SET state = 'expired', settled_at = ? WHERE state = 'pending' "
+                "AND ((account_id = ? AND strap != ?) OR claimant_id = ?)", (req.now, me, strap, me))
+            return {"bound": True}
+        waiting = db.execute(
+            "SELECT * FROM claims WHERE claimant_id = ? AND strap = ? AND state = 'pending'", (me, strap)).fetchone()
+        if waiting is not None:
+            return 202, {"claim": claim_json(db, waiting)}
+        if claim_blocked(db, strap, req.now, claimant_id=me):
+            raise ApiError(429, "claim_declined", "This request was declined. Try again in a week.")
+        if pending_claims(db, strap) >= MAX_PENDING_CLAIMS:
+            raise ApiError(429, "too_many_claims", "")
+        # One take per account: a claim on some other strap no longer stands.
+        db.execute("DELETE FROM claims WHERE claimant_id = ? AND state = 'pending'", (me,))
+        cur = db.execute(
+            "INSERT INTO claims(kind, strap, account_id, platform, claimant_id, code, state, created_at) "
+            "VALUES ('take', ?, ?, ?, ?, ?, 'pending', ?)",
+            (strap, owner["id"], req.device["platform"], me, new_claim_code(), req.now))
+        claim = db.execute("SELECT * FROM claims WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return 202, {"claim": claim_json(db, claim)}
+
+
 class RawBody:
     def __init__(self, data, content_type, headers=None):
         self.data = data
@@ -776,6 +814,7 @@ ROUTES = [
     ("GET", r"/v2/info", h_info, "none", 0, None),
     ("POST", r"/v2/enroll", h_enroll, "newkey", MAX_JSON_BYTES, ("enroll", 5, 3600)),
     ("GET", r"/v2/me", h_me, "device", 0, None),
+    ("PUT", r"/v2/me/strap", h_strap_put, "device", MAX_JSON_BYTES, None),
     ("POST", r"/v2/claims", h_claim_file, "newkey", MAX_JSON_BYTES, ("claim", 10, 3600)),
     ("GET", r"/v2/claims/mine", h_claim_mine, "claimant", 0, None),
     ("DELETE", r"/v2/claims/mine", h_claim_withdraw, "claimant", 0, None),
