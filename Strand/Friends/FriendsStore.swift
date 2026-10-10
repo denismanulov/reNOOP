@@ -73,6 +73,49 @@ struct FriendsFeedCache {
     func clear() { try? FileManager.default.removeItem(at: file) }
 }
 
+/// The codes of the invites made on this phone, by invite id, so a waiting invite can be shown again.
+/// A code is all it takes to become the wearer's friend, so it is kept out of the defaults and out of
+/// every backup: a file in Application Support marked as excluded from backups.
+struct FriendsInviteCodes {
+    let file: URL
+
+    static let standard: FriendsInviteCodes? = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        .map { support in
+            // A Mac app that is not sandboxed shares this directory with every other app, so the file
+            // sits under the app's own identifier there.
+            #if os(macOS)
+            let home = support.appendingPathComponent(Bundle.main.bundleIdentifier ?? "OpenWhoop", isDirectory: true)
+            #else
+            let home = support
+            #endif
+            return FriendsInviteCodes(file: home.appendingPathComponent("friends", isDirectory: true)
+                                               .appendingPathComponent("invites.json"))
+        }
+
+    func read() -> [String: String] {
+        guard let data = try? Data(contentsOf: file) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
+    /// Keeps `codes`, and nothing at all when there are none.
+    func write(_ codes: [String: String]) {
+        guard !codes.isEmpty else { return clear() }
+        guard let data = try? JSONEncoder().encode(codes) else { return }
+        var folder = file.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? data.write(to: file, options: [.atomic])
+        // An atomic write makes a new file, so the mark is set again each time.
+        var excluded = URLResourceValues()
+        excluded.isExcludedFromBackup = true
+        var kept = file
+        try? folder.setResourceValues(excluded)
+        try? kept.setResourceValues(excluded)
+    }
+
+    func clear() { try? FileManager.default.removeItem(at: file) }
+}
+
 /// Where Friends stands on this phone.
 enum FriendsPhase: Equatable {
     /// Never turned on, or turned off: no request is made.
@@ -123,7 +166,8 @@ final class FriendsStore: ObservableObject {
     static let sharePhotoKey = "friends.sharePhoto"
     /// The strap handle the server last accepted for the account.
     static let boundHandleKey = "friends.boundHandle"
-    /// The codes of the invites made on this phone, by invite id, so a waiting invite can be shown again.
+    /// Where an earlier build kept the codes of this phone's invites. They are kept by
+    /// `FriendsInviteCodes` now; what is found here is moved there and the key removed.
     static let inviteCodesKey = "friends.inviteCodes"
     /// Set once what API version 1 left on this phone (its token, the nickname) has been removed.
     static let v1RemovedKey = "friends.v1Removed"
@@ -152,6 +196,11 @@ final class FriendsStore: ObservableObject {
     private let cache: FriendsFeedCache?
     private let keys: FriendsKeyStorage
     private let session: URLSession
+    /// Where the codes of this phone's invites are kept; nil keeps them in memory only.
+    private let inviteFile: FriendsInviteCodes?
+    /// Those codes by invite id, once they have been asked for. Not read at launch: the first to ask
+    /// is a screen, by when the phone is unlocked and the file can be read.
+    private var heldInviteCodes: [String: String]?
     /// Deletes the kept pictures when the account is forgotten.
     private let clearPictures: () -> Void
     private var key: (any FriendsSigner)?
@@ -171,8 +220,10 @@ final class FriendsStore: ObservableObject {
     /// also pass their own `clearPictures`, so the pictures the app itself keeps are left alone.
     init(defaults: UserDefaults = .standard, cache: FriendsFeedCache? = .standard,
          keys: FriendsKeyStorage = FriendsKeychainStorage(), session: URLSession = FriendsClient.plainSession,
-         signer: (any FriendsSigner)? = nil, clearPictures: @escaping () -> Void = FriendsAvatars.clear) {
+         signer: (any FriendsSigner)? = nil, clearPictures: @escaping () -> Void = FriendsAvatars.clear,
+         invites: FriendsInviteCodes? = .standard) {
         self.defaults = defaults
+        self.inviteFile = invites
         self.cache = cache
         self.keys = keys
         self.session = session
@@ -625,6 +676,8 @@ final class FriendsStore: ObservableObject {
             defaults.removeObject(forKey: key)
         }
         cache?.clear()
+        inviteFile?.clear()
+        heldInviteCodes = [:]
         clearPictures()
         feed = nil
         feedFetchedAt = 0
@@ -705,17 +758,34 @@ final class FriendsStore: ObservableObject {
     func createInvite() async -> FriendsInvite? {
         guard let invite = await act({ try await self.client().createInvite() }, refreshing: false) else { return nil }
         if let code = invite.code {
-            var kept = defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String] ?? [:]
+            var kept = inviteCodes()
             kept[invite.id] = code
-            defaults.set(kept, forKey: Self.inviteCodesKey)
+            keepInviteCodes(kept)
         }
         await loadInvites()
         return invite
     }
 
     /// The code of an invite made on this phone, or nil for one made elsewhere.
-    func inviteCode(_ id: String) -> String? {
-        (defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String])?[id]
+    func inviteCode(_ id: String) -> String? { inviteCodes()[id] }
+
+    /// The codes kept for this phone's invites. The first call reads the file, and moves into it any
+    /// codes an earlier build kept in the defaults.
+    private func inviteCodes() -> [String: String] {
+        if let heldInviteCodes { return heldInviteCodes }
+        var codes = inviteFile?.read() ?? [:]
+        if let earlier = defaults.object(forKey: Self.inviteCodesKey) {
+            if let earlier = earlier as? [String: String] { codes.merge(earlier) { kept, _ in kept } }
+            defaults.removeObject(forKey: Self.inviteCodesKey)
+            inviteFile?.write(codes)
+        }
+        heldInviteCodes = codes
+        return codes
+    }
+
+    private func keepInviteCodes(_ codes: [String: String]) {
+        heldInviteCodes = codes
+        inviteFile?.write(codes)
     }
 
     func loadInvites() async {
@@ -726,8 +796,9 @@ final class FriendsStore: ObservableObject {
             invites = found
             // A code whose invite is used, revoked or expired is of no further use.
             let live = Set(found.map(\.id))
-            let kept = (defaults.dictionary(forKey: Self.inviteCodesKey) as? [String: String] ?? [:]).filter { live.contains($0.key) }
-            defaults.set(kept, forKey: Self.inviteCodesKey)
+            let held = inviteCodes()
+            let kept = held.filter { live.contains($0.key) }
+            if kept != held { keepInviteCodes(kept) }
         } catch {
             handle(error, session: session)
         }

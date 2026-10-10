@@ -528,12 +528,14 @@ final class FriendsClientTests: XCTestCase {
     @MainActor
     private func store(_ identity: FriendsStrap.Identity, signer: (any FriendsSigner)? = TestSigner(),
                        defaults: UserDefaults? = nil,
-                       keys: FriendsMemoryKeyStorage = FriendsMemoryKeyStorage()) throws -> (FriendsStore, UserDefaults) {
+                       keys: FriendsMemoryKeyStorage = FriendsMemoryKeyStorage(),
+                       invites: FriendsInviteCodes? = nil) throws -> (FriendsStore, UserDefaults) {
         let defaults = defaults ?? FriendsTestDefaults()
         defaults.set(Self.base, forKey: FriendsStore.addressKey)
-        // The pictures the test host itself keeps are not this test's to delete.
+        // The pictures the test host itself keeps are not this test's to delete, and its invite codes
+        // are not this test's to read: without a file of its own a test keeps codes in memory.
         let store = FriendsStore(defaults: defaults, cache: nil, keys: keys, session: stubbedSession(), signer: signer,
-                                 clearPictures: {})
+                                 clearPictures: {}, invites: invites)
         store.strapIdentity = { identity }
         return (store, defaults)
     }
@@ -1442,6 +1444,96 @@ final class FriendsClientTests: XCTestCase {
         let (store, _) = try await turnedOn(.none, enrolAnswer: 200, name: "Other")
         XCTAssertEqual(store.me?.name, "Anna")
         XCTAssertEqual(store.nameFriendsSee(fallback: "Other"), "Anna")
+    }
+
+    // MARK: - Invite codes
+
+    private static let madeInvite = #"{"id":"0123456789abcdef","code":"K7QM2-XRD4P","expiresAt":1792144800}"#
+    private static let listedInvite = #"{"invites":[{"id":"0123456789abcdef","createdAt":1791540000,"expiresAt":1792144800}]}"#
+
+    /// Whether anything kept in `defaults` carries `code`, under any key and at any depth.
+    private func holds(_ defaults: UserDefaults, _ code: String) -> Bool {
+        func carries(_ value: Any) -> Bool {
+            if let text = value as? String { return text.contains(code) }
+            if let data = value as? Data { return String(decoding: data, as: UTF8.self).contains(code) }
+            if let list = value as? [Any] { return list.contains(where: carries) }
+            if let map = value as? [String: Any] { return map.contains { $0.key.contains(code) || carries($0.value) } }
+            return false
+        }
+        return carries(defaults.dictionaryRepresentation())
+    }
+
+    /// An invite's code is kept so the invite can be shown again, in a file that no backup takes and
+    /// never in the defaults. It goes when its invite does, and with the account.
+    @MainActor
+    func testInviteCodesAreKeptInAFileLeftOutOfBackups() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("friends-tests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("friends", isDirectory: true).appendingPathComponent("invites.json")
+        let invites = FriendsInviteCodes(file: file)
+        let signer = TestSigner()
+        let (store, defaults) = try store(.none, signer: signer, invites: invites)
+        Stub.answers["POST /v2/enroll"] = [(201, #"{"me":\#(Self.me)}"#)]
+        Stub.answers["GET /v2/feed?days=7"] = [(200, Self.emptyFeed)]
+        Stub.answers["POST /v2/invites"] = [(201, Self.madeInvite)]
+        Stub.answers["GET /v2/invites"] = [(200, Self.listedInvite)]
+        await store.turnOn(name: "Anna")
+
+        let made = await store.createInvite()
+        XCTAssertEqual(made?.code, "K7QM2-XRD4P")
+        XCTAssertEqual(store.inviteCode("0123456789abcdef"), "K7QM2-XRD4P")
+        XCTAssertFalse(holds(defaults, "K7QM2"), "no code in the defaults")
+        XCTAssertNil(defaults.object(forKey: FriendsStore.inviteCodesKey))
+        XCTAssertEqual(invites.read(), ["0123456789abcdef": "K7QM2-XRD4P"])
+        XCTAssertEqual(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+
+        // A relaunch reads it back from the file.
+        let (relaunched, _) = try self.store(.none, signer: signer, defaults: defaults, invites: invites)
+        XCTAssertEqual(relaunched.phase, .on)
+        XCTAssertEqual(relaunched.inviteCode("0123456789abcdef"), "K7QM2-XRD4P")
+        XCTAssertNil(relaunched.inviteCode("fedcba9876543210"), "an invite made elsewhere has no code here")
+
+        // The invite was used or revoked: its code is of no further use, and no empty file stays.
+        Stub.answers["GET /v2/invites"] = [(200, #"{"invites":[]}"#)]
+        await relaunched.loadInvites()
+        XCTAssertNil(relaunched.inviteCode("0123456789abcdef"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+        // Leaving the account removes what is kept.
+        Stub.answers["GET /v2/invites"] = [(200, Self.listedInvite)]
+        _ = await relaunched.createInvite()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        Stub.answers["POST /v2/me/delete"] = [(204, "")]
+        let deleted = await relaunched.deleteAccount()
+        XCTAssertTrue(deleted)
+        XCTAssertNil(relaunched.inviteCode("0123456789abcdef"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    /// Codes an earlier build kept in the defaults move out of them the first time codes are asked for.
+    @MainActor
+    func testInviteCodesAnEarlierBuildKeptInTheDefaultsMoveOut() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("friends-tests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let invites = FriendsInviteCodes(file: folder.appendingPathComponent("invites.json"))
+        let defaults = FriendsTestDefaults()
+        defaults.set(["0123456789abcdef": "K7QM2-XRD4P"], forKey: FriendsStore.inviteCodesKey)
+        let (store, _) = try store(.none, defaults: defaults, invites: invites)
+        XCTAssertEqual(store.inviteCode("0123456789abcdef"), "K7QM2-XRD4P")
+        XCTAssertNil(defaults.object(forKey: FriendsStore.inviteCodesKey))
+        XCTAssertFalse(holds(defaults, "K7QM2"))
+        XCTAssertEqual(invites.read(), ["0123456789abcdef": "K7QM2-XRD4P"])
+    }
+
+    /// Without a file the codes live for the session only, and still not in the defaults.
+    @MainActor
+    func testWithoutAFileInviteCodesAreHeldInMemory() async throws {
+        let (store, defaults) = try await turnedOn(.none)
+        Stub.answers["POST /v2/invites"] = [(201, Self.madeInvite)]
+        Stub.answers["GET /v2/invites"] = [(200, Self.listedInvite)]
+        _ = await store.createInvite()
+        XCTAssertEqual(store.inviteCode("0123456789abcdef"), "K7QM2-XRD4P")
+        XCTAssertFalse(holds(defaults, "K7QM2"))
     }
 
     // MARK: - Loose ends
