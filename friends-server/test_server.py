@@ -145,6 +145,20 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual(200, status, body)
         return invite
 
+    def today(self):
+        return time.strftime("%Y-%m-%d", time.gmtime(self.now))
+
+    def full_day(self):
+        now = int(self.now)
+        return {
+            "recovery": 81, "strain": 38.6, "sleepScore": 88,
+            "sleep": {"startTs": now - 30000, "endTs": now - 1000, "asleepMin": 474, "awakeMin": 18,
+                      "remMin": 104, "lightMin": 252, "deepMin": 100, "needMin": 495},
+            "workouts": [{"startTs": now - 900, "sport": "Running", "durationS": 1860, "strain": 35.2,
+                          "avgHr": 139, "maxHr": 162, "kcal": 310}],
+            "hr": {"lastBpm": 62, "lastTs": now - 60, "restingBpm": 51, "series": [[now - 120, 64], [now - 60, 62]]},
+        }
+
     # --- the frame ---
 
     def test_health_and_info_need_no_signature(self):
@@ -682,6 +696,132 @@ class FriendsServerTest(unittest.TestCase):
         self.assertEqual("/v2/friends/…", server.log_path("/v2/friends/c0aa3cd1d44734dd"))
         self.assertEqual("/v2/me/devices/…/trust", server.log_path("/v2/me/devices/" + "ab" * 32 + "/trust"))
         self.assertEqual("/v2/me/days/2026-10-10", server.log_path("/v2/me/days/2026-10-10"))
+
+    # --- profile, days, feed ---
+
+    def test_the_name_and_the_switches_are_changed_by_patch(self):
+        anna = self.enroll("Anna")
+        status, me = anna.call("PATCH", "/v2/me", {"name": "  Анна  ", "share": {"hr": True, "sleep": False}})
+        self.assertEqual(200, status, me)
+        self.assertEqual("Анна", me["name"])
+        self.assertEqual({"scores": True, "sleep": False, "workouts": True, "hr": True}, me["share"])
+        for body in ({"name": ""}, {"share": {"steps": True}}, {"share": {"hr": 1}}, {"nick": "x"}):
+            self.assertEqual(400, anna.call("PATCH", "/v2/me", body)[0], body)
+
+    def test_a_stranger_sees_nothing_and_a_friend_sees_only_what_is_shared(self):
+        anna, max_, zoe = self.enroll("Anna"), self.enroll("Max"), self.enroll("Zoe")
+        self.assertEqual(204, anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())[0])
+        self.befriend(anna, max_)
+        status, feed = max_.call("GET", "/v2/feed")
+        self.assertEqual(200, status, feed)
+        self.assertEqual(int(self.now), feed["serverTime"])
+        self.assertEqual(max_.id, feed["me"]["id"])
+        self.assertEqual([], feed["claims"])
+        self.assertIsNone(feed["strapClaim"])
+        friend = feed["friends"][0]
+        self.assertEqual((anna.id, "Anna"), (friend["id"], friend["name"]))
+        day = friend["days"][0]
+        self.assertEqual((self.today(), 81, 88), (day["day"], day["recovery"], day["sleepScore"]))
+        self.assertIn("sleep", day)
+        self.assertIn("workouts", day)
+        self.assertNotIn("hr", day)  # heart rate is off by default
+        self.assertEqual([], zoe.call("GET", "/v2/feed")[1]["friends"])
+        status, body = zoe.call("GET", "/v2/users/%s/days" % anna.id)
+        self.assertEqual((404, "no_such_user"), (status, body["error"]))
+
+    def test_the_heart_rate_line_is_on_a_persons_page_not_in_the_feed(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        anna.call("PATCH", "/v2/me", {"share": {"hr": True}})
+        anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())
+        self.befriend(anna, max_)
+        in_feed = max_.call("GET", "/v2/feed")[1]["friends"][0]["days"][0]["hr"]
+        self.assertEqual({"lastBpm": 62, "lastTs": int(self.now) - 60, "restingBpm": 51}, in_feed)
+        status, page = max_.call("GET", "/v2/users/%s/days?days=3" % anna.id)
+        self.assertEqual(200, status, page)
+        self.assertEqual(2, len(page["days"][0]["hr"]["series"]))
+        self.assertEqual(200, anna.call("GET", "/v2/users/%s/days" % anna.id)[0])
+
+    def test_switching_a_section_off_erases_what_was_uploaded(self):
+        anna, max_ = self.enroll("Anna"), self.enroll("Max")
+        anna.call("PUT", "/v2/me/days/" + self.today(), self.full_day())
+        self.befriend(anna, max_)
+        anna.call("PATCH", "/v2/me", {"share": {"sleep": False}})
+        day = max_.call("GET", "/v2/feed")[1]["friends"][0]["days"][0]
+        self.assertNotIn("sleep", day)
+        anna.call("PATCH", "/v2/me", {"share": {"sleep": True}})
+        day = max_.call("GET", "/v2/feed")[1]["friends"][0]["days"][0]
+        self.assertNotIn("sleep", day)  # erased, not hidden
+        self.assertFalse(max_.call("GET", "/v2/feed")[1]["friends"][0]["share"]["hr"])
+
+    def test_upload_refuses_anything_outside_the_contract(self):
+        anna = self.enroll("Anna")
+        path = "/v2/me/days/" + self.today()
+        for body in ({"recovery": 101}, {"steps": 5}, {"sleep": {"startTs": 1, "endTs": 2, "asleepMin": 1}},
+                     {"workouts": [{"startTs": int(self.now), "sport": "", "durationS": 1}]}):
+            self.assertEqual(400, anna.call("PUT", path, body)[0], body)
+        self.assertEqual(400, anna.call("PUT", "/v2/me/days/2020-01-01", {"recovery": 5})[0])
+        self.assertEqual(404, anna.call("PUT", "/v2/me/days/tomorrow", {"recovery": 5})[0])
+
+    def test_a_later_upload_replaces_the_day(self):
+        anna = self.enroll("Anna")
+        path = "/v2/me/days/" + self.today()
+        anna.call("PUT", path, {"recovery": 40})
+        anna.call("PUT", path, {"recovery": 77, "strain": 12.345})
+        day = anna.call("GET", "/v2/feed")[1]["me"]["days"][0]
+        self.assertEqual((77, 12.35), (day["recovery"], day["strain"]))
+        self.assertEqual(int(self.now), day["updatedAt"])
+
+    def test_a_picture_is_seen_by_its_owner_and_friends_only(self):
+        anna, max_, zoe = self.enroll("Anna"), self.enroll("Max"), self.enroll("Zoe")
+        jpeg = b"\xff\xd8\xff\xe0" + b"0" * 64
+        status, me = anna.call("PUT", "/v2/me/avatar", raw=jpeg)
+        self.assertEqual((200, 1), (status, me["avatarRev"]))
+        self.assertEqual(415, anna.call("PUT", "/v2/me/avatar", raw=b"GIF89a....")[0])
+        self.assertEqual(413, anna.call("PUT", "/v2/me/avatar", raw=b"\xff\xd8\xff" + b"0" * 210_000)[0])
+        self.assertEqual((200, jpeg), anna.call("GET", "/v2/users/%s/avatar" % anna.id))
+        self.assertEqual(404, max_.call("GET", "/v2/users/%s/avatar" % anna.id)[0])
+        self.befriend(anna, max_)
+        self.assertEqual((200, jpeg), max_.call("GET", "/v2/users/%s/avatar" % anna.id))
+        self.assertEqual(404, zoe.call("GET", "/v2/users/%s/avatar" % anna.id)[0])
+        self.assertEqual(204, anna.call("DELETE", "/v2/me/avatar")[0])
+        self.assertEqual(0, anna.call("GET", "/v2/me")[1]["avatarRev"])
+        self.assertEqual(404, max_.call("GET", "/v2/users/%s/avatar" % anna.id)[0])
+
+    def test_the_feed_carries_the_claims_that_wait_for_an_answer(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        new = Phone(self)
+        claim = self.file_claim(new, "whoop-AAA111")[1]["claim"]
+        self.assertEqual([claim], anna.call("GET", "/v2/feed")[1]["claims"])
+        buyer = self.enroll("Buyer")
+        taken = self.put_strap(buyer, "whoop-AAA111")[1]["claim"]
+        self.assertEqual(taken, buyer.call("GET", "/v2/feed")[1]["strapClaim"])
+        self.assertEqual([claim["id"], taken["id"]], [c["id"] for c in anna.call("GET", "/v2/feed")[1]["claims"]])
+        anna.call("POST", "/v2/claims/%d/decline" % taken["id"])
+        self.assertIsNone(buyer.call("GET", "/v2/feed")[1]["strapClaim"])
+
+    def test_the_feed_names_a_phone_that_joined_unconfirmed(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        self.assertEqual([], anna.call("GET", "/v2/feed")[1]["unconfirmed"])
+        guest = self.joined_by_silence("whoop-AAA111")
+        named = anna.call("GET", "/v2/feed")[1]["unconfirmed"]
+        self.assertEqual([guest.key_id], [d["id"] for d in named])
+        self.assertEqual(int(self.now) + 7 * DAY, named[0]["probationUntil"])
+        # The phone on probation is not told about itself this way: its own state is in `me.device`.
+        self.assertEqual([], guest.call("GET", "/v2/feed")[1]["unconfirmed"])
+        anna.call("POST", "/v2/me/devices/%s/trust" % guest.key_id)
+        self.assertEqual([], anna.call("GET", "/v2/feed")[1]["unconfirmed"])
+
+    def test_probation_uploads_its_day_and_changes_nothing_else(self):
+        anna = self.enroll("Anna", serial="whoop-AAA111")
+        guest = self.joined_by_silence("whoop-AAA111")
+        self.assertEqual(204, guest.call("PUT", "/v2/me/days/" + self.today(), {"recovery": 50})[0])
+        self.assertEqual(200, guest.call("GET", "/v2/feed")[0])
+        for method, path, body, raw in (("PATCH", "/v2/me", {"name": "Mine"}, None),
+                                        ("PUT", "/v2/me/avatar", None, b"\xff\xd8\xff0"),
+                                        ("DELETE", "/v2/me/avatar", None, None)):
+            status, answer = guest.call(method, path, body, raw=raw)
+            self.assertEqual((403, "probation"), (status, answer["error"]), path)
+        self.assertEqual("Anna", anna.call("GET", "/v2/me")[1]["name"])
 
 
 if __name__ == "__main__":
