@@ -21,17 +21,19 @@ that work for whoever (person or agent) brings it to `android/`. It is the mirro
   Android. Each section says what was seen on the Swift side. Do not describe a Kotlin twin as
   verified on the strength of the Swift one.
 - One section is one or more commits, one concern each. Tasks 1, 3, 4 and 5 need no decision. Tasks
-  2 and 6 start with a decision that belongs to the Android app's owner.
+  2 and 6 are design: how far Android follows the iOS layout is the Android app's owner's to decide,
+  alone. The Swift app's owner has said so and does not need to be asked. What is not open in either
+  is the behaviour and the figures.
 
-| # | Task | Swift commits | Decision needed first | Size |
+| # | Task | Swift commits | Whose call | Size |
 |---|---|---|---|---|
-| 0 | Friends server on version 2 | `e4f7a588`..`e0678360`, `f5f3ee8f`..`2554868b` | who deploys it, and when | deploy only |
-| 1 | Friends client on API version 2 | `86cb95bc`..`d16bb9ee`, `e383c945` | no | large |
-| 2 | Friends screens as redrawn | `afe40318`, `bd09bd79` | yes: how far to follow the iOS layout | medium |
-| 3 | Learned sleep stage model | `be1b4e1f`, `01b11d33` | no | large |
-| 4 | Step auto-calibration starts only in a real walk | `ae1f9884` | no | small |
-| 5 | Small fixes to check against Kotlin | `9e0f7b81`, `fd027288` | no | small |
-| 6 | Tab bar and glyphs | `59a27c36`, `a8cc7320` | yes: follow it on Android or keep the bar | small |
+| 0 | Friends server on version 2 | `e4f7a588`..`e0678360`, `f5f3ee8f`..`2554868b` | done: the public server runs it | nothing to build |
+| 1 | Friends client on API version 2 | `86cb95bc`..`d16bb9ee`, `e383c945` | none | large |
+| 2 | Friends screens as redrawn | `afe40318`, `bd09bd79` | layout: the Android owner's | medium |
+| 3 | Learned sleep stage model | `be1b4e1f`, `01b11d33` | none | large |
+| 4 | Step auto-calibration starts only in a real walk | `ae1f9884` | none | small |
+| 5 | Small fixes to check against Kotlin | `9e0f7b81`, `fd027288` | none | small |
+| 6 | Tab bar and glyphs | `59a27c36`, `a8cc7320` | the bar: the Android owner's | small |
 
 Nothing to do on Android: `Tools/SleepML` (the training tool, macOS only), the iOS demo launch
 arguments, the `docs:` commits. The gate that holds the iOS app before the phone's first unlock
@@ -44,15 +46,12 @@ gone, and its database is not migrated. Everyone enrols again. The contract is
 [`friends-server/README.md`](../../../../friends-server/README.md); the design and the reasons are
 [`2026-10-10-friends-keys-and-straps-design.md`](../../specs/2026-10-10-friends-keys-and-straps-design.md).
 
-- Which version the public server answers with is not recorded here. Ask it: `GET /v2/info` answers
-  `{"name": "renoop-friends", "api": 2, "time": N}` on version 2. Any other answer is not version 2.
-- Until the public server runs version 2 the iOS Friends tab cannot turn on against it; once it does,
-  the Android tab as it stands (version 1 client) stops working until task 1 is done. Agree the
-  switch-over day with the Swift app's owner.
-- Deploying: [`friends-server/deploy/README.md`](../../../../friends-server/deploy/README.md) (origin
-  behind a TCP-only proxy over WireGuard, no Cloudflare). The files there carry placeholders, not
-  keys. `FRIENDS_STRAP_PEPPER` must be set and kept: the README says what a lost pepper does.
-- The deploy files were written without a machine to try them on. They are not verified.
+- The public server (`https://renoop.duckdns.org`) runs version 2: on 2026-10-11 `GET /v2/info`
+  answered `{"name": "renoop-friends", "api": 2, "time": N}`. So the Android tab as it stands (the
+  version 1 client) does not work against it, and task 1 is what brings it back.
+- For a server of one's own: [`friends-server/deploy/README.md`](../../../../friends-server/deploy/README.md)
+  (origin behind a TCP-only proxy over WireGuard, no Cloudflare). The files there carry placeholders,
+  not keys. `FRIENDS_STRAP_PEPPER` must be set and kept: the README says what a lost pepper does.
 - Server tests: `cd friends-server && python3 -m unittest test_server` (79 tests; needs the
   `cryptography` package).
 
@@ -119,11 +118,11 @@ links.
 
 ## 2. Friends screens as redrawn
 
-**Decision first.** On iOS the tab is now a measured copy of Apple Fitness's Sharing tab. Android's
-tab was drawn from its own mockups
-([`2026-10-08-friends-tab/mockups`](../2026-10-08-friends-tab/mockups)). The look stays Material 3
-either way; the decision is whether to adopt the structure below or keep the present one and take only
-the behaviour. What must match in both cases is the behaviour and the figures.
+**The layout is the Android owner's to decide.** On iOS the tab is now a measured copy of Apple
+Fitness's Sharing tab. Android's tab was drawn from its own mockups
+([`2026-10-08-friends-tab/mockups`](../2026-10-08-friends-tab/mockups)). Adopt the structure below,
+keep the present one, or draw a third: none of that needs the Swift side's agreement. What must match
+whichever is chosen is the behaviour and the figures.
 
 Structure on iOS (`bd09bd79`; all in `Strand/Friends/`):
 
@@ -306,14 +305,14 @@ burst in a real outdoor walk.
 
 ## 6. Tab bar and glyphs
 
-**Decision first.** On iPhone the bar is now three tabs and the search circle: Summary, Workouts,
-Friends, with Browse behind the search role (`59a27c36`). Sleep is no longer a tab: it is a row in
-Browse and the Summary's sleep card. The selected tab takes the Exercise ring's green (lime on a dark
-bar); each tab's own content keeps the app's accent.
+**The bar is the Android owner's to decide.** On iPhone it is now three tabs and the search circle:
+Summary, Workouts, Friends, with Browse behind the search role (`59a27c36`). Sleep is no longer a
+tab: it is a row in Browse and the Summary's sleep card. The selected tab takes the Exercise ring's
+green (lime on a dark bar); each tab's own content keeps the app's accent.
 
 Android's bar is Summary, Sleep, Workouts, Coach, Friends (`ui/MainTabs.kt`), with Browse moved to the
-top of Settings on 2026-10-09. Whether Android follows (Sleep out of the bar, three tabs) is the
-owner's call; the two bars already differ on purpose.
+top of Settings on 2026-10-09. Whether Android follows (Sleep out of the bar, three tabs) or keeps
+its bar needs nobody's agreement; the two bars already differ on purpose.
 
 Independent of that decision (`a8cc7320`, and the Browse rows of `59a27c36`): a metric now carries one
 glyph everywhere, the glyph of the Health category it files under (`KeyMetric.healthCategory`), on its
