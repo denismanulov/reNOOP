@@ -127,20 +127,33 @@ final class ProfileStore: ObservableObject {
         // present DOB is never second-guessed against the mirrored age (doing so would re-freeze age
         // every birthday, the exact staleness #146 fixes).
         let resolvedDOB: Date
+        // Whether the date came from something stored, as opposed to the age-30 default.
+        let fromStorage: Bool
         if let dob = d.object(forKey: K.dateOfBirth) as? Date {
             resolvedDOB = dob
+            fromStorage = true
         } else if let legacyAge = d.object(forKey: K.legacyAge) as? Int {
             resolvedDOB = Self.dateOfBirth(forAge: legacyAge)
+            fromStorage = true
         } else {
             resolvedDOB = Self.dateOfBirth(forAge: 30)
+            fromStorage = false
         }
         dateOfBirth = resolvedDOB
         // `didSet` doesn't fire for the initial assignment inside `init`, so persist the resolved DOB
         // and its mirrored age explicitly — otherwise a migrated/derived DOB never reaches storage
         // until the user next edits it. Written from the LOCAL (not `self.dateOfBirth`, which Swift
         // forbids reading before every stored property is initialized).
-        d.set(resolvedDOB, forKey: K.dateOfBirth)
-        d.set(Self.years(from: resolvedDOB, to: Date()), forKey: K.legacyAge)
+        //
+        // The default is NOT written. On iOS a launch before the phone's first unlock after a restart
+        // (a Bluetooth restore is one) reads every default as absent while its writes still land, so
+        // writing the default there replaced the wearer's real date of birth with "30 years ago" for
+        // good. Nothing stored and nothing readable look the same from here; only a date that came
+        // from storage is safe to write back.
+        if fromStorage {
+            d.set(resolvedDOB, forKey: K.dateOfBirth)
+            d.set(Self.years(from: resolvedDOB, to: Date()), forKey: K.legacyAge)
+        }
         sex = d.string(forKey: K.sex) ?? "male"
         weightKg = d.object(forKey: K.weight) as? Double ?? 75
         heightCm = d.object(forKey: K.height) as? Double ?? 178
