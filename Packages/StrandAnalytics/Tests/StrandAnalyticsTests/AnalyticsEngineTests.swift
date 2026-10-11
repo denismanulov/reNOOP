@@ -402,8 +402,10 @@ final class AnalyticsEngineTests: XCTestCase {
             restorativeSeconds: 1 * 3600, needHours: 8.0, consistency: 0.5)
         XCTAssertEqual(withNil, withHalf, accuracy: 1e-9)
         // duration 0.5 × 0.50, efficiency 0.8 × 0.20, restorative (a quarter of sleep ÷ the 0.38 target) × 0.20,
-        // consistency 0.5 × 0.10.
-        XCTAssertEqual(withNil, 100 * (0.25 + 0.16 + 0.20 * (0.25 / 0.38) + 0.05), accuracy: 1e-9)
+        // consistency 0.5 × 0.10; the composite is rounded to two decimals.
+        let unrounded = 100 * (0.25 + 0.16 + 0.20 * (0.25 / 0.38) + 0.05)
+        XCTAssertEqual(withNil, (unrounded * 100).rounded() / 100, accuracy: 1e-9)
+        XCTAssertEqual(withNil, 59.16, accuracy: 1e-9)
     }
 
     func testAnalyzeDayPopulatesRestAndConfidence() {
