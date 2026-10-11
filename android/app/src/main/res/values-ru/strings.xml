@@ -1035,7 +1035,7 @@
     <string name="friends_cmp_strain_me">По нагрузке впереди вы.</string>
     <string name="friends_cmp_sleep_friend">По сну впереди %1$s: +%2$d.</string>
     <string name="friends_cmp_sleep_me">По сну впереди вы: +%1$d.</string>
-    <string name="friends_cmp_nothing">Сравнивать нечего: за этот день нет показателя у обоих.</string>
+    <string name="friends_cmp_nothing">Сравнивать нечего: за этот день показатель есть не у вас обоих.</string>
     <string name="friends_not_sharing_hr">%1$s не делится пульсом.</string>
     <string name="friends_hr_resting">Пульс в покое %1$d уд/мин</string>
     <string name="friends_you_not_sharing_sleep">Вы не делитесь сном.</string>
@@ -1143,7 +1143,7 @@
     <string name="friends_invites_waiting">Ожидающие приглашения</string>
     <string name="friends_invite">Приглашение</string>
     <string name="friends_invite_valid_until">Действует до %1$s</string>
-    <string name="friends_invite_valid_once">Действует до %1$s. Работает один раз.</string>
+    <string name="friends_invite_valid_once">Действует до %1$s и работает один раз.</string>
     <string name="friends_invite_revoke">Отозвать</string>
     <string name="friends_invite_share">Поделиться приглашением</string>
     <string name="friends_invite_share_text">Добавь меня в друзья в reNOOP: %1$s\nИли введи код %2$s на вкладке «Друзья».</string>

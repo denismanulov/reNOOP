@@ -19,9 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Sync
@@ -58,6 +56,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.noop.ui.summary.keyMetricHealthIcon
+import com.noop.ui.KeyMetric
 import com.noop.R
 import com.noop.friends.FriendDay
 import com.noop.friends.FriendPerson
@@ -322,7 +322,7 @@ private fun HeadToHeadCard(me: FriendPerson, friend: FriendPerson, mine: FriendD
         val myRecovery = recoverySide(mine?.recovery)
         val theirRecovery = recoverySide(theirs?.recovery)
         ScoreDuel(
-            title = recoveryTitle, icon = Icons.Filled.Bolt, tint = health.charge,
+            title = recoveryTitle, icon = keyMetricHealthIcon(KeyMetric.CHARGE), tint = health.charge,
             left = myRecovery, right = theirRecovery,
             leftLeads = leads(mine?.recovery?.toDouble(), theirs?.recovery?.toDouble()),
             missing = missing, description = spoken(recoveryTitle, myRecovery, theirRecovery),
@@ -332,7 +332,7 @@ private fun HeadToHeadCard(me: FriendPerson, friend: FriendPerson, mine: FriendD
         val myStrain = strainSide(mine?.strain, scale)
         val theirStrain = strainSide(theirs?.strain, scale)
         ScoreDuel(
-            title = strainTitle, icon = Icons.Filled.LocalFireDepartment, tint = health.effort,
+            title = strainTitle, icon = keyMetricHealthIcon(KeyMetric.EFFORT), tint = health.effort,
             left = myStrain, right = theirStrain,
             leftLeads = leads(mine?.strain, theirs?.strain),
             missing = missing, description = spoken(strainTitle, myStrain, theirStrain),

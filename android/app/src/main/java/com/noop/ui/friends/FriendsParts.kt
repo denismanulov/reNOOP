@@ -165,8 +165,11 @@ internal fun strainLevelText(strain: Double): String = stringResource(
 @Composable
 internal fun sleepLevelText(score: Int): String = scoreWord(friendsSleepLevel(score))
 
-/** A stored 0–100 Strain on the reader's own scale ("12.4" of 21, "59.0" of 100): the app's one formatter. */
-internal fun strainShown(strain: Double, scale: EffortScale): String = UnitFormatter.effortDisplay(strain, scale)
+/** A stored 0–100 Strain on the reader's own scale ("12.4" of 21, "59.0" of 100), to one decimal and
+ *  with the decimal mark of the app's language, as the Summary writes the wearer's own Strain. */
+@Composable
+internal fun strainShown(strain: Double, scale: EffortScale): String =
+    String.format(friendsLocale(), "%.1f", UnitFormatter.effortValue(strain, scale))
 
 /** "of 21" / "of 100" for the reader's Strain scale. */
 @Composable

@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Icon
@@ -360,7 +359,7 @@ private fun TileTitle(icon: ImageVector, title: String, tint: Color) {
 @Composable
 private fun SleepTile(night: SummarySleepNight, ui: SummaryUi, modifier: Modifier, onClick: () -> Unit) {
     TileSurface(modifier, onClick) {
-        TileTitle(Icons.Filled.Bed, stringResource(R.string.nav_sleep), Health.colors.sleep)
+        TileTitle(keyMetricHealthIcon(KeyMetric.REST), stringResource(R.string.nav_sleep), Health.colors.sleep)
         Spacer(Modifier.weight(1f))
         MetricFigure(
             durationTokens(night.stages.asleep, ui.locale),

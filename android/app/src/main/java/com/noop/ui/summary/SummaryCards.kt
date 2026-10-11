@@ -31,7 +31,6 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -552,7 +551,7 @@ internal fun MiniChart(series: List<Double>, chart: SummaryChart, tint: Color, m
 internal fun SleepCard(night: SummarySleepNight, locale: Locale, onClick: () -> Unit) {
     HealthCard(onClick = onClick, verticalSpacing = 6.dp) {
         CardTitleRow(
-            icon = Icons.Filled.Bed,
+            icon = HealthCategory.SLEEP.icon,
             title = stringResource(R.string.nav_sleep),
             tint = Health.colors.sleep,
             stamp = clockTime(night.wakeTs, locale),
