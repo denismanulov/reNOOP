@@ -88,14 +88,14 @@ import kotlinx.coroutines.launch
 
 // MARK: - Friends tab: one person's page
 //
-// A friend's day against the reader's own, top to bottom: the picture and the name, the three scores of
-// the day side by side with one sentence on who leads, the heart rate when it is shared (the day's line is
-// the one figure the feed leaves out, fetched for this page), the two nights, then the last seven days as
-// seven rings and the workouts of those days. A ring picks its day: the comparison and every figure above
-// then describe that day. The page opens on the person's newest day, which is not always today.
+// One person's day, top to bottom: the picture and the name, the day's three figures beside its rings,
+// the heart rate when it is shared (the day's line is the one figure the feed leaves out, fetched for this
+// page), the night, then the last seven days as seven rings and the workouts of those days. A ring picks
+// its day: every figure above then describes that day. The page opens on the person's newest day, which
+// is not always today.
 //
-// The reader's own card on the list opens the same page for their own account, as friends see it: the
-// day's three figures beside the rings in place of a comparison, and no menu.
+// The reader's own card on the list opens the same page for their own account, as friends see it. It is
+// laid out as a friend's is, without the menu.
 //
 // The page shows the feed's copy at once and the fuller answer when it arrives; with no connection it
 // stays on the feed's copy and says so.
@@ -175,25 +175,19 @@ internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, id: Str
             // The day in view: the one picked from its ring while the person still has it, else their newest.
             val shownKey = picked?.takeIf { person.day(it) != null } ?: person.days.firstOrNull()?.day ?: today.key
             val day = person.day(shownKey)
-            val mine = me?.day(shownKey)
 
             item(key = "head") { PageHead(person, isMe, serverNow) }
 
             item(key = "day") {
                 SectionHeader(friendsDayText(shownKey, today, weekdays = false), Modifier.padding(horizontal = M3Dimens.screenPadding))
             }
-            item(key = "scores") {
-                when {
-                    isMe -> OwnDayCard(person, day, scale)
-                    me != null -> HeadToHeadCard(me, person, mine, day, scale)
-                }
-            }
+            item(key = "scores") { DayCard(person, day, scale, isMe) }
 
             item(key = "hr") {
                 HeartRateCard(person.share, day, serverNow, name, isMe, loadingLine = page.loading && page.person == null)
             }
 
-            item(key = "night") { NightsCard(me?.takeIf { !isMe }, person, mine?.sleep, day?.sleep, isMe) }
+            item(key = "night") { NightCard(person, day?.sleep, isMe) }
 
             item(key = "week-header") {
                 SectionHeader(stringResource(R.string.friends_last_7_days), Modifier.padding(horizontal = M3Dimens.screenPadding))
@@ -262,144 +256,10 @@ private fun PageHead(person: FriendPerson, isMe: Boolean, serverNow: Long) {
 
 // MARK: The day
 
-/** The day's three scores for two people, and one or two sentences on who leads. */
+/** The day in view: its three figures, each in its ring's hue, beside the rings. A person who has
+ *  switched their scores off has neither, and the card says so. */
 @Composable
-private fun HeadToHeadCard(me: FriendPerson, friend: FriendPerson, mine: FriendDay?, theirs: FriendDay?, scale: EffortScale) {
-    val name = friend.profile.name
-    val you = stringResource(R.string.friends_you)
-    val health = Health.colors
-    HealthCard(
-        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-        shape = RoundedCornerShape(M3Dimens.heroRadius),
-        contentPadding = PaddingValues(20.dp),
-        verticalSpacing = 20.dp,
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FriendAvatar(me.profile.name, me.id, me.profile.avatarRev, size = 56.dp, tone = AvatarTone.ME)
-                Text(you, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
-            }
-            Row(
-                Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-            ) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                FriendAvatar(name, friend.id, friend.profile.avatarRev, size = 56.dp)
-            }
-        }
-
-        if (!friend.share.scores) {
-            Text(
-                stringResource(R.string.friends_not_sharing_scores, name),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@HealthCard
-        }
-
-        val missing = stringResource(R.string.friends_no_data_today)
-
-        @Composable
-        fun side(side: DuelSide): String {
-            val value = side.value ?: return missing
-            return side.level?.let { stringResource(R.string.friends_value_with_level, value, it) } ?: value
-        }
-
-        @Composable
-        fun spoken(title: String, left: DuelSide, right: DuelSide): String =
-            stringResource(R.string.friends_duel_spoken, title, you, side(left), name, side(right))
-
-        fun leads(a: Double?, b: Double?): Boolean? = if (a == null || b == null || a == b) null else a > b
-
-        val recoveryTitle = stringResource(R.string.today_metric_charge)
-        val myRecovery = recoverySide(mine?.recovery)
-        val theirRecovery = recoverySide(theirs?.recovery)
-        ScoreDuel(
-            title = recoveryTitle, icon = keyMetricHealthIcon(KeyMetric.CHARGE), tint = health.charge,
-            left = myRecovery, right = theirRecovery,
-            leftLeads = leads(mine?.recovery?.toDouble(), theirs?.recovery?.toDouble()),
-            missing = missing, description = spoken(recoveryTitle, myRecovery, theirRecovery),
-        )
-
-        val strainTitle = stringResource(R.string.today_metric_effort)
-        val myStrain = strainSide(mine?.strain, scale)
-        val theirStrain = strainSide(theirs?.strain, scale)
-        ScoreDuel(
-            title = strainTitle, icon = keyMetricHealthIcon(KeyMetric.EFFORT), tint = health.effort,
-            left = myStrain, right = theirStrain,
-            leftLeads = leads(mine?.strain, theirs?.strain),
-            missing = missing, description = spoken(strainTitle, myStrain, theirStrain),
-            centre = strainOutOf(scale),
-        )
-
-        val sleepTitle = stringResource(R.string.today_metric_rest)
-        val mySleep = sleepScoreSide(mine?.sleepScore)
-        val theirSleep = sleepScoreSide(theirs?.sleepScore)
-        ScoreDuel(
-            title = sleepTitle, icon = Icons.Filled.Bedtime, tint = health.rest,
-            left = mySleep, right = theirSleep,
-            leftLeads = leads(mine?.sleepScore?.toDouble(), theirs?.sleepScore?.toDouble()),
-            missing = missing, description = spoken(sleepTitle, mySleep, theirSleep),
-        )
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        if (!me.share.scores) {
-            Text(
-                stringResource(R.string.friends_you_not_sharing_scores),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FriendsComparison.lines(mine, theirs).forEach { line ->
-                    Text(comparisonText(line, name), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun recoverySide(recovery: Int?): DuelSide =
-    if (recovery == null) DuelSide(null, null, null)
-    else DuelSide(recovery.toString(), recovery / 100f, recoveryLevelText(recovery))
-
-@Composable
-private fun strainSide(strain: Double?, scale: EffortScale): DuelSide =
-    if (strain == null) DuelSide(null, null, null)
-    else DuelSide(strainShown(strain, scale), (strain / 100.0).toFloat(), strainLevelText(strain))
-
-@Composable
-private fun sleepScoreSide(score: Int?): DuelSide =
-    if (score == null) DuelSide(null, null, null)
-    else DuelSide(score.toString(), score / 100f, sleepLevelText(score))
-
-/** One comparison sentence. Names stand in the nominative, so no name is ever declined or given a gender. */
-@Composable
-private fun comparisonText(line: FriendsComparisonLine, friendName: String): String = when (line) {
-    is FriendsComparisonLine.RecoveryLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_recovery_me, line.points)
-        else stringResource(R.string.friends_cmp_recovery_friend, friendName, line.points)
-    FriendsComparisonLine.RecoveryLevel -> stringResource(R.string.friends_cmp_recovery_level)
-    is FriendsComparisonLine.StrainLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_strain_me)
-        else stringResource(R.string.friends_cmp_strain_friend, friendName)
-    is FriendsComparisonLine.SleepLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_sleep_me, line.points)
-        else stringResource(R.string.friends_cmp_sleep_friend, friendName, line.points)
-    FriendsComparisonLine.NothingShared -> stringResource(R.string.friends_cmp_nothing)
-}
-
-/** The reader's own day as friends see it: the three figures, each in its ring's hue, beside the rings. */
-@Composable
-private fun OwnDayCard(me: FriendPerson, day: FriendDay?, scale: EffortScale) {
+private fun DayCard(person: FriendPerson, day: FriendDay?, scale: EffortScale, isMe: Boolean) {
     val health = Health.colors
     HealthCard(
         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
@@ -407,9 +267,10 @@ private fun OwnDayCard(me: FriendPerson, day: FriendDay?, scale: EffortScale) {
         contentPadding = PaddingValues(20.dp),
         verticalSpacing = 16.dp,
     ) {
-        if (!me.share.scores) {
+        if (!person.share.scores) {
             Text(
-                stringResource(R.string.friends_you_not_sharing_scores),
+                if (isMe) stringResource(R.string.friends_you_not_sharing_scores)
+                else stringResource(R.string.friends_not_sharing_scores, person.profile.name),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -421,28 +282,28 @@ private fun OwnDayCard(me: FriendPerson, day: FriendDay?, scale: EffortScale) {
                 val recovery = stringResource(R.string.today_metric_charge)
                 val strain = stringResource(R.string.today_metric_effort)
                 val sleep = stringResource(R.string.today_metric_rest)
-                OwnFigure(recovery, day?.recovery?.let { friendsPercent(it.toDouble()) } ?: none, null, health.charge)
-                OwnFigure(strain, day?.strain?.let { strainShown(it, scale) } ?: none, day?.strain?.let { strainOutOf(scale) }, health.effort)
-                OwnFigure(sleep, day?.sleepScore?.let { friendsPercent(it.toDouble()) } ?: none, null, health.rest)
+                DayFigure(recovery, day?.recovery?.let { friendsPercent(it.toDouble()) } ?: none, null, health.charge)
+                DayFigure(strain, day?.strain?.let { strainShown(it, scale) } ?: none, day?.strain?.let { strainOutOf(scale) }, health.effort)
+                DayFigure(sleep, day?.sleepScore?.let { friendsPercent(it.toDouble()) } ?: none, null, health.rest)
             }
         }
         if (friendsLargeText()) {
             figures(Modifier.fillMaxWidth())
-            FriendRings(day, size = OWN_RINGS, stroke = 14.dp, gap = 3.dp)
+            FriendRings(day, size = DAY_RINGS, stroke = 14.dp, gap = 3.dp)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 figures(Modifier.weight(1f))
-                FriendRings(day, size = OWN_RINGS, stroke = 14.dp, gap = 3.dp)
+                FriendRings(day, size = DAY_RINGS, stroke = 14.dp, gap = 3.dp)
             }
         }
     }
 }
 
-private val OWN_RINGS = 128.dp
+private val DAY_RINGS = 128.dp
 
 /** One of the day's three figures: its name over the figure in its ring's hue. */
 @Composable
-private fun OwnFigure(title: String, figure: String, unit: String?, hue: Color) {
+private fun DayFigure(title: String, figure: String, unit: String?, hue: Color) {
     Column(Modifier.semantics(mergeDescendants = true) {}) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
         FriendsFigure(figure, unit, hue, spoken = null)
@@ -489,13 +350,10 @@ private fun HeartRateCard(share: FriendShare, day: FriendDay?, serverNow: Long, 
     }
 }
 
-/**
- * The night of the day in view: the reader's beside the person's, each with how long, from when to when
- * and how it stands against its need, then the stages of the person's night. On the reader's own page
- * there is one night, their own.
- */
+/** The night of the day in view: how long, from when to when, how it stands against its need, and its
+ *  stages. */
 @Composable
-private fun NightsCard(me: FriendPerson?, person: FriendPerson, mine: FriendSleep?, theirs: FriendSleep?, isMe: Boolean) {
+private fun NightCard(person: FriendPerson, night: FriendSleep?, isMe: Boolean) {
     val name = person.profile.name
     HealthCard(
         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
@@ -504,12 +362,8 @@ private fun NightsCard(me: FriendPerson?, person: FriendPerson, mine: FriendSlee
         verticalSpacing = 16.dp,
     ) {
         CardTitleRow(Icons.Filled.Bedtime, stringResource(R.string.summary_time_asleep), Health.colors.sleep, chevron = false)
-        if (me != null) {
-            SleepSide(stringResource(R.string.friends_you), mine, shares = me.share.sleep, isMe = true, name = name)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        }
-        SleepSide(if (isMe) stringResource(R.string.friends_you) else name, theirs, shares = person.share.sleep, isMe = isMe, name = name)
-        if (theirs != null) SleepStages(theirs)
+        SleepSide(if (isMe) stringResource(R.string.friends_you) else name, night, shares = person.share.sleep, isMe = isMe, name = name)
+        if (night != null) SleepStages(night)
     }
 }
 

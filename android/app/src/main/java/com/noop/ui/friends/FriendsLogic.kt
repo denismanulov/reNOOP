@@ -7,15 +7,12 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.noop.friends.FriendsInviteCode
-import com.noop.ui.sleep.SleepScore
-import com.noop.ui.sleep.SleepScoreWord
 import com.noop.ui.workouts.effortLoadIndex
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-import kotlin.math.abs
 
 // MARK: - Friends tab: what the screens decide without a screen
 //
@@ -27,9 +24,6 @@ import kotlin.math.abs
 // One clock runs through all of it: the server's. A day's `updatedAt` and the feed's `serverTime` are
 // both the server's seconds, so "6 min ago" is their difference carried forward by how long ago the feed
 // arrived, and a phone whose own clock is wrong still reads the right age.
-
-/** Which side of a comparison something belongs to. */
-internal enum class FriendsSide { ME, FRIEND }
 
 /** How long ago something happened, in the one unit worth saying. */
 internal sealed class FriendsAgo {
@@ -61,72 +55,6 @@ internal sealed class FriendsAgo {
 /** The Strain word's index (0 light … 4 all-out) for a stored 0–100 value: the Workouts tab's own rule. */
 internal fun friendsStrainLevel(strain: Double): Int = effortLoadIndex(strain / 100.0)
 
-/** The Sleep score's word: the Sleep tab's own banding. */
-internal fun friendsSleepLevel(score: Int): SleepScoreWord = SleepScore.word(score)
-
-// MARK: Comparison
-
-/** One sentence of the head-to-head card. */
-internal sealed class FriendsComparisonLine {
-    /** [side] has the higher Recovery today, by [points]. */
-    data class RecoveryLead(val side: FriendsSide, val points: Int) : FriendsComparisonLine()
-
-    /** The two Recovery scores are within [FriendsComparison.RECOVERY_LEVEL_WITHIN] of each other. */
-    object RecoveryLevel : FriendsComparisonLine()
-
-    /** [side] has clearly more Strain today. */
-    data class StrainLead(val side: FriendsSide) : FriendsComparisonLine()
-
-    /** [side] has the higher Sleep score, by [points]. */
-    data class SleepLead(val side: FriendsSide, val points: Int) : FriendsComparisonLine()
-
-    /** No score is known for both sides. */
-    object NothingShared : FriendsComparisonLine()
-}
-
-internal object FriendsComparison {
-    /** Recovery scores this close read as level: the difference is inside the score's own noise. */
-    const val RECOVERY_LEVEL_WITHIN = 2
-
-    /** Strain must differ by this much (stored 0–100 axis, about one point of 21) to name a leader. */
-    const val STRAIN_MIN_GAP = 5.0
-
-    /** A Sleep score lead smaller than this is not worth a sentence. */
-    const val SLEEP_MIN_GAP = 3
-
-    /**
-     * At most two sentences comparing one day of [me] and of [friend]: Recovery first when both have it, then
-     * Strain when it clearly differs, then the Sleep score while there is room. A score only one side has
-     * is never compared, and with nothing in common the answer is the single
-     * [FriendsComparisonLine.NothingShared].
-     */
-    fun lines(me: FriendDay?, friend: FriendDay?): List<FriendsComparisonLine> {
-        val out = ArrayList<FriendsComparisonLine>(2)
-        val myRecovery = me?.recovery
-        val theirRecovery = friend?.recovery
-        if (myRecovery != null && theirRecovery != null) {
-            val diff = theirRecovery - myRecovery
-            out += if (abs(diff) <= RECOVERY_LEVEL_WITHIN) {
-                FriendsComparisonLine.RecoveryLevel
-            } else {
-                FriendsComparisonLine.RecoveryLead(if (diff > 0) FriendsSide.FRIEND else FriendsSide.ME, abs(diff))
-            }
-        }
-        val myStrain = me?.strain
-        val theirStrain = friend?.strain
-        if (myStrain != null && theirStrain != null && abs(theirStrain - myStrain) >= STRAIN_MIN_GAP) {
-            out += FriendsComparisonLine.StrainLead(if (theirStrain > myStrain) FriendsSide.FRIEND else FriendsSide.ME)
-        }
-        val mySleep = me?.sleepScore
-        val theirSleep = friend?.sleepScore
-        if (out.size < 2 && mySleep != null && theirSleep != null && abs(theirSleep - mySleep) >= SLEEP_MIN_GAP) {
-            out += FriendsComparisonLine.SleepLead(
-                if (theirSleep > mySleep) FriendsSide.FRIEND else FriendsSide.ME, abs(theirSleep - mySleep),
-            )
-        }
-        return if (out.isEmpty()) listOf(FriendsComparisonLine.NothingShared) else out.take(2)
-    }
-}
 
 // MARK: Sleep against its need
 

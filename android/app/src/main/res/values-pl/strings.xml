@@ -2532,11 +2532,7 @@
         <item quantity="many">%1$d treningów</item>
         <item quantity="other">%1$d treningu</item>
     </plurals>
-    <string name="friends_cmp_recovery_level">Wasza Energia jest na podobnym poziomie.</string>
-    <string name="friends_cmp_strain_friend">%1$s ma większy Wysiłek.</string>
-    <string name="friends_cmp_strain_me">Masz większy Wysiłek.</string>
-    <string name="friends_cmp_nothing">Nie ma czego porównywać: tego dnia brak wyniku was obojga.</string>
-    <string name="friends_you_not_sharing_scores">Nie udostępniasz swoich wyników, więc nie ma czego porównywać.</string>
+    <string name="friends_you_not_sharing_scores">Nie udostępniasz swoich wyników.</string>
     <string name="friends_profile_title">Moje udostępnianie</string>
     <string name="nav_friends">Znajomi</string>
     <string name="friends_you">Ty</string>
@@ -2571,11 +2567,6 @@
     <string name="friends_open_page">Otwórz stronę: %1$s</string>
     <string name="friends_not_sharing_scores">%1$s nie udostępnia Energii, Wysiłku ani Odpoczynku.</string>
     <string name="friends_no_data_today">Brak danych</string>
-    <string name="friends_duel_spoken">%1$s. %2$s: %3$s. %4$s: %5$s.</string>
-    <string name="friends_cmp_recovery_friend">%1$s prowadzi w Energii: +%2$d.</string>
-    <string name="friends_cmp_recovery_me">Prowadzisz w Energii: +%1$d.</string>
-    <string name="friends_cmp_sleep_friend">%1$s prowadzi w Odpoczynku: +%2$d.</string>
-    <string name="friends_cmp_sleep_me">Prowadzisz w Odpoczynku: +%1$d.</string>
     <string name="friends_not_sharing_hr">%1$s nie udostępnia tętna.</string>
     <string name="friends_hr_resting">Tętno spoczynkowe %1$d bpm</string>
     <string name="friends_you_not_sharing_sleep">Nie udostępniasz snu.</string>

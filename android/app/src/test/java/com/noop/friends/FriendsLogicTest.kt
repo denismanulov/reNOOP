@@ -1,17 +1,11 @@
 package com.noop.friends
 
 import com.noop.ui.friends.FriendsAgo
-import com.noop.ui.friends.FriendsComparison
-import com.noop.ui.friends.FriendsComparisonLine
-import com.noop.ui.friends.FriendsSide
 import com.noop.ui.friends.FriendsSleepGoal
 import com.noop.ui.friends.friendsInitial
-import com.noop.ui.friends.friendsSleepLevel
 import com.noop.ui.friends.friendsStrainLevel
-import com.noop.ui.sleep.SleepScoreWord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -68,79 +62,6 @@ class FriendsLogicTest {
         assertEquals(server, FriendsClock.serverNow(server, device, device - 500))
     }
 
-    // MARK: The comparison sentence
-
-    @Test
-    fun theMockupsDayReadsAsTheMockupSays() {
-        // You 67 / 59 strain / 74 sleep; the friend 81 / 39 / 88.
-        val lines = FriendsComparison.lines(
-            day(recovery = 67, strain = 59.0, sleepScore = 74),
-            day(recovery = 81, strain = 38.6, sleepScore = 88),
-        )
-        assertEquals(
-            listOf(FriendsComparisonLine.RecoveryLead(FriendsSide.FRIEND, 14), FriendsComparisonLine.StrainLead(FriendsSide.ME)),
-            lines,
-        )
-    }
-
-    @Test
-    fun recoveryWithinTwoPointsIsLevelAndBeyondItNamesTheLeader() {
-        fun first(mine: Int, theirs: Int) = FriendsComparison.lines(day(recovery = mine), day(recovery = theirs)).first()
-        assertEquals(FriendsComparisonLine.RecoveryLevel, first(70, 70))
-        assertEquals(FriendsComparisonLine.RecoveryLevel, first(70, 72))
-        assertEquals(FriendsComparisonLine.RecoveryLevel, first(72, 70))
-        assertEquals(FriendsComparisonLine.RecoveryLead(FriendsSide.FRIEND, 3), first(70, 73))
-        assertEquals(FriendsComparisonLine.RecoveryLead(FriendsSide.ME, 30), first(90, 60))
-    }
-
-    @Test
-    fun strainNeedsAClearGapAndSleepFillsTheSecondLineWhenStrainIsClose() {
-        val close = FriendsComparison.lines(
-            day(recovery = 60, strain = 40.0, sleepScore = 70),
-            day(recovery = 80, strain = 44.9, sleepScore = 82),
-        )
-        assertEquals(
-            listOf(FriendsComparisonLine.RecoveryLead(FriendsSide.FRIEND, 20), FriendsComparisonLine.SleepLead(FriendsSide.FRIEND, 12)),
-            close,
-        )
-        val clear = FriendsComparison.lines(day(recovery = 60, strain = 40.0), day(recovery = 80, strain = 45.0))
-        assertEquals(FriendsComparisonLine.StrainLead(FriendsSide.FRIEND), clear[1])
-    }
-
-    @Test
-    fun atMostTwoLinesAndRecoveryFirst() {
-        val lines = FriendsComparison.lines(
-            day(recovery = 50, strain = 10.0, sleepScore = 50),
-            day(recovery = 90, strain = 90.0, sleepScore = 90),
-        )
-        assertEquals(2, lines.size)
-        assertTrue(lines[0] is FriendsComparisonLine.RecoveryLead)
-        assertTrue(lines[1] is FriendsComparisonLine.StrainLead)
-    }
-
-    @Test
-    fun aScoreOnlyOneSideHasIsNeverCompared() {
-        val lines = FriendsComparison.lines(day(recovery = 67, strain = 59.0), day(sleepScore = 88))
-        assertEquals(listOf(FriendsComparisonLine.NothingShared), lines)
-        assertEquals(listOf(FriendsComparisonLine.NothingShared), FriendsComparison.lines(null, day(recovery = 80)))
-        assertEquals(listOf(FriendsComparisonLine.NothingShared), FriendsComparison.lines(day(recovery = 80), null))
-        assertEquals(listOf(FriendsComparisonLine.NothingShared), FriendsComparison.lines(null, null))
-    }
-
-    @Test
-    fun withoutRecoveryStrainAndSleepCarryTheComparison() {
-        val lines = FriendsComparison.lines(day(strain = 70.0, sleepScore = 90), day(strain = 20.0, sleepScore = 60))
-        assertEquals(
-            listOf(FriendsComparisonLine.StrainLead(FriendsSide.ME), FriendsComparisonLine.SleepLead(FriendsSide.ME, 30)),
-            lines,
-        )
-        // Scores that are all too close to call still say something true: nothing to tell apart is not "nothing shared".
-        assertEquals(
-            listOf(FriendsComparisonLine.RecoveryLevel),
-            FriendsComparison.lines(day(recovery = 70, strain = 40.0, sleepScore = 80), day(recovery = 71, strain = 42.0, sleepScore = 81)),
-        )
-    }
-
     // MARK: Sleep against its need
 
     @Test
@@ -165,7 +86,7 @@ class FriendsLogicTest {
     // MARK: Levels and names
 
     @Test
-    fun strainAndSleepUseTheWordsOfTheirOwnTabs() {
+    fun strainUsesTheWordsOfTheWorkoutsTab() {
         // Strain: the Workouts tab's bands on 6, 10, 14 and 18 of 21, read off the stored 0-100 axis.
         assertEquals(0, friendsStrainLevel(0.0))
         assertEquals(0, friendsStrainLevel(28.0))
@@ -173,11 +94,6 @@ class FriendsLogicTest {
         assertEquals(2, friendsStrainLevel(59.0))
         assertEquals(3, friendsStrainLevel(71.0))
         assertEquals(4, friendsStrainLevel(90.0))
-        // Sleep: the Sleep tab's bands.
-        assertEquals(SleepScoreWord.POOR, friendsSleepLevel(49))
-        assertEquals(SleepScoreWord.FAIR, friendsSleepLevel(52))
-        assertEquals(SleepScoreWord.GOOD, friendsSleepLevel(74))
-        assertEquals(SleepScoreWord.OPTIMAL, friendsSleepLevel(88))
     }
 
     @Test

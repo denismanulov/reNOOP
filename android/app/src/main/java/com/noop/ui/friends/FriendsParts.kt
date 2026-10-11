@@ -51,7 +51,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noop.R
@@ -75,9 +74,7 @@ import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.NoticeCard
 import com.noop.ui.m3.ringFraction
 import com.noop.ui.metric.MetricDateLabels
-import com.noop.ui.metric.MetricHealthStyle
 import com.noop.ui.sleep.clockLabel
-import com.noop.ui.sleep.scoreWord
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -139,17 +136,6 @@ internal fun friendsDayText(dayKey: String, today: AppToday, weekdays: Boolean):
 
 // MARK: Scores in words
 
-/**
- * Recovery's word: the state word the Recovery metric page gives the same score (depleted, low, moderate,
- * primed, peak), written the way that page writes it in a sentence, so one score never carries two words.
- */
-@Composable
-internal fun recoveryLevelText(recovery: Int): String {
-    val locale = friendsLocale()
-    return stringResource(MetricHealthStyle.chargeStateRes(recovery.toDouble()))
-        .lowercase(locale).replaceFirstChar { it.titlecase(locale) }
-}
-
 /** The Strain word, by the Workouts tab's own five levels. */
 @Composable
 internal fun strainLevelText(strain: Double): String = stringResource(
@@ -161,9 +147,6 @@ internal fun strainLevelText(strain: Double): String = stringResource(
         else -> R.string.workouts_load_all_out
     },
 )
-
-@Composable
-internal fun sleepLevelText(score: Int): String = scoreWord(friendsSleepLevel(score))
 
 /** A stored 0–100 Strain on the reader's own scale ("12.4" of 21, "59.0" of 100), to one decimal and
  *  with the decimal mark of the app's language, as the Summary writes the wearer's own Strain. */
@@ -333,95 +316,6 @@ internal fun FriendAvatar(
             }
             Text(friendsInitial(name), style = style.copy(fontWeight = FontWeight.SemiBold), color = content, maxLines = 1)
         }
-    }
-}
-
-// MARK: The head-to-head bars
-
-/** One side of a duel: its figure, how full its bar is, and its level word. All null when there is no figure. */
-internal class DuelSide(val value: String?, val fraction: Float?, val level: String?)
-
-/**
- * One score for two people: the name of the score, then two thick bars that grow outward from the middle,
- * the reader's on the left and the friend's on the right, each with its figure at the outer end and its
- * level under it. The higher side's level is written on the score's hue. A side with no figure shows a
- * dash, an empty track and [missing] in place of a level.
- */
-@Composable
-internal fun ScoreDuel(
-    title: String,
-    icon: ImageVector,
-    tint: Color,
-    left: DuelSide,
-    right: DuelSide,
-    leftLeads: Boolean?,
-    missing: String,
-    description: String,
-    modifier: Modifier = Modifier,
-    centre: String? = null,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = description },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().clearAndSetSemantics {},
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(title, style = MaterialTheme.typography.titleSmall, color = tint)
-        }
-        Row(
-            Modifier.fillMaxWidth().clearAndSetSemantics {},
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            DuelFigure(left.value, TextAlign.Start)
-            // The left bar is the same indicator mirrored, so both grow away from the centre line.
-            ExpressiveBar(left.fraction ?: 0f, tint, Modifier.weight(1f).scale(scaleX = -1f, scaleY = 1f), height = 16.dp)
-            ExpressiveBar(right.fraction ?: 0f, tint, Modifier.weight(1f), height = 16.dp)
-            DuelFigure(right.value, TextAlign.End)
-        }
-        Row(
-            Modifier.fillMaxWidth().clearAndSetSemantics {},
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DuelLevel(left.level, missing, tint, strong = leftLeads == true)
-            Text(
-                centre.orEmpty(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                maxLines = 1,
-            )
-            DuelLevel(right.level, missing, tint, strong = leftLeads == false)
-        }
-    }
-}
-
-@Composable
-private fun DuelFigure(value: String?, align: TextAlign) {
-    Text(
-        value ?: stringResource(R.string.friends_no_value),
-        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
-        color = if (value != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = align,
-        maxLines = 1,
-        modifier = Modifier.widthIn(min = 52.dp),
-    )
-}
-
-@Composable
-private fun DuelLevel(level: String?, missing: String, tint: Color, strong: Boolean) {
-    if (level == null) {
-        Text(missing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-    } else if (strong) {
-        LevelBadge(level, fill = tint)
-    } else {
-        LevelBadge(level, fill = MaterialTheme.colorScheme.surfaceContainerHighest, ink = MaterialTheme.colorScheme.onSurface)
     }
 }
 

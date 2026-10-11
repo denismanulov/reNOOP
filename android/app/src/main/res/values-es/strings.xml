@@ -2530,11 +2530,7 @@
         <item quantity="one">%1$d entrenamiento</item>
         <item quantity="other">%1$d entrenamientos</item>
     </plurals>
-    <string name="friends_cmp_recovery_level">Vuestra Carga está casi igualada.</string>
-    <string name="friends_cmp_strain_friend">%1$s tiene más Esfuerzo.</string>
-    <string name="friends_cmp_strain_me">Tienes más Esfuerzo.</string>
-    <string name="friends_cmp_nothing">Nada que comparar: ese día no hay ninguna puntuación de ambos.</string>
-    <string name="friends_you_not_sharing_scores">No compartes tus puntuaciones, así que no hay nada tuyo que comparar.</string>
+    <string name="friends_you_not_sharing_scores">No compartes tus puntuaciones.</string>
     <string name="friends_profile_title">Mi uso compartido</string>
     <string name="nav_friends">Amigos</string>
     <string name="friends_you">Tú</string>
@@ -2569,11 +2565,6 @@
     <string name="friends_open_page">Abrir página: %1$s</string>
     <string name="friends_not_sharing_scores">%1$s no comparte Carga, Esfuerzo ni Descanso.</string>
     <string name="friends_no_data_today">Aún no hay datos</string>
-    <string name="friends_duel_spoken">%1$s. %2$s: %3$s. %4$s: %5$s.</string>
-    <string name="friends_cmp_recovery_friend">%1$s va por delante en Carga: +%2$d.</string>
-    <string name="friends_cmp_recovery_me">Vas por delante en Carga: +%1$d.</string>
-    <string name="friends_cmp_sleep_friend">%1$s va por delante en Descanso: +%2$d.</string>
-    <string name="friends_cmp_sleep_me">Vas por delante en Descanso: +%1$d.</string>
     <string name="friends_not_sharing_hr">%1$s no comparte la frecuencia cardiaca.</string>
     <string name="friends_hr_resting">Frecuencia cardiaca en reposo %1$d ppm</string>
     <string name="friends_you_not_sharing_sleep">No compartes tu sueño.</string>

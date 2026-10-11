@@ -1076,17 +1076,8 @@
     <string name="friends_empty_body">Lade einen Freund mit einem Code ein. Ihr seht gegenseitig eure Tage, sobald er ihn benutzt.</string>
     <string name="friends_open_page">Seite öffnen: %1$s</string>
     <string name="friends_not_sharing_scores">%1$s teilt Energie, Belastung und Erholung nicht.</string>
-    <string name="friends_you_not_sharing_scores">Du teilst deine Werte nicht, deshalb gibt es von dir nichts zu vergleichen.</string>
+    <string name="friends_you_not_sharing_scores">Du teilst deine Werte nicht.</string>
     <string name="friends_no_data_today">Noch keine Daten</string>
-    <string name="friends_duel_spoken">%1$s. %2$s: %3$s. %4$s: %5$s.</string>
-    <string name="friends_cmp_recovery_friend">%1$s liegt bei Energie vorn: +%2$d.</string>
-    <string name="friends_cmp_recovery_me">Du liegst bei Energie vorn: +%1$d.</string>
-    <string name="friends_cmp_recovery_level">Eure Energie ist etwa gleich.</string>
-    <string name="friends_cmp_strain_friend">%1$s hat mehr Belastung.</string>
-    <string name="friends_cmp_strain_me">Du hast mehr Belastung.</string>
-    <string name="friends_cmp_sleep_friend">%1$s liegt bei Erholung vorn: +%2$d.</string>
-    <string name="friends_cmp_sleep_me">Du liegst bei Erholung vorn: +%1$d.</string>
-    <string name="friends_cmp_nothing">Nichts zu vergleichen: Für diesen Tag gibt es keinen Wert von euch beiden.</string>
     <string name="friends_not_sharing_hr">%1$s teilt die Herzfrequenz nicht.</string>
     <string name="friends_hr_resting">Ruhepuls %1$d bpm</string>
     <string name="friends_you_not_sharing_sleep">Du teilst deinen Schlaf nicht.</string>
@@ -1128,7 +1119,6 @@
     <string name="friends_delete_confirm">Konto löschen</string>
     <string name="friends_no_value">–</string>
     <string name="friends_time_range">%1$s – %2$s</string>
-    <string name="friends_value_with_level">%1$s · %2$s</string>
     <string name="friends_workout_title">%1$s, %2$s</string>
     <plurals name="friends_add_open_with_requests">
         <item quantity="one">Freund hinzufügen, %1$d neue Anfrage</item>

@@ -2509,11 +2509,7 @@
     <plurals name="friends_workouts_count">
         <item quantity="other">%1$d 次锻炼</item>
     </plurals>
-    <string name="friends_cmp_recovery_level">你们的能量大致相当。</string>
-    <string name="friends_cmp_strain_friend">%1$s的消耗更高。</string>
-    <string name="friends_cmp_strain_me">你的消耗更高。</string>
-    <string name="friends_cmp_nothing">暂无可比较内容：这一天你们没有共同的评分。</string>
-    <string name="friends_you_not_sharing_scores">你未分享评分，因此没有可比较的内容。</string>
+    <string name="friends_you_not_sharing_scores">你未分享评分。</string>
     <string name="friends_profile_title">我的分享</string>
     <string name="nav_friends">好友</string>
     <string name="friends_you">你</string>
@@ -2548,11 +2544,6 @@
     <string name="friends_open_page">打开页面：%1$s</string>
     <string name="friends_not_sharing_scores">%1$s未分享能量、消耗和休息。</string>
     <string name="friends_no_data_today">暂无数据</string>
-    <string name="friends_duel_spoken">%1$s。%2$s：%3$s。%4$s：%5$s。</string>
-    <string name="friends_cmp_recovery_friend">%1$s的能量领先：+%2$d。</string>
-    <string name="friends_cmp_recovery_me">你的能量领先：+%1$d。</string>
-    <string name="friends_cmp_sleep_friend">%1$s的休息领先：+%2$d。</string>
-    <string name="friends_cmp_sleep_me">你的休息领先：+%1$d。</string>
     <string name="friends_not_sharing_hr">%1$s未分享心率。</string>
     <string name="friends_hr_resting">静息心率 %1$d bpm</string>
     <string name="friends_you_not_sharing_sleep">你未分享睡眠。</string>

@@ -1091,17 +1091,8 @@
     <string name="friends_empty_body">Invite a friend with a code. You see each other\'s days as soon as they use it.</string>
     <string name="friends_open_page">Open page: %1$s</string>
     <string name="friends_not_sharing_scores">%1$s does not share Recovery, Strain and the Sleep score.</string>
-    <string name="friends_you_not_sharing_scores">You do not share your scores, so there is nothing of yours to compare.</string>
+    <string name="friends_you_not_sharing_scores">You do not share your scores.</string>
     <string name="friends_no_data_today">No data yet</string>
-    <string name="friends_duel_spoken">%1$s. %2$s: %3$s. %4$s: %5$s.</string>
-    <string name="friends_cmp_recovery_friend">%1$s is ahead on Recovery: +%2$d.</string>
-    <string name="friends_cmp_recovery_me">You are ahead on Recovery: +%1$d.</string>
-    <string name="friends_cmp_recovery_level">Your Recovery is about level.</string>
-    <string name="friends_cmp_strain_friend">%1$s has more Strain.</string>
-    <string name="friends_cmp_strain_me">You have more Strain.</string>
-    <string name="friends_cmp_sleep_friend">%1$s is ahead on Sleep: +%2$d.</string>
-    <string name="friends_cmp_sleep_me">You are ahead on Sleep: +%1$d.</string>
-    <string name="friends_cmp_nothing">Nothing to compare: there is no score for both of you on this day.</string>
     <string name="friends_not_sharing_hr">%1$s does not share heart rate.</string>
     <string name="friends_hr_resting">Resting heart rate %1$d bpm</string>
     <string name="friends_you_not_sharing_sleep">You do not share sleep.</string>
@@ -1143,7 +1134,6 @@
     <string name="friends_delete_confirm">Delete account</string>
     <string name="friends_no_value" translatable="false">–</string>
     <string name="friends_time_range" translatable="false">%1$s – %2$s</string>
-    <string name="friends_value_with_level" translatable="false">%1$s · %2$s</string>
     <string name="friends_workout_title" translatable="false">%1$s, %2$s</string>
     <plurals name="friends_add_open_with_requests">
         <item quantity="one">Add a friend, %1$d new request</item>
