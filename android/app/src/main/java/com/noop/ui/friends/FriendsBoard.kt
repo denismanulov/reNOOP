@@ -44,7 +44,10 @@ internal enum class FriendsMetric {
     val hasDetail: Boolean get() = this != RECOVERY
 }
 
-/** The list's order. Each order puts one figure on the cards; by name it is Recovery, the first ring. */
+/**
+ * The list's order (`FriendsSort` in the Swift app; [wire] is its raw value there, and what both apps keep
+ * the choice as). Each order puts one figure on the cards; by name it is Recovery, the first ring.
+ */
 internal enum class FriendsOrder(val wire: String) {
     NAME("name"), RECOVERY("recovery"), STRAIN("strain"), SLEEP("sleep"), WORKOUTS("workouts");
 
