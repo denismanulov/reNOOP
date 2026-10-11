@@ -15,6 +15,7 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             "profile.stepsCalibrationConfidence", "profile.stepsCalibrationManual",
             "profile.stepsManualCoefficient", "profile.stepsHasBankedMotion",
             IntelligenceEngine.effortRescoreFlagKey, IntelligenceEngine.sleepWearRescoreFlagKey,
+            IntelligenceEngine.sleepStageModelRestagedKey,
             "noop.analyzeWatermark", "analyzeRecent.stepsMotionCache.v1",
             "noop.hrvBaselineEpoch", "noop.recoveryBaselineEpoch", UnitPrefs.hrvWindowKey,
             RescoreBackgroundScheduler.owedKey, RescoreBackgroundScheduler.owedTokenKey,

@@ -1356,6 +1356,7 @@ public enum SleepStager {
             wristOff: StreamFingerprint.of(wristOff, ts: { $0.start }, quant: { $0.end }),
             band: StreamFingerprint.of(bandSleepState, ts: { $0.ts }, quant: { $0.state }),
             v2: useSleepStagerV2,
+            learned: SleepStageLearned.version,
             sleepHRBaseline: sleepHRBaseline)
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
@@ -1371,6 +1372,9 @@ public enum SleepStager {
         let tz: Int
         let wristOff: StreamFingerprint; let band: StreamFingerprint
         let v2: Bool
+        /// The learned stage model in use, empty when none: it stages in the recipe's place wherever it
+        /// can (`SleepStageLearned`), so a night cached under one model is not another's.
+        let learned: String
         let sleepHRBaseline: Double?
     }
     /// ≈ the number of distinct days in a scoring window; FIFO-evicted, holds only small session arrays.
@@ -1576,11 +1580,15 @@ public enum SleepStager {
                     detail: "daytime=true restingHR=\(resting ?? -1) baseline=\(baseline.map { Int($0) } ?? -1) nightTail=false"))
                 continue
             }
-            let rawStages = useSleepStagerV2
+            // The learned model stages the window when one is installed and the night's motion and heart
+            // rate are dense enough for it; otherwise (and in every pure-function caller and test, which
+            // install none) the recipe below does, exactly as before.
+            let rawStages = SleepStageLearned.stageSession(start: p.start, end: p.end, grav: grav, hr: hrS, rr: rrS)
+                ?? (useSleepStagerV2
                 ? SleepStagerV2.stageSession(start: p.start, end: p.end, grav: grav,
                                              hr: hrS, rr: rrS, resp: respS)
                 : stageSession(start: p.start, end: p.end, grav: grav,
-                               hr: hrS, rr: rrS, resp: respS)
+                               hr: hrS, rr: rrS, resp: respS))
             // Band sleep_state WAKE-veto: recover INTERIOR false-wake epochs the strap's OWN band
             // (`bandSleepState`) scored "asleep". No-op when the band is absent (WHOOP 4.0) or the flag is
             // off; stager-agnostic (corrects whichever hypnogram V1/V2 produced). Efficiency below is then

@@ -1738,10 +1738,14 @@ final class Repository: ObservableObject {
         // which engine runs over the already-detected window — detection is identical either way.
         // (V7 Pillar 3b)
         let useV2 = PuffinExperiment.experimentalSleepV2Enabled
+        // The learned stage model stages the window when the night's motion and heart rate are dense
+        // enough for it (`SleepStageLearned`); the switch above only chooses the recipe it falls back to.
+        SleepStageModelStore.ensureInstalled()
         let segs = await Task.detached(priority: .utility) {
-            let staged = useV2
+            let staged = SleepStageLearned.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr)
+                ?? (useV2
                 ? SleepStagerV2.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp)
-                : SleepStager.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp)
+                : SleepStager.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp))
             // #364 follow-up: motion-aware wake refinement post-pass, same toggle-shaped no-op when off
             // as every other Experimental switch here.
             return WakeMotionRefinement.apply(staged, grav: grav, steps: steps, enabled: useMotionAwareWake)
@@ -1807,7 +1811,8 @@ final class Repository: ObservableObject {
         guard let hr = try? await store.hrFingerprint(deviceId: deviceId, from: lo, to: hi),
               let streams = try? await store.dayStreamFingerprint(deviceId: deviceId, from: lo, to: hi)
         else { return nil }
-        return "\(start)|\(end)|v2=\(PuffinExperiment.experimentalSleepV2Enabled)"
+        SleepStageModelStore.ensureInstalled()
+        return "\(start)|\(end)|v2=\(PuffinExperiment.experimentalSleepV2Enabled)|model=\(SleepStageLearned.version)"
             + "|mw=\(PuffinExperiment.motionAwareWakeEnabled)|h\(hr.count):\(hr.maxTs)|\(streams)|"
     }
 

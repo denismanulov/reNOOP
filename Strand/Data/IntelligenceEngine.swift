@@ -682,6 +682,39 @@ final class IntelligenceEngine: ObservableObject {
 
     func runSleepWearRescoreIfNeeded(historyDays: Int = 4000) async {
         await runHistoryRepairIfNeeded(historyDays: historyDays)
+        await runSleepStageModelRestageIfNeeded(historyDays: historyDays)
+    }
+
+    /// The version of the learned stage model the whole history was last staged with.
+    static let sleepStageModelRestagedKey = "intelligence.sleepStageModel.restagedVersion"
+    private var sleepStageModelRestageRunning = false
+
+    /// Whether the stored history still carries hypnograms from before this build's stage model.
+    nonisolated static func sleepStageRestageIsPending(installed: String, restaged: String?) -> Bool {
+        !installed.isEmpty && installed != restaged
+    }
+
+    /// Stage the nights older than the normal 21-day window with the learned stage model, once per
+    /// model. The usual pass only revisits recent days, so without this a history would read as two
+    /// stagers joined at the day the model arrived: REM near 30 % of the night before it and near 20 %
+    /// after. Reuses the full-history scoring path, so edited and dismissed sleep stay protected and the
+    /// daily figures that depend on the stages are rewritten with them; a day with no raw streams is
+    /// left as it is. The version is recorded only once the pass has persisted, so an interrupted one
+    /// runs again.
+    func runSleepStageModelRestageIfNeeded(historyDays: Int = 4000) async {
+        SleepStageModelStore.ensureInstalled()
+        let version = SleepStageLearned.version
+        guard Self.sleepStageRestageIsPending(
+                  installed: version,
+                  restaged: UserDefaults.standard.string(forKey: Self.sleepStageModelRestagedKey)),
+              !sleepStageModelRestageRunning, !computing, !Task.isCancelled,
+              !RescoreBackgroundScheduler.isBackgrounded else { return }
+        sleepStageModelRestageRunning = true
+        defer { sleepStageModelRestageRunning = false }
+        await analyzeRecent(maxDays: historyDays, triggerLabel: "sleep-stage-model-restage",
+                            preserveUnscoredHistory: true) {
+            UserDefaults.standard.set(version, forKey: Self.sleepStageModelRestagedKey)
+        }
     }
 
     private func runHistoryRepairIfNeeded(historyDays: Int) async {
@@ -778,6 +811,7 @@ final class IntelligenceEngine: ObservableObject {
             return
         }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
+        SleepStageModelStore.ensureInstalled()
         guard let hrvCfg = Baselines.metricCfg["hrv"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
               let respCfg = Baselines.metricCfg["resp"],

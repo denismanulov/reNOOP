@@ -657,10 +657,15 @@ public enum AnalyticsEngine {
             // #319: the motion-coverage + staging context behind the Rest number, so a high score on a poor
             // night can be explained from an export (WHOOP 4.0 banks motion coarsely → sparse=true → most
             // epochs default to sleep → over-counted duration → high Rest). `stager` says whether V1/V2 ran.
+            // With a learned stage model installed, `stager` names only the recipe it falls back to: the
+            // model stages the night wherever motion and heart rate are dense, and which of the two staged
+            // this one is not recorded here. Said beside the line so it does not claim the recipe ran.
+            let learned = SleepStageLearned.version
             traceSink(AnalyticsEngine.sleepMotionLine(
                 day: day, grav: gravity.count, hr: hr.count,
                 sparse: gravitySparse,
-                useSleepStagerV2: useSleepStagerV2, family: skinTempFamily))
+                useSleepStagerV2: useSleepStagerV2, family: skinTempFamily)
+                + (learned.isEmpty ? "" : " learned=\(learned) (stages dense nights; stager= is its fallback)"))
             // CAPTURE-C (#799): append the sleep PROVENANCE so an imported row winning the merge is visible
             // (not silently swapped for the measured night). hoursAsleep = the scored night's tst in minutes;
             // sourceRowId = the main-night's start ts for the measured path (stable per night), else the
@@ -1174,7 +1179,17 @@ public enum AnalyticsEngine {
         /// Default personal sleep need (hours) before the caller refines it.
         public static let defaultNeedHours: Double = 8.0
         /// "Full marks" restorative (deep+REM) share of asleep time.
-        public static let restorativeTarget: Double = 0.50
+        ///
+        /// Was 0.50, a figure the recipe stager met because it over-calls REM: against human-scored PSG
+        /// (`Tools/SleepML`, 122 people) `SleepStagerV2` puts REM 5.4 points of the night too high, and
+        /// on a wearer's 60 strap nights deep+REM came to 53 % of sleep. In the PSG itself deep+REM is
+        /// about 41 % of sleep, and the learned stage model (`SleepStageLearned`) reproduces that: 40 % on
+        /// the same 60 nights, where a 0.50 target would have given full marks to none of them. 0.38
+        /// keeps the term where it stood: 42 of those 60 nights at full marks and a mean of 19.3 of the
+        /// term's 20 points under the model, against 43 nights and 19.4 points under the recipe at 0.50.
+        /// The Kotlin twin (`RestScorer.restorativeTargetShare`) is still 0.50: Android has no learned
+        /// model, and the target moves there with it.
+        public static let restorativeTarget: Double = 0.38
         /// Deep-sleep share of asleep time that earns FULL restorative credit (~13% is the healthy
         /// floor for adults; below it the restorative term is scaled down toward `deepFloorFactor`).
         public static let deepShareTarget: Double = 0.13

@@ -401,7 +401,9 @@ final class AnalyticsEngineTests: XCTestCase {
             tstSeconds: 4 * 3600, inBedSeconds: 5 * 3600, efficiency: 0.8,
             restorativeSeconds: 1 * 3600, needHours: 8.0, consistency: 0.5)
         XCTAssertEqual(withNil, withHalf, accuracy: 1e-9)
-        XCTAssertEqual(withNil, 56.0, accuracy: 1e-9)
+        // duration 0.5 × 0.50, efficiency 0.8 × 0.20, restorative (a quarter of sleep ÷ the 0.38 target) × 0.20,
+        // consistency 0.5 × 0.10.
+        XCTAssertEqual(withNil, 100 * (0.25 + 0.16 + 0.20 * (0.25 / 0.38) + 0.05), accuracy: 1e-9)
     }
 
     func testAnalyzeDayPopulatesRestAndConfidence() {

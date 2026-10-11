@@ -27,6 +27,9 @@ settings:
     # String Catalog on build (the English (US) base entries).
     SWIFT_EMIT_LOC_STRINGS: YES
     SWIFT_STRICT_CONCURRENCY: minimal
+    # The stage models (Strand/SleepModel/*.mlmodel) are loaded by name through `MLModel`; the typed
+    # class Xcode would generate for each has one property per input column and is never used.
+    COREML_CODEGEN_LANGUAGE: None
     CODE_SIGN_STYLE: Automatic
     # Single source of truth for the App Group id shared by the iOS app + its widget / Live Activity
     # extension. Referenced as $(APP_GROUP_ID) by both targets' entitlements and Info.plist, and read
