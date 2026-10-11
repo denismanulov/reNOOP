@@ -36,5 +36,19 @@ re-implements those facts as original code — it does not copy their source.
   b-nnett/goose — https://github.com/b-nnett/goose
     WHOOP 5.0 / MG ("puffin") BLE protocol facts.
 
+Sleep stage model training data
+-------------------------------
+
+The learned sleep stage model (Strand/SleepModel/*.mlmodel on Apple platforms, the
+same trees as text in android/app/src/main/assets/sleepstage/*.trees) was fit to two
+open datasets of human-scored sleep studies. The weights are derived from them and
+carry both attributions in their own metadata; no recording is redistributed.
+
+  Wearanize+ OA — Radboud University
+    License: CC BY 4.0
+
+  sleep-accel — Walch et al., PhysioNet
+    License: ODC-By 1.0
+
 See ATTRIBUTION.md for fuller credit and DISCLAIMER.md for the interoperability and
 fair-use rationale.
