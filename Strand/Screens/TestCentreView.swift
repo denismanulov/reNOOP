@@ -58,6 +58,9 @@ struct TestCentreView: View {
     // #polar-debug: the Polar strap-identity diagnostic toggle. Only rendered when a Polar strap is paired.
     @AppStorage(AppModel.polarDebugLoggingKey) private var polarDebugLogging = false
 
+    /// Research, default off: keep every history frame undecoded beside its decoded rows (`rawBatch`).
+    @AppStorage(RawCaptureSetting.enabledKey) private var rawCaptureEnabled = false
+
     /// The model NOOP auto-detects for a PAIRED Polar strap, from its stored advertised name (no live
     /// connection needed) — e.g. "Polar H10 identified — PMD ecg,acc; HRV via standard R-R". `nil` when no
     /// Polar strap is paired, which hides the whole toggle so a non-Polar user never sees Polar debug.
@@ -298,6 +301,14 @@ struct TestCentreView: View {
             }
         } header: {
             Text("Diagnostics")
+        }
+
+        // The decoder maps only part of a history record. With this on, the unmapped bytes of every
+        // record survive too, so a field found later can be read back from the days already synced.
+        Section {
+            Toggle("Keep raw strap records", isOn: $rawCaptureEnabled)
+        } footer: {
+            Text("For research. Saves each record the strap sends as raw bytes beside the decoded data, about 10 MB a day; the oldest are dropped past 50 MB. Takes effect the next time reNOOP is started.")
         }
 
         // #1853: skin-temp absolute backfill (on-demand, diagnostic-first). Fills `skinTempC` for nights

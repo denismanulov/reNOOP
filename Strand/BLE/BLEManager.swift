@@ -946,6 +946,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Bumped at every offload end, so of several offloads ending back to back only the last one's
     /// delayed step-calibration check runs.
     private var stepCalibrationCheck = 0
+    /// The raw-capture research switch as it stood when the store opened (`RawCaptureSetting`).
+    private var rawCaptureEnabled = false
     /// Ordered queue of frames awaiting drain through the serial Backfiller task.
     private var backfillFrameQueue: [[UInt8]] = []
     /// True while the drain task is running (prevents a second drain task from launching).
@@ -1500,7 +1502,12 @@ public final class BLEManager: NSObject, ObservableObject {
         try? await store.upsertDevice(id: deviceId, mac: nil, name: registeredName)
         // Research toggle — OFF by default. When disabled the app is decoded-only and never
         // persists raw frames. Flip "enableRawCapture" in UserDefaults to capture raw again.
-        let enableRawCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
+        let enableRawCapture = UserDefaults.standard.bool(forKey: RawCaptureSetting.enabledKey)
+        rawCaptureEnabled = enableRawCapture
+        if enableRawCapture {
+            log("Raw capture: on, every history frame is kept undecoded beside its decoded rows"
+                + " (oldest dropped past \(PrunePolicy.maxUnsyncedBytes / (1024 * 1024)) MB)")
+        }
         collector = Collector(store: store, deviceId: deviceId,
                               enableRawCapture: enableRawCapture,
                               log: { [weak self] line in self?.log(line) },
@@ -2753,6 +2760,15 @@ public final class BLEManager: NSObject, ObservableObject {
         // Inactivity reminder (#419): read-only hook on the natural offload completion (no cadence
         // change). Only on a true HISTORY_COMPLETE — a timeout/disconnect didn't bring a fresh window.
         if reason == "HISTORY_COMPLETE" { maybeBuzzInactivity() }
+        // Raw capture has no other bound: nothing else applies the retention policy, and a capture left
+        // on adds about 10 MB a day. Once per finished offload keeps it at the cap for one small query.
+        if rawCaptureEnabled, reason == "HISTORY_COMPLETE" {
+            Task { @MainActor [weak self] in
+                guard let self, let pruned = await self.collector?.prune(), pruned > 0 else { return }
+                self.log("Raw capture: dropped \(pruned) oldest batch(es) past the"
+                    + " \(PrunePolicy.maxUnsyncedBytes / (1024 * 1024)) MB cap")
+            }
+        }
         // Step auto-calibration reads the history this offload just banked. Offloads often end in
         // quick succession, so it waits a few seconds and runs only if none is in flight by then.
         if reason == "HISTORY_COMPLETE", selectedModel.deviceFamily == .whoop4 {
