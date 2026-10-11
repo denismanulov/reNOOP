@@ -14,51 +14,51 @@ import kotlin.math.max
 
 // MARK: - Friends: pictures
 //
-// A picture is fetched with the session token (the server shows one only to its owner, friends and across
-// a pending request) and kept in the app's cache directory under the nickname and the picture's revision.
-// The revision changes whenever the owner changes the picture, so a cached file is never stale and a
-// picture is fetched once per revision. Signing out deletes the lot.
+// A picture is fetched with a signed request (the server shows one only to its owner and their friends)
+// and kept in the app's cache directory under the account id and the picture's revision. The revision
+// changes whenever the owner changes the picture, so a cached file is never stale and a picture is
+// fetched once per revision. Friends going off deletes the lot.
 
 object FriendsAvatars {
     private const val DIR = "friends_avatars"
 
-    /** Decoded pictures in memory, by "nick:rev". A few dozen small bitmaps at most. */
+    /** Decoded pictures in memory, by "id:rev". A few dozen small bitmaps at most. */
     private val memory = LruCache<String, ImageBitmap>(64)
 
     private fun dir(context: Context) = File(context.applicationContext.cacheDir, DIR)
 
     /** The picture already decoded this session, without touching the disk. */
-    fun cached(nick: String, rev: Int): ImageBitmap? = if (rev <= 0) null else memory.get("$nick:$rev")
+    fun cached(id: String, rev: Int): ImageBitmap? = if (rev <= 0) null else memory.get("$id:$rev")
 
     /**
-     * The picture of [nick] at revision [rev]: from memory, else the disk cache, else the server. Null
-     * when the account has none ([rev] is 0), signed out, offline, or the bytes are not an image.
+     * The picture of the account [id] at revision [rev]: from memory, else the disk cache, else the
+     * server. Null when the account has none ([rev] is 0), Friends is off, offline, or the bytes are not
+     * an image. An id that has not the shape of one names no file and no request.
      */
-    suspend fun load(context: Context, nick: String, rev: Int): ImageBitmap? {
-        if (rev <= 0 || FriendsNick.clean(nick) != nick) return null
-        cached(nick, rev)?.let { return it }
+    suspend fun load(context: Context, id: String, rev: Int): ImageBitmap? {
+        if (rev <= 0 || !FriendsId.isValid(id)) return null
+        cached(id, rev)?.let { return it }
         return withContext(Dispatchers.IO) {
             val store = FriendsStore.get(context)
-            if (!store.isSignedIn) return@withContext null
+            if (!store.isOn) return@withContext null
             val folder = dir(context)
-            val file = File(folder, "${nick}_$rev")
+            val file = File(folder, "${id}_$rev")
             val onDisk = if (file.isFile) runCatching { file.readBytes() }.getOrNull() else null
             val bytes = onDisk ?: run {
-                val api = FriendsApi.create(store.serverUrl, store.token()) ?: return@withContext null
-                val fetched = api.avatar(nick).valueOrNull ?: return@withContext null
+                val fetched = store.avatarBytes(id) ?: return@withContext null
                 runCatching {
                     folder.mkdirs()
                     // One picture per person: an older revision is of no further use.
-                    folder.listFiles { f -> f.name.startsWith("${nick}_") }?.forEach { it.delete() }
+                    folder.listFiles { f -> f.name.startsWith("${id}_") }?.forEach { it.delete() }
                     file.writeBytes(fetched)
                 }
                 fetched
             }
-            decode(bytes)?.also { memory.put("$nick:$rev", it) }
+            decode(bytes)?.also { memory.put("$id:$rev", it) }
         }
     }
 
-    /** Deletes every cached picture (sign-out, account deletion). */
+    /** Deletes every cached picture (Friends going off on this phone). */
     fun clear(context: Context) {
         memory.evictAll()
         runCatching { dir(context).deleteRecursively() }

@@ -294,18 +294,18 @@ class FriendsDayPayloadTest {
     @Test
     fun aDayIsUploadedTheFirstTimeAndSkippedWhileItsTextIsTheSame() {
         val json = FriendsDayPayload.toJson(build(full()))
-        assertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint = null, json = json))
+        assertTrue(FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint = null, json = json, isEmpty = false, mayHaveSent = false))
         val accepted = FriendsDayPayload.fingerprint(json)
-        assertFalse(FriendsUploadPolicy.shouldUpload(accepted, json))
+        assertFalse(FriendsUploadPolicy.shouldUpload(accepted, json, isEmpty = false, mayHaveSent = true))
         // Built again from the same figures, the text is byte for byte the same.
-        assertFalse(FriendsUploadPolicy.shouldUpload(accepted, FriendsDayPayload.toJson(build(full()))))
+        assertFalse(FriendsUploadPolicy.shouldUpload(accepted, FriendsDayPayload.toJson(build(full())), isEmpty = false, mayHaveSent = true))
     }
 
     @Test
     fun anyChangedFigureOrSwitchSendsTheDayAgain() {
         val accepted = FriendsDayPayload.fingerprint(FriendsDayPayload.toJson(build(full())))
         fun changed(inputs: FriendsDayInputs, share: FriendShare = all) =
-            FriendsUploadPolicy.shouldUpload(accepted, FriendsDayPayload.toJson(build(inputs, share)))
+            FriendsUploadPolicy.shouldUpload(accepted, FriendsDayPayload.toJson(build(inputs, share)), isEmpty = false, mayHaveSent = true)
         assertTrue(changed(full().copy(recovery = 82.0)))
         assertTrue(changed(full().copy(hrSamples = full().hrSamples + FriendHrPoint(now - 5, 61))))
         assertTrue(changed(full(), all.copy(hr = false)))
@@ -317,5 +317,55 @@ class FriendsDayPayloadTest {
     fun theFingerprintIsSha256Hex() {
         assertEquals("44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", FriendsDayPayload.fingerprint("{}"))
         assertNotEquals(FriendsDayPayload.fingerprint("{}"), FriendsDayPayload.fingerprint("{ }"))
+    }
+
+    /**
+     * A phone does not introduce a day with nothing to show: another phone of the account may have
+     * uploaded that day, and an upload replaces it. A day this phone did send and that has since become
+     * empty still goes up, once.
+     */
+    @Test
+    fun anEmptyDayIsNotIntroducedButReplacesOneThisPhoneSent() {
+        val empty = FriendsDayPayload.toJson(FriendsDayBody())
+        assertEquals("{}", empty)
+        assertTrue(FriendsDayBody().isEmpty)
+        assertTrue("a day whose workouts were read and are none has nothing to show", FriendsDayBody(workouts = emptyList()).isEmpty)
+        assertFalse(FriendsDayBody(recovery = 81).isEmpty)
+        assertFalse(build(full()).isEmpty)
+        assertFalse(
+            "nothing to show and nothing sent before",
+            FriendsUploadPolicy.shouldUpload(lastAcceptedFingerprint = null, json = empty, isEmpty = true, mayHaveSent = false),
+        )
+        val sent = FriendsDayPayload.fingerprint(FriendsDayPayload.toJson(FriendsDayBody(recovery = 81)))
+        assertTrue("what this phone sent is replaced by nothing", FriendsUploadPolicy.shouldUpload(sent, empty, isEmpty = true, mayHaveSent = true))
+        assertFalse("and only once", FriendsUploadPolicy.shouldUpload(FriendsDayPayload.fingerprint(empty), empty, isEmpty = true, mayHaveSent = true))
+    }
+
+    /**
+     * The whole decision. No accepted text on record is not the same as never sent: an upload whose
+     * answer was lost reached the server, and the records of accepted texts are dropped whenever the
+     * sharing switches change. So an empty day is held back only when this phone never put that day.
+     */
+    @Test
+    fun theUploadDecisionByWhatIsOnRecordForTheDay() {
+        val empty = FriendsDayPayload.toJson(FriendsDayBody())
+        val full = FriendsDayPayload.toJson(FriendsDayBody(recovery = 81))
+        val other = FriendsDayPayload.fingerprint(FriendsDayPayload.toJson(FriendsDayBody(recovery = 82)))
+        class Case(val accepted: String?, val json: String, val isEmpty: Boolean, val mayHaveSent: Boolean, val goes: Boolean, val why: String)
+        val cases = listOf(
+            Case(null, empty, true, false, false, "empty, never put: another phone's day is left alone"),
+            Case(null, empty, true, true, true, "empty, put before with no accepted text on record: it may be on the server"),
+            Case(null, full, false, false, true, "something to show, never put"),
+            Case(null, full, false, true, true, "something to show, put before"),
+            Case(FriendsDayPayload.fingerprint(empty), empty, true, true, false, "the empty day was accepted already"),
+            Case(FriendsDayPayload.fingerprint(empty), empty, true, false, false, "the same without the record"),
+            Case(FriendsDayPayload.fingerprint(full), full, false, true, false, "unchanged"),
+            Case(FriendsDayPayload.fingerprint(full), empty, true, true, true, "became empty after it was accepted"),
+            Case(FriendsDayPayload.fingerprint(full), empty, true, false, true, "the same without the record"),
+            Case(other, full, false, true, true, "changed"),
+        )
+        for (case in cases) {
+            assertEquals(case.why, case.goes, FriendsUploadPolicy.shouldUpload(case.accepted, case.json, case.isEmpty, case.mayHaveSent))
+        }
     }
 }

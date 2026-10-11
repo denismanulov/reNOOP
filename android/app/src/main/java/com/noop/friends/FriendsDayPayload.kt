@@ -65,7 +65,12 @@ data class FriendsDayBody(
     val sleep: FriendSleep? = null,
     val workouts: List<FriendWorkout>? = null,
     val hr: FriendHr? = null,
-)
+) {
+    /** True when there is nothing to show a friend. */
+    val isEmpty: Boolean
+        get() = recovery == null && strain == null && sleepScore == null && sleep == null &&
+            workouts.isNullOrEmpty() && hr == null
+}
 
 object FriendsDayPayload {
     /** The longest heart-rate line the server stores for one day. */
@@ -279,8 +284,32 @@ object FriendsDayPayload {
             .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 }
 
-/** The one rule of the upload skip: a day goes up unless its text is the one the server last accepted for it. */
+/**
+ * The rules of the upload skip. A day goes up unless its text is the one the server last accepted for
+ * it; what the phone keeps to tell the two apart is the text's SHA-256, not the text. And a phone does
+ * not introduce a day with nothing to show: an upload replaces the day, and another phone of the account
+ * may have uploaded it. A day this phone may itself have sent is never held back for being empty, or the
+ * server would go on showing friends what the wearer has since removed. Swift twin: `FriendsUploadPolicy`.
+ */
 object FriendsUploadPolicy {
-    fun shouldUpload(lastAcceptedFingerprint: String?, json: String): Boolean =
-        lastAcceptedFingerprint == null || lastAcceptedFingerprint != FriendsDayPayload.fingerprint(json)
+    /**
+     * [isEmpty] is whether the day built has nothing to show a friend ([FriendsDayBody.isEmpty]). Such a
+     * day goes up only over one this phone sent before, which it then replaces. [mayHaveSent] is whether
+     * this phone ever sent the day at all: no accepted text on record does not say it did not, since an
+     * upload whose answer was lost left none, and a change of the sharing switches drops them.
+     */
+    fun shouldUpload(lastAcceptedFingerprint: String?, json: String, isEmpty: Boolean, mayHaveSent: Boolean): Boolean {
+        if (lastAcceptedFingerprint == null) return !isEmpty || mayHaveSent
+        return lastAcceptedFingerprint != FriendsDayPayload.fingerprint(json)
+    }
+}
+
+/**
+ * The server's clock, as a feed pins it: `serverTime` as the feed stamped it, plus the device seconds
+ * since the feed arrived. A device clock set back in between counts as no time. A phone whose own clock
+ * is wrong still reads the right age of what a friend uploaded.
+ */
+object FriendsClock {
+    fun serverNow(serverTime: Long, fetchedAtDevice: Long, nowDevice: Long): Long =
+        serverTime + (nowDevice - fetchedAtDevice).coerceAtLeast(0L)
 }
