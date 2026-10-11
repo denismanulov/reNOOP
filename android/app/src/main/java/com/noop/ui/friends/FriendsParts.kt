@@ -58,7 +58,10 @@ import androidx.compose.ui.unit.dp
 import com.noop.R
 import com.noop.friends.FriendHrPoint
 import com.noop.friends.FriendsAvatars
+import com.noop.friends.FriendsClaim
+import com.noop.friends.FriendsDevice
 import com.noop.friends.FriendsError
+import com.noop.friends.FriendsPlatform
 import com.noop.ui.ClockPrefs
 import com.noop.ui.EffortScale
 import com.noop.ui.UnitFormatter
@@ -187,25 +190,80 @@ internal fun friendsErrorText(error: FriendsError): String = stringResource(
     when (error) {
         FriendsError.OFFLINE -> R.string.friends_error_offline
         FriendsError.RATE_LIMITED -> R.string.friends_error_rate_limited
-        FriendsError.UNAUTHORIZED -> R.string.friends_error_session
-        FriendsError.BAD_CREDENTIALS -> R.string.friends_error_credentials
-        FriendsError.NICK_TAKEN -> R.string.friends_error_nick_taken
-        FriendsError.BAD_NICK -> R.string.friends_error_bad_nick
-        FriendsError.BAD_NAME -> R.string.friends_error_bad_name
-        FriendsError.BAD_PASSWORD -> R.string.friends_error_bad_password
-        FriendsError.BAD_INVITE -> R.string.friends_error_bad_invite
-        FriendsError.SERVER_FULL -> R.string.friends_error_server_full
-        FriendsError.NO_SUCH_USER -> R.string.friends_error_no_such_user
-        FriendsError.SELF_REQUEST -> R.string.friends_error_self_request
-        FriendsError.NO_REQUEST -> R.string.friends_error_no_request
+        FriendsError.REDIRECTED, FriendsError.BAD_RESPONSE -> R.string.friends_error_not_a_server
+        FriendsError.UNKNOWN_KEY, FriendsError.LEFT_ACCOUNT -> R.string.friends_error_left_account
+        FriendsError.CLOCK_SKEW -> R.string.friends_error_clock
+        FriendsError.PROBATION -> R.string.friends_error_probation
+        FriendsError.STRAP_BOUND -> R.string.friends_error_strap_bound
+        FriendsError.CLAIM_DECLINED -> R.string.friends_error_claim_declined
+        FriendsError.TOO_MANY_CLAIMS -> R.string.friends_error_too_many_claims
+        FriendsError.TOO_MANY_DEVICES -> R.string.friends_error_too_many_devices
+        FriendsError.LAST_DEVICE -> R.string.friends_error_last_device
+        FriendsError.NO_CLAIM, FriendsError.CLAIM_SETTLED -> R.string.friends_error_no_claim
+        FriendsError.NO_SUCH_INVITE -> R.string.friends_error_no_such_invite
+        FriendsError.OWN_INVITE -> R.string.friends_error_own_invite
+        FriendsError.TOO_MANY_INVITES -> R.string.friends_error_too_many_invites
         FriendsError.TOO_MANY_FRIENDS -> R.string.friends_error_too_many_friends
-        FriendsError.TOO_MANY_REQUESTS -> R.string.friends_error_too_many_requests
+        FriendsError.NO_SUCH_USER -> R.string.friends_error_no_such_user
+        FriendsError.BAD_NAME -> R.string.friends_error_bad_name
+        FriendsError.SERVER_FULL -> R.string.friends_error_server_full
         FriendsError.BAD_IMAGE, FriendsError.TOO_LARGE -> R.string.friends_error_bad_image
         FriendsError.SERVER_ERROR -> R.string.friends_error_server
-        FriendsError.REDIRECTED, FriendsError.BAD_RESPONSE -> R.string.friends_error_not_a_server
-        FriendsError.NOT_SIGNED_IN -> R.string.friends_error_bad_address
-        FriendsError.NO_AVATAR, FriendsError.REJECTED, FriendsError.UNKNOWN -> R.string.friends_error_unknown
+        FriendsError.NOT_ENROLLED -> R.string.friends_error_off
+        FriendsError.NOT_CONFIGURED -> R.string.friends_error_bad_address
+        FriendsError.KEY_NOT_KEPT -> R.string.friends_error_key_not_kept
+        FriendsError.KEY_NOT_READ -> R.string.friends_error_key_not_read
+        FriendsError.NO_NAME -> R.string.friends_error_no_name
+        FriendsError.NO_STRAP -> R.string.friends_error_no_strap
+        FriendsError.CLAIM_WAS_DECLINED -> R.string.friends_error_claim_was_declined
+        FriendsError.CLAIM_EXPIRED -> R.string.friends_error_claim_expired
+        FriendsError.NOT_A_CODE -> R.string.friends_error_not_a_code
+        FriendsError.STRAP_FREE, FriendsError.ALREADY_ENROLLED, FriendsError.NO_SUCH_DEVICE, FriendsError.NO_AVATAR,
+        FriendsError.REJECTED,
+        -> R.string.friends_error_refused
+        FriendsError.UNKNOWN -> R.string.friends_error_unknown
     },
+)
+
+// MARK: Requests in words
+
+/**
+ * What a phone is called by its platform. One the app does not know reads as a phone. The two product
+ * names are the same in every language, so they are not strings to translate.
+ */
+@Composable
+internal fun friendsDeviceText(platform: String?): String = when (platform) {
+    FriendsPlatform.IOS -> FriendsPlatform.IPHONE_NAME
+    FriendsPlatform.MAC -> FriendsPlatform.MAC_NAME
+    FriendsPlatform.CURRENT -> stringResource(R.string.friends_device_android)
+    else -> stringResource(R.string.friends_device_phone)
+}
+
+@Composable
+internal fun friendsClaimTitle(claim: FriendsClaim): String = stringResource(
+    if (claim.kind == FriendsClaim.Kind.JOIN) R.string.friends_request_join_title else R.string.friends_request_take_title,
+)
+
+/** A request to join carries the code both phones show; a request for the strap has none to compare. */
+@Composable
+internal fun friendsClaimDetail(claim: FriendsClaim): String =
+    if (claim.kind == FriendsClaim.Kind.JOIN) {
+        stringResource(R.string.friends_request_join_detail, friendsDeviceText(claim.platform), spacedCode(claim.code))
+    } else {
+        stringResource(R.string.friends_request_take_detail)
+    }
+
+/** "Android phone, joined 2 h ago. Keep it only if it is yours." Ages count from [serverNow], the server's clock. */
+@Composable
+internal fun friendsJoinedText(phone: FriendsDevice, serverNow: Long): String =
+    stringResource(R.string.friends_unconfirmed_detail, friendsDeviceText(phone.platform), agoText(FriendsAgo.of(phone.addedAt, serverNow) ?: FriendsAgo.JustNow))
+
+/** "Joined 3 d ago · last seen 5 min ago". */
+@Composable
+internal fun friendsSeenText(phone: FriendsDevice, serverNow: Long): String = stringResource(
+    R.string.friends_phone_seen,
+    agoText(FriendsAgo.of(phone.addedAt, serverNow) ?: FriendsAgo.JustNow),
+    agoText(FriendsAgo.of(phone.lastSeenAt, serverNow) ?: FriendsAgo.JustNow),
 )
 
 /**
@@ -247,17 +305,17 @@ internal enum class AvatarTone { ME, FRIEND, QUIET }
 @Composable
 internal fun FriendAvatar(
     name: String,
-    nick: String,
+    id: String,
     avatarRev: Int,
     size: Dp,
     modifier: Modifier = Modifier,
     tone: AvatarTone = AvatarTone.FRIEND,
 ) {
     val context = LocalContext.current
-    val picture by produceState(initialValue = FriendsAvatars.cached(nick, avatarRev), nick, avatarRev) {
+    val picture by produceState(initialValue = FriendsAvatars.cached(id, avatarRev), id, avatarRev) {
         // Reset first: a reused slot must not keep showing the person it drew before.
-        value = FriendsAvatars.cached(nick, avatarRev)
-        value = FriendsAvatars.load(context, nick, avatarRev)
+        value = FriendsAvatars.cached(id, avatarRev)
+        value = FriendsAvatars.load(context, id, avatarRev)
     }
     val scheme = MaterialTheme.colorScheme
     val (container, content) = when (tone) {

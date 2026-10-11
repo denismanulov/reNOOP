@@ -71,7 +71,7 @@ internal fun FriendsListScreen(appVm: AppViewModel, vm: FriendsViewModel, onBack
     var sort by rememberSaveable { mutableStateOf(FriendsSort.RECOVERY) }
     val feed = state.feed
 
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) { vm.sync() }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         PushedTopBar(title = stringResource(R.string.friends_list_title), onBack = onBack)
@@ -85,7 +85,7 @@ internal fun FriendsListScreen(appVm: AppViewModel, vm: FriendsViewModel, onBack
                     FriendsRefreshNotice(
                         error = error,
                         shownAge = if (feed != null) FriendsAgo.of(state.fetchedAt, nowSec) else null,
-                        onRetry = { vm.refresh(force = true) },
+                        onRetry = { vm.sync(force = true) },
                         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                     )
                 }
@@ -121,13 +121,12 @@ internal fun FriendsListScreen(appVm: AppViewModel, vm: FriendsViewModel, onBack
             }
 
             val entries = FriendsList.entries(feed, sort, today.key)
-            // A nickname may be any word, "sort" included, so a person's key carries a prefix no fixed key has.
-            items(entries, key = { "person:${it.person.nick}" }) { entry ->
+            items(entries, key = { "person:${it.person.id}" }) { entry ->
                 PersonCard(
                     entry = entry,
                     scale = scale,
                     serverNow = serverNow,
-                    onClick = if (entry.isMe) null else { -> openFriend(entry.person.nick) },
+                    onClick = if (entry.isMe) null else { -> openFriend(entry.person.id) },
                     modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                 )
             }
@@ -170,7 +169,7 @@ private fun PersonCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             FriendAvatar(
-                person.profile.name, person.nick, person.profile.avatarRev, size = 56.dp,
+                person.profile.name, person.id, person.profile.avatarRev, size = 56.dp,
                 tone = if (entry.isMe) AvatarTone.ME else AvatarTone.FRIEND,
             )
             Column(Modifier.weight(1f)) {

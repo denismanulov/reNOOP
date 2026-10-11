@@ -15,21 +15,21 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -47,114 +47,84 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.R
 import com.noop.friends.FriendsError
-import com.noop.friends.FriendsNick
-import com.noop.friends.FriendsResult
+import com.noop.friends.FriendsLimits
+import com.noop.friends.FriendsPhase
 import com.noop.friends.FriendsServerUrl
+import com.noop.friends.FriendsStore
+import com.noop.ui.ProfileAvatar
 import com.noop.ui.m3.CookieShape
-import com.noop.ui.m3.Health
 import com.noop.ui.m3.HealthCard
 import com.noop.ui.m3.LargeTitle
 import com.noop.ui.m3.ListRow
 import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.NoticeCard
-import com.noop.ui.m3.PeriodSegmented
 import com.noop.ui.m3.RowIcon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// MARK: - Friends: signed out
+// MARK: - Friends: before it is on
 //
-// A nickname and a password, nothing else: "Create account" or "Sign in". The form makes no request when
-// it appears. The only ones it makes on its own are while a nickname is being typed into "Create
-// account": whether it is free (after a pause in the typing), and, with the first of those, whether this
-// server asks for an invite code. Everything else waits for the button.
-
-/** What the line under the nickname field says. */
-private sealed class NickState {
-    object Idle : NickState()
-    object Invalid : NickState()
-    object Checking : NickState()
-    object Free : NickState()
-    object Taken : NickState()
-    data class Unknown(val error: FriendsError) : NickState()
-}
+// There is no form. The name and the photo are the profile's and the account is tied to the strap, so
+// turning Friends on is one tap. The same page carries the three places turning on can pause: a strap
+// not read yet, a strap that already has an account, and a request to join that account waiting for an
+// answer. Nothing is sent before the button is tapped, and the page asks nothing of the server when it
+// appears. Which server Friends talks to is chosen here, while it is off, and not after.
 
 @Composable
 internal fun FriendsConnectScreen(vm: FriendsViewModel) {
     val scope = rememberCoroutineScope()
+    val phase by vm.phase.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
-    val sessionEnded by vm.sessionEnded.collectAsStateWithLifecycle()
+    val profileName by vm.profileName.collectAsStateWithLifecycle()
 
-    var create by rememberSaveable { mutableStateOf(true) }
-    var nick by rememberSaveable { mutableStateOf("") }
-    // The secrets are held for this composition only: saved instance state can be written to disk.
-    var password by remember { mutableStateOf("") }
-    var invite by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
-    // True once the nickname field was typed in during this visit. A nickname restored with the form
-    // (a rotation, a return to the tab) is not asked about again until it is touched.
-    var nickTyped by remember { mutableStateOf(false) }
-    var inviteRequired by rememberSaveable { mutableStateOf(false) }
-    var infoAsked by remember(serverUrl) { mutableStateOf(false) }
-    var nickState by remember { mutableStateOf<NickState>(NickState.Idle) }
-    var busy by remember { mutableStateOf(false) }
-    var failure by remember { mutableStateOf<FriendsError?>(null) }
+    // The profile had no name when the page appeared, so the page asks for one. Decided once: the field
+    // must not go away at the first letter typed into it.
+    val asksForName = remember { profileName.isBlank() }
+    var typedName by rememberSaveable { mutableStateOf("") }
     var editServer by remember { mutableStateOf(false) }
 
-    // The live nickname check: sign-up only, and only after the typing has paused.
-    LaunchedEffect(nick, create, serverUrl, nickTyped) {
-        if (!create || nick.isEmpty() || !nickTyped) {
-            nickState = NickState.Idle
-            return@LaunchedEffect
+    LaunchedEffect(Unit) { vm.reloadProfileName() }
+
+    // While the page waits for something outside it, it asks again by itself: every minute how the
+    // request to join stands, every few seconds whether the strap has been read (which costs no request
+    // until it has).
+    LaunchedEffect(phase.stored) {
+        vm.syncQuietly()
+        val pause = when (phase) {
+            is FriendsPhase.Waiting -> CLAIM_POLL_MS
+            FriendsPhase.WaitingForStrap -> STRAP_POLL_MS
+            else -> return@LaunchedEffect
         }
-        val clean = FriendsNick.clean(nick)
-        if (clean == null) {
-            nickState = if (nick.length < FriendsNick.MIN_LENGTH) NickState.Idle else NickState.Invalid
-            return@LaunchedEffect
-        }
-        nickState = NickState.Checking
-        delay(NICK_CHECK_PAUSE_MS)
-        if (!infoAsked) {
-            infoAsked = true
-            vm.serverInfo().valueOrNull?.let { inviteRequired = it.inviteRequired }
-        }
-        nickState = when (val answer = vm.nickFree(clean)) {
-            is FriendsResult.Ok -> if (answer.value) NickState.Free else NickState.Taken
-            is FriendsResult.Fail -> NickState.Unknown(answer.error)
+        while (true) {
+            delay(pause)
+            vm.syncQuietly()
         }
     }
 
-    val nickOk = FriendsNick.clean(nick) != null
-    val passwordOk = if (create) FriendsNick.passwordOk(password) else password.isNotEmpty()
-    val canSubmit = !busy && nickOk && passwordOk && nickState != NickState.Taken &&
-        (!create || !inviteRequired || invite.isNotBlank())
-
-    fun submit() {
-        if (!canSubmit) return
-        busy = true
-        failure = null
-        scope.launch {
-            val error = vm.signIn(create, nick, password, invite.takeIf { create && it.isNotBlank() })
-            busy = false
-            failure = error
-            // A server that wants a code says so by refusing a sign-up without one.
-            if (error == FriendsError.BAD_INVITE) inviteRequired = true
-            if (error == FriendsError.NICK_TAKEN) nickState = NickState.Taken
-        }
+    val (title, body) = when (phase) {
+        FriendsPhase.WaitingForStrap -> R.string.friends_strap_wait_title to R.string.friends_strap_wait_body
+        FriendsPhase.StrapBound -> R.string.friends_strap_bound_title to R.string.friends_strap_bound_body
+        is FriendsPhase.Waiting -> R.string.friends_claim_title to R.string.friends_claim_body
+        else -> R.string.friends_on_title to R.string.friends_on_body
     }
 
     LazyColumn(
@@ -164,12 +134,13 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
     ) {
         item(key = "title") { LargeTitle(stringResource(R.string.nav_friends)) }
 
-        if (sessionEnded) {
-            item(key = "ended") {
+        error?.let { failure ->
+            item(key = "failure") {
                 NoticeCard(
                     icon = Icons.Filled.ErrorOutline,
-                    title = stringResource(R.string.friends_error_session),
-                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                    title = friendsErrorText(failure),
+                    error = failure != FriendsError.OFFLINE && failure != FriendsError.RATE_LIMITED,
+                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding).semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
         }
@@ -177,7 +148,7 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
         item(key = "hero") {
             HealthCard(
                 modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(M3Dimens.heroRadius),
+                shape = RoundedCornerShape(M3Dimens.heroRadius),
                 contentPadding = PaddingValues(20.dp),
                 verticalSpacing = 12.dp,
             ) {
@@ -186,161 +157,138 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
                     HeroCookie(Icons.Filled.Group, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, Modifier.offset(x = 34.dp))
                 }
                 Text(
-                    stringResource(R.string.friends_connect_headline),
+                    stringResource(title),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics { heading() },
                 )
                 Text(
-                    stringResource(R.string.friends_connect_body),
+                    stringResource(body),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
-            }
-        }
-
-        item(key = "mode") {
-            PeriodSegmented(
-                options = listOf(stringResource(R.string.friends_connect_create), stringResource(R.string.friends_connect_sign_in)),
-                selectedIndex = if (create) 0 else 1,
-                onSelect = { create = it == 0; failure = null },
-                modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-            )
-        }
-
-        item(key = "form") {
-            HealthCard(
-                modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                verticalSpacing = 12.dp,
-            ) {
-                OutlinedTextField(
-                    value = nick,
-                    onValueChange = { nick = FriendsNick.filterTyping(it); nickTyped = true; failure = null },
-                    label = { Text(stringResource(R.string.friends_connect_nick)) },
-                    prefix = { Text(stringResource(R.string.friends_at_sign)) },
-                    singleLine = true,
-                    isError = nickState == NickState.Taken || nickState == NickState.Invalid,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.None,
-                        autoCorrect = false,
-                        keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Next,
-                    ),
-                    trailingIcon = when (nickState) {
-                        NickState.Free -> {
-                            { Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Health.colors.positive) }
-                        }
-                        NickState.Checking -> {
-                            { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }
-                        }
-                        else -> null
-                    },
-                    supportingText = {
-                        Text(
-                            nickLine(nickState, create),
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it.take(FriendsNick.PASSWORD_MAX); failure = null },
-                    label = { Text(stringResource(R.string.friends_connect_password)) },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = stringResource(
-                                    if (showPassword) R.string.friends_password_hide else R.string.friends_password_show,
-                                ),
-                            )
-                        }
-                    },
-                    supportingText = {
-                        Text(
-                            stringResource(
-                                if (create) R.string.friends_connect_password_note else R.string.friends_connect_password_note_sign_in,
-                            ),
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (create && inviteRequired) {
-                    OutlinedTextField(
-                        value = invite,
-                        onValueChange = { invite = it.take(200); failure = null },
-                        label = { Text(stringResource(R.string.friends_connect_invite)) },
-                        singleLine = true,
-                        isError = failure == FriendsError.BAD_INVITE,
-                        supportingText = { Text(stringResource(R.string.friends_connect_invite_note)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-
-        failure?.let { error ->
-            item(key = "failure") {
-                NoticeCard(
-                    icon = Icons.Filled.ErrorOutline,
-                    title = friendsErrorText(error),
-                    error = error != FriendsError.OFFLINE && error != FriendsError.RATE_LIMITED,
-                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding).semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
-        }
-
-        item(key = "server") {
-            ListRow(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(M3Dimens.cardRadius),
-                title = stringResource(R.string.friends_server),
-                subtitle = serverUrl,
-                leading = { RowIcon(Icons.Filled.Dns) },
-                trailing = {
+                (phase as? FriendsPhase.Waiting)?.let { waiting ->
+                    // Read out digit by digit: "481 902" as a number would be four hundred and eighty-one.
+                    val spoken = waiting.claim.code.toCharArray().joinToString(" ")
                     Text(
-                        stringResource(R.string.friends_server_change),
-                        style = MaterialTheme.typography.labelLarge,
+                        spacedCode(waiting.claim.code),
+                        style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = spoken },
                     )
-                },
-                onClick = { editServer = true },
-                modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-            )
+                }
+            }
         }
 
-        item(key = "privacy") { FriendsNote(Icons.Filled.Lock, stringResource(R.string.friends_connect_privacy)) }
-
-        item(key = "submit") {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = M3Dimens.screenPadding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = ::submit,
-                    enabled = canSubmit,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    if (busy) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(Modifier.size(12.dp))
+        when (val current = phase) {
+            FriendsPhase.WaitingForStrap -> {
+                item(key = "strap-note") { FriendsNote(Icons.Filled.Sensors, stringResource(R.string.friends_strap_wait_note)) }
+                item(key = "strap-actions") {
+                    Actions {
+                        FilledTonalButton(
+                            onClick = { scope.launch { vm.turnOnWithoutStrap() } },
+                            enabled = !loading,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        ) { Text(stringResource(R.string.friends_continue_without_strap)) }
+                        TextButton(onClick = { scope.launch { vm.notNow() } }, enabled = !loading) {
+                            Text(stringResource(R.string.friends_not_now))
+                        }
                     }
-                    Text(stringResource(if (create) R.string.friends_connect_create else R.string.friends_connect_sign_in))
                 }
-                if (create) {
-                    Text(
-                        stringResource(R.string.friends_connect_later),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
+            }
+            FriendsPhase.StrapBound -> {
+                item(key = "bound-note") { FriendsNote(Icons.Filled.Group, stringResource(R.string.friends_strap_bound_note)) }
+                item(key = "bound-actions") {
+                    Actions {
+                        Button(
+                            onClick = { scope.launch { vm.claimAccount() } },
+                            enabled = !loading,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        ) { BusyLabel(loading, stringResource(R.string.friends_this_is_my_account)) }
+                        FilledTonalButton(
+                            onClick = { scope.launch { vm.turnOnWithoutStrap() } },
+                            enabled = !loading,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        ) { Text(stringResource(R.string.friends_start_new_account)) }
+                        TextButton(onClick = { scope.launch { vm.notNow() } }, enabled = !loading) {
+                            Text(stringResource(R.string.friends_not_now))
+                        }
+                    }
+                }
+            }
+            is FriendsPhase.Waiting -> {
+                current.claim.maturesAt?.let { matures ->
+                    item(key = "matures") {
+                        FriendsNote(Icons.Filled.Schedule, stringResource(R.string.friends_claim_matures, friendsMoment(matures)))
+                    }
+                }
+                item(key = "waiting-actions") {
+                    Actions {
+                        FilledTonalButton(
+                            onClick = { scope.launch { vm.cancelClaim() } },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        ) { Text(stringResource(R.string.summary_cancel)) }
+                    }
+                }
+            }
+            else -> {
+                item(key = "who") {
+                    if (asksForName) {
+                        OutlinedTextField(
+                            value = typedName,
+                            onValueChange = { typedName = it.take(FriendsLimits.NAME_MAX) },
+                            label = { Text(stringResource(R.string.friends_name_title)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Done,
+                            ),
+                            supportingText = { Text(stringResource(R.string.friends_list_me_note)) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = M3Dimens.screenPadding),
+                        )
+                    } else {
+                        // Who friends will see, before anything leaves the phone.
+                        ListRow(
+                            shape = RoundedCornerShape(M3Dimens.cardRadius),
+                            title = profileName,
+                            subtitle = stringResource(R.string.friends_list_me_note),
+                            leading = { ProfileAvatar(size = 40.dp) },
+                            modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                        )
+                    }
+                }
+                item(key = "server") {
+                    ListRow(
+                        shape = RoundedCornerShape(M3Dimens.cardRadius),
+                        title = stringResource(R.string.friends_server),
+                        subtitle = serverUrl,
+                        leading = { RowIcon(Icons.Filled.Dns) },
+                        trailing = {
+                            Text(
+                                stringResource(R.string.friends_server_change),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        enabled = !loading,
+                        onClick = { editServer = true },
+                        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                     )
+                }
+                item(key = "privacy") { FriendsNote(Icons.Filled.Lock, stringResource(R.string.friends_connect_privacy)) }
+                item(key = "turn-on") {
+                    Actions {
+                        Button(
+                            onClick = { scope.launch { vm.turnOn(typedName.takeIf { asksForName }) } },
+                            enabled = !loading,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        ) { BusyLabel(loading, stringResource(R.string.friends_turn_on)) }
+                    }
                 }
             }
         }
@@ -351,30 +299,45 @@ internal fun FriendsConnectScreen(vm: FriendsViewModel) {
             current = serverUrl,
             onDismiss = { editServer = false },
             onSave = { typed ->
-                val result = vm.setServerUrl(typed)
-                if (result is FriendsServerUrl.Result.Valid) {
-                    editServer = false
-                    failure = null
-                    inviteRequired = false
+                when (val change = vm.setServerUrl(typed)) {
+                    is FriendsStore.ServerChange.Refused -> change.problem
+                    // Not off any more means the page behind has moved on, and says why itself.
+                    else -> {
+                        editServer = false
+                        null
+                    }
                 }
-                result
             },
         )
     }
 }
 
-/** How long the typing must pause before the nickname is asked about (milliseconds). */
-private const val NICK_CHECK_PAUSE_MS = 500L
+/** How often the page asks how a request to join stands, and whether the strap has been read (milliseconds). */
+private const val CLAIM_POLL_MS = 60_000L
+private const val STRAP_POLL_MS = 5_000L
 
 @Composable
-private fun nickLine(state: NickState, create: Boolean): String = when {
-    !create -> stringResource(R.string.friends_connect_nick_note_sign_in)
-    state == NickState.Free -> stringResource(R.string.friends_connect_nick_free)
-    state == NickState.Taken -> stringResource(R.string.friends_connect_nick_taken)
-    state == NickState.Invalid -> stringResource(R.string.friends_error_bad_nick)
-    state == NickState.Checking -> stringResource(R.string.friends_connect_nick_checking)
-    state is NickState.Unknown -> stringResource(R.string.friends_connect_nick_unknown, friendsErrorText(state.error))
-    else -> stringResource(R.string.friends_connect_nick_note)
+internal fun friendsMoment(ts: Long): String = friendsMoment(ts, LocalContext.current.resources.configuration.locales[0])
+
+/** The page's buttons, one under another at the foot of the list. */
+@Composable
+private fun Actions(content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = M3Dimens.screenPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) { content() }
+}
+
+@Composable
+private fun BusyLabel(busy: Boolean, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            Spacer(Modifier.size(12.dp))
+        }
+        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable
@@ -384,14 +347,29 @@ private fun HeroCookie(icon: ImageVector, container: Color, content: Color, modi
     }
 }
 
-/** The server address editor: one field, the reason an address is refused, and a way back to the default. */
+/** Why an address typed for the server was not taken, each reason in its own words. */
+@Composable
+private fun serverProblemText(problem: FriendsServerUrl.Problem): String = stringResource(
+    when (problem) {
+        FriendsServerUrl.Problem.NOT_HTTPS -> R.string.friends_server_problem_https
+        FriendsServerUrl.Problem.HAS_CREDENTIALS -> R.string.friends_server_problem_credentials
+        FriendsServerUrl.Problem.HAS_QUERY -> R.string.friends_server_problem_query
+        FriendsServerUrl.Problem.EMPTY, FriendsServerUrl.Problem.MALFORMED -> R.string.friends_server_problem_malformed
+    },
+)
+
+/**
+ * The server address editor: one field, the reason an address is refused, and a way back to the fork's
+ * own server (an empty field). [onSave] answers why the address was not taken, or null when it was.
+ */
 @Composable
 private fun ServerAddressDialog(
     current: String,
     onDismiss: () -> Unit,
-    onSave: (String) -> FriendsServerUrl.Result,
+    onSave: suspend (String) -> FriendsServerUrl.Problem?,
 ) {
-    var text by rememberSaveable { mutableStateOf(current) }
+    val scope = rememberCoroutineScope()
+    var text by rememberSaveable { mutableStateOf(if (current == FriendsServerUrl.DEFAULT) "" else current) }
     var problem by remember { mutableStateOf<FriendsServerUrl.Problem?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -404,26 +382,20 @@ private fun ServerAddressDialog(
                     onValueChange = { text = it; problem = null },
                     singleLine = true,
                     isError = problem != null,
+                    placeholder = { Text(FriendsServerUrl.DEFAULT, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrect = false, imeAction = ImeAction.Done),
                     supportingText = {
-                        Text(
-                            when (problem) {
-                                null -> stringResource(R.string.friends_server_dialog_note)
-                                FriendsServerUrl.Problem.NOT_HTTPS -> stringResource(R.string.friends_server_problem_https)
-                                FriendsServerUrl.Problem.EMPTY -> stringResource(R.string.friends_server_problem_empty)
-                                else -> stringResource(R.string.friends_server_problem_malformed)
-                            },
-                        )
+                        Text(problem?.let { serverProblemText(it) } ?: stringResource(R.string.friends_server_dialog_note))
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                TextButton(onClick = { text = FriendsServerUrl.DEFAULT; problem = null }) {
+                TextButton(onClick = { text = ""; problem = null }) {
                     Text(stringResource(R.string.friends_server_dialog_default))
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { problem = (onSave(text) as? FriendsServerUrl.Result.Invalid)?.problem }) {
+            TextButton(onClick = { scope.launch { problem = onSave(text) } }) {
                 Text(stringResource(R.string.settings_save))
             }
         },

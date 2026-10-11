@@ -1,7 +1,6 @@
 package com.noop.friends
 
 import com.noop.ui.friends.FriendsAgo
-import com.noop.ui.friends.FriendsClock
 import com.noop.ui.friends.FriendsComparison
 import com.noop.ui.friends.FriendsComparisonLine
 import com.noop.ui.friends.FriendsEvent
@@ -32,8 +31,8 @@ class FriendsLogicTest {
     private val now = 1_791_540_000L
     private val today = "2026-10-08"
 
-    private fun person(nick: String, name: String = nick, share: FriendShare = FriendShare.DEFAULT, vararg days: FriendDay) =
-        FriendPerson(FriendProfile(nick, name, share = share), share, days.toList().sortedByDescending { it.day })
+    private fun person(id: String, name: String = id, share: FriendShare = FriendShare.DEFAULT, vararg days: FriendDay) =
+        FriendPerson(FriendProfile(id, name, share = share), share, days.toList().sortedByDescending { it.day })
 
     private fun day(
         key: String = today,
@@ -243,7 +242,7 @@ class FriendsLogicTest {
 
     // MARK: The list
 
-    private fun feed(me: FriendPerson, vararg friends: FriendPerson) = FriendsFeed(now, me, friends.toList(), 0)
+    private fun feed(me: FriendPerson, vararg friends: FriendPerson) = FriendsFeed(now, me, friends.toList())
 
     @Test
     fun theListOrdersByTheChosenScoreHighestFirst() {
@@ -251,12 +250,12 @@ class FriendsLogicTest {
         val denis = person("denchik", "Денис", FriendShare.DEFAULT, day(recovery = 81, strain = 38.6, sleepScore = 88))
         val misha = person("mishka", "Миша", FriendShare.DEFAULT, day(recovery = 43, strain = 71.0, sleepScore = 52))
         val all = feed(me, denis, misha)
-        fun order(sort: FriendsSort) = FriendsList.entries(all, sort, today).map { it.person.nick }
+        fun order(sort: FriendsSort) = FriendsList.entries(all, sort, today).map { it.person.id }
         assertEquals(listOf("denchik", "ruslan", "mishka"), order(FriendsSort.RECOVERY))
         assertEquals(listOf("mishka", "ruslan", "denchik"), order(FriendsSort.STRAIN))
         assertEquals(listOf("denchik", "ruslan", "mishka"), order(FriendsSort.SLEEP))
         // The reader's own card is in the list and marked.
-        assertEquals(listOf("ruslan"), FriendsList.entries(all, FriendsSort.RECOVERY, today).filter { it.isMe }.map { it.person.nick })
+        assertEquals(listOf("ruslan"), FriendsList.entries(all, FriendsSort.RECOVERY, today).filter { it.isMe }.map { it.person.id })
     }
 
     @Test
@@ -267,7 +266,7 @@ class FriendsLogicTest {
         val zero = person("zed", "Зед", FriendShare.DEFAULT, day(recovery = 0))
         val entries = FriendsList.entries(feed(me, stale, quiet, zero), FriendsSort.RECOVERY, today)
         // A real 0 outranks no figure at all; the two without one follow in name order.
-        assertEquals(listOf("ruslan", "zed", "anna", "boris"), entries.map { it.person.nick })
+        assertEquals(listOf("ruslan", "zed", "anna", "boris"), entries.map { it.person.id })
         // Yesterday's score is not passed off as today's.
         assertNull(entries.last().day)
     }

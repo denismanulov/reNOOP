@@ -6,11 +6,21 @@ import com.noop.friends.FriendProfile
 import com.noop.friends.FriendShare
 import com.noop.friends.FriendSleep
 import com.noop.friends.FriendWorkout
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.noop.friends.FriendsFeed
+import com.noop.friends.FriendsInviteCode
 import com.noop.ui.sleep.SleepScore
 import com.noop.ui.sleep.SleepScoreWord
 import com.noop.ui.workouts.effortLoadIndex
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -50,16 +60,6 @@ internal sealed class FriendsAgo {
             }
         }
     }
-}
-
-/** The server's clock, as a feed pins it. */
-internal object FriendsClock {
-    /**
-     * The server's "now": [serverTime] as the feed stamped it, plus the device seconds since the feed
-     * arrived ([fetchedAtDevice] to [nowDevice]). A device clock set back in between counts as no time.
-     */
-    fun serverNow(serverTime: Long, fetchedAtDevice: Long, nowDevice: Long): Long =
-        serverTime + (nowDevice - fetchedAtDevice).coerceAtLeast(0L)
 }
 
 // MARK: Levels
@@ -185,7 +185,7 @@ internal object FriendsEvents {
         }
         return out.asSequence()
             .filter { it.ts <= nowSec + FUTURE_SLACK_S }
-            .sortedWith(compareByDescending<FriendsEvent> { it.ts }.thenBy { it.who.nick })
+            .sortedWith(compareByDescending<FriendsEvent> { it.ts }.thenBy { it.who.id })
             .take(limit)
             .toList()
     }
@@ -246,7 +246,7 @@ internal object FriendsList {
             compareBy<FriendsListEntry> { value(it) == null }
                 .thenByDescending { value(it) ?: 0.0 }
                 .thenBy { it.person.profile.name.lowercase() }
-                .thenBy { it.person.nick },
+                .thenBy { it.person.id },
         )
     }
 }
@@ -312,4 +312,45 @@ internal fun friendsInitial(name: String): String {
         i += Character.charCount(cp)
     }
     return "?"
+}
+
+// MARK: Turning on, and an invite
+
+/** "481 902": six digits in two groups, as codes are read out. Anything else is left alone. */
+internal fun spacedCode(code: String): String = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
+
+/**
+ * "15 October 2026, 22:53" in the reader's language. The date, not the weekday: the moments shown are
+ * days away, and a seven-day wait ends on the weekday it began on.
+ */
+internal fun friendsMoment(ts: Long, locale: Locale, zone: ZoneId = ZoneId.systemDefault()): String =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT).withLocale(locale)
+        .format(Instant.ofEpochSecond(ts).atZone(zone).toLocalDateTime())
+
+/** A QR code as its grid of modules. Pure, so the drawing is tested without a screen. */
+internal class FriendsQrCode private constructor(val side: Int, private val dark: BooleanArray) {
+    fun isDark(x: Int, y: Int): Boolean = dark[y * side + x]
+
+    companion object {
+        /** The code for [text] with no quiet zone of its own, or null when the text cannot be encoded. */
+        fun of(text: String): FriendsQrCode? = runCatching {
+            val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0)
+            // Asked for at size 0, the writer answers one cell to a module.
+            val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints)
+            val side = matrix.width
+            if (side <= 0 || matrix.height != side) return@runCatching null
+            FriendsQrCode(side, BooleanArray(side * side) { matrix.get(it % side, it / side) })
+        }.getOrNull()
+    }
+}
+
+/**
+ * The invite code a link into the app carries (`renoop://friends/add?c=…`), or null when the link is
+ * not an invite. Read by the same rule as a pasted code, so the link the friends server's invite page
+ * opens and the one a message carries are told from every other link the same way.
+ */
+internal fun friendsInviteCodeOfLink(link: String?): String? {
+    val text = link ?: return null
+    if (!text.startsWith("renoop:", ignoreCase = true)) return null
+    return FriendsInviteCode.extract(text)
 }
