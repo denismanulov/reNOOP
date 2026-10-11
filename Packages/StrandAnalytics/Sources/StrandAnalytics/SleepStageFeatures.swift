@@ -361,6 +361,146 @@ public enum SleepStageFeatures {
     }
 }
 
+// MARK: - Surroundings
+
+/// What surrounds an epoch, for a model that is shown one row at a time.
+///
+/// A sleep stage is a property of a stretch of the night, not of thirty seconds: REM is a quarter of an
+/// hour of an atonic wrist under an unsteady pulse, and one such epoch looks like quiet light sleep. The
+/// classifier is tabular, so the stretch has to be in the row. It gets there twice:
+///
+///  * `surroundings`: for the features that carry the stage, their mean over the ten, thirty and ninety
+///    minutes centred on the epoch, over the ten minutes before it and the ten after, their value one
+///    and three minutes either side, and how far the epoch stands from its ninety-minute mean.
+///  * `neighbours`: a first model's class probabilities around the epoch, for a second model that takes
+///    them beside everything the first one saw. The second model is trained on probabilities from first
+///    models that never saw the sleeper, so it learns what a first model's output is worth, not what a
+///    memorised one looks like.
+///
+/// Both are plain functions of a night's rows, computed here for the same reason the features are: the
+/// training table and the app call this code, and nothing is reimplemented in the training script.
+public enum SleepStageContext {
+
+    /// The features whose surroundings are summarised, by their name in `SleepStageFeatures.names`.
+    static let sources = ["move_share", "jerk_mean", "jerk_max", "still_minutes", "posture_minutes", "tilt_change",
+                          "hr_z", "hr_rank", "hr_sd_5m_z", "hr_sd_11m_rank", "hr_slope_5m", "hr_range_rank",
+                          "hr_z_30m", "rr_rmssd_5m_z", "rr_sdnn_5m_z", "rr_resp_reg_z"]
+    static let around = [21, 61, 181]          // centred windows, in epochs: 10, 30 and 90 minutes
+    static let beside = 20                     // epochs before the epoch, and after it: 10 minutes
+    static let steps = [2, 6]                  // single epochs this far back and ahead: 1 and 3 minutes
+
+    static let neighbourSteps = [1, 2, 4, 8]
+    static let neighbourAround = [5, 11, 21, 41, 81]
+
+    /// Column names of `surroundings`, in its order.
+    public static let names: [String] = sources.flatMap { s in
+        around.map { "\(s)_around_\($0)" } + ["\(s)_before_\(beside)", "\(s)_after_\(beside)"]
+            + steps.flatMap { ["\(s)_back_\($0)", "\(s)_ahead_\($0)"] } + ["\(s)_vs_\(around[around.count - 1])"]
+    }
+
+    /// Column names of `neighbours`, in its order.
+    public static let neighbourNames: [String] = SleepStageDecoder.stages.flatMap { s in
+        neighbourSteps.map { "p_\(s)_back_\($0)" } + neighbourSteps.map { "p_\(s)_ahead_\($0)" }
+            + neighbourAround.map { "p_\(s)_around_\($0)" } + ["p_\(s)_so_far", "p_\(s)_to_come"]
+    }
+
+    /// What the first model takes, and what the second one does.
+    public static let firstNames = SleepStageFeatures.names + names
+    public static let secondNames = firstNames + neighbourNames
+
+    /// A night as the first model takes it: each row's features, then its surroundings, one number per
+    /// name in `firstNames`, `SleepStageFeatures.missing` where a value could not be measured.
+    public static func firstInput(_ rows: [SleepStageFeatures.Row]) -> [[Double]] {
+        firstInput(values: rows.map { $0.values })
+    }
+
+    /// `firstInput` over bare feature rows.
+    public static func firstInput(values: [[Double?]]) -> [[Double]] {
+        zip(values, surroundings(values: values)).map { ($0 + $1).map { $0 ?? SleepStageFeatures.missing } }
+    }
+
+    /// A night as the second model takes it: what the first model was given, then that model's
+    /// probabilities around each epoch, one number per name in `secondNames`.
+    public static func secondInput(first: [[Double]], probabilities: [[Double]]) -> [[Double]] {
+        zip(first, neighbours(probabilities)).map { $0 + $1.map { $0 ?? SleepStageFeatures.missing } }
+    }
+
+    /// Running sums over the present values of a column, so a window's mean costs two subtractions.
+    struct Sums {
+        private var total: [Double] = [0]
+        private var count: [Int] = [0]
+
+        init(_ v: [Double?]) {
+            total.reserveCapacity(v.count + 1)
+            count.reserveCapacity(v.count + 1)
+            for x in v {
+                total.append(total[total.count - 1] + (x ?? 0))
+                count.append(count[count.count - 1] + (x == nil ? 0 : 1))
+            }
+        }
+
+        /// Mean of the present values at `lo..<hi`, clipped to the column; nil when there are none.
+        func mean(_ lo: Int, _ hi: Int) -> Double? {
+            let a = max(0, lo), b = min(count.count - 1, hi)
+            if b <= a { return nil }
+            let n = count[b] - count[a]
+            return n == 0 ? nil : (total[b] - total[a]) / Double(n)
+        }
+    }
+
+    /// One row of `names` per row of a night, in order. The rows are one night's, as
+    /// `SleepStageFeatures.rows` returns them: a window never reaches into another night.
+    public static func surroundings(_ rows: [SleepStageFeatures.Row]) -> [[Double?]] {
+        surroundings(values: rows.map { $0.values })
+    }
+
+    /// `surroundings` over bare feature rows, for a caller that holds a table and not `Row`s.
+    public static func surroundings(values: [[Double?]]) -> [[Double?]] {
+        let n = values.count
+        var out = [[Double?]](repeating: [], count: n)
+        for i in 0..<n { out[i].reserveCapacity(names.count) }
+        let widest = around[around.count - 1]
+        for s in sources {
+            let c = SleepStageFeatures.names.firstIndex(of: s)!
+            let x = values.map { $0[c] }
+            let sums = Sums(x)
+            for i in 0..<n {
+                for w in around { out[i].append(sums.mean(i - w / 2, i + w / 2 + 1)) }
+                out[i].append(sums.mean(i - beside, i))
+                out[i].append(sums.mean(i + 1, i + 1 + beside))
+                for d in steps {
+                    out[i].append(i - d >= 0 ? x[i - d] : nil)
+                    out[i].append(i + d < n ? x[i + d] : nil)
+                }
+                let wide = sums.mean(i - widest / 2, i + widest / 2 + 1)
+                out[i].append(x[i].flatMap { v in wide.map { v - $0 } })
+            }
+        }
+        return out
+    }
+
+    /// One row of `neighbourNames` per epoch. `probabilities[i]` is a first model's answer for epoch i in
+    /// `SleepStageDecoder.stages` order, over one night. A value is nil only where there is no epoch to
+    /// read: before the first, after the last.
+    public static func neighbours(_ probabilities: [[Double]]) -> [[Double?]] {
+        let n = probabilities.count
+        var out = [[Double?]](repeating: [], count: n)
+        for i in 0..<n { out[i].reserveCapacity(neighbourNames.count) }
+        for c in SleepStageDecoder.stages.indices {
+            let x = probabilities.map { Optional($0[c]) }
+            let sums = Sums(x)
+            for i in 0..<n {
+                for d in neighbourSteps { out[i].append(i - d >= 0 ? x[i - d] : nil) }
+                for d in neighbourSteps { out[i].append(i + d < n ? x[i + d] : nil) }
+                for w in neighbourAround { out[i].append(sums.mean(i - w / 2, i + w / 2 + 1)) }
+                out[i].append(sums.mean(0, i))
+                out[i].append(sums.mean(i + 1, n))
+            }
+        }
+        return out
+    }
+}
+
 // MARK: - Decoding
 
 /// From per-epoch class probabilities to a hypnogram. The learned model replaces `SleepStagerV2`'s hand-set

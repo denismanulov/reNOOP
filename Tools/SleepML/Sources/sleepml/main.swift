@@ -9,6 +9,10 @@ import WhoopProtocol
 //   sleepml train    [--table FILE.csv] [--out MODEL.mlmodel]      Create ML, folds by person (macOS)
 //   sleepml speed    [--reduced DIR] --model MODEL.mlmodel         what a night costs to stage
 //   sleepml own      --db COPY.sqlite --model MODEL.mlmodel        the model beside a wearer's stored nights
+//
+// The model is a pair. `train --out X.mlmodel` writes the first model there and the second, with the
+// decoder settings, beside it as `X.second.mlmodel`; `speed` and `own` take the first one's path. The
+// app ships the pair as `Strand/SleepModel/SleepStageFirst.mlmodel` and `SleepStageSecond.mlmodel`.
 
 struct Args {
     var command = ""

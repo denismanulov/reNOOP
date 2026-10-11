@@ -170,17 +170,11 @@ func runOwn(dbPath: String, modelPath: String, sessionsDevice: String?, streamsD
         print("no sessions or no streams in \(dbPath)"); exit(1)
     }
     let nights = try db.nights(device: sDev)
-    let compiled = try MLModel.compileModel(at: URL(fileURLWithPath: modelPath))
-    let config = MLModelConfiguration()
-    config.computeUnits = .cpuOnly
-    let model = try MLModel(contentsOf: compiled, configuration: config)
-    let meta = model.modelDescription.metadata[.creatorDefinedKey] as? [String: String] ?? [:]
-    let prior = meta["classPrior"].map { $0.split(separator: ",").compactMap { Double($0) } }
-    let weight = meta["priorWeight"].flatMap { Double($0) } ?? 1
-    let smoothing = meta["smoothing"].flatMap { Double($0) } ?? 1
+    let pair = try LoadedPair(modelPath)
+    let weight = pair.weight, smoothing = pair.smoothing
     if !withIntervals { print("beat intervals withheld from the model (the stored hypnograms had them)") }
     print("\(nights.count) stored hypnograms (sessions of \(sDev), streams of \(dev));"
-          + " decoder: prior weight \(fmt(weight, 2)), smoothing \(fmt(smoothing, 1))")
+          + " decoder: prior weight \(fmt(weight, 2)), smoothing \(fmt(smoothing, 2))")
 
     var stored = Shape(), model1 = Shape(), replayed = Shape()
     var exact = 0, skipped = 0, edited = 0
@@ -208,9 +202,7 @@ func runOwn(dbPath: String, modelPath: String, sessionsDevice: String?, streamsD
         }
         let rows = SleepStageFeatures.rows(start: n.start, end: n.end, grav: s.grav, hr: s.hr,
                                            rr: withIntervals ? s.rr : [])
-        let p = try probabilities(model, rows.map { SleepStageFeatures.modelInput($0) })
-        let predicted = SleepStageDecoder.decode(p, prior: prior?.count == 4 ? prior : nil, weight: weight,
-                                                 smoothing: smoothing)
+        let predicted = try pair.stage(rows)
         let was = epochLabels(n.stored, start: first, end: n.end)
         if table != nil {
             for (i, r) in rows.enumerated() {
