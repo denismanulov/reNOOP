@@ -1158,6 +1158,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     stepDivisors = NoopPrefs.stepDivisors(appContext),
                 )
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            // Once per learned sleep stage model: stage the nights older than the usual window with it,
+            // so the history is not two stagers joined at the day the model arrived. The same pass the
+            // periodic tick runs, over the whole history; cancellation or failure retries next launch.
+            runCatching {
+                val startedAt = System.nanoTime()
+                val ran = IntelligenceEngine.runSleepStageModelRestageIfNeeded(
+                    restagedGet = { NoopPrefs.sleepStageModelRestagedVersion(appContext) },
+                    restagedSet = { NoopPrefs.setSleepStageModelRestagedVersion(appContext, it) },
+                ) {
+                    ble.externalLog("Sleep stage model: staging the stored history again, once for this model")
+                    scoreWithTheAppsSettings(
+                        maxDays = IntelligenceEngine.EFFORT_RESCORE_HISTORY_DAYS,
+                        preserveUnscoredHistory = true,
+                    )
+                }
+                if (ran) {
+                    ble.externalLog("Sleep stage model: stored history staged again in " +
+                        "${(System.nanoTime() - startedAt) / 1_000_000_000} s")
+                }
+            }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             while (isActive) {
                 // #547 RE-POLLUTION: a sync since the last tick may have flagged a re-heal (its ingest gate
                 // dropped bad-clock records). Re-run the purge BEFORE this tick's rescore so the affected days
@@ -1196,118 +1216,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                         profileStore.stepsHasBankedMotion = hasMotion
                     }
-                    IntelligenceEngine.analyzeRecent(
-                        repo = repository,
-                        profile = currentProfile(),
-                        importedDeviceId = deviceId,
-                        maxHROverride = profileStore.hrMaxOverride
-                            .takeIf { it > 0 }?.toDouble(),
-                        // I2 read-through (Phase 1B-4): resolve the single owning device per day from the
-                        // registry. A single-WHOOP install resolves to [deviceId] for every day, so the
-                        // reads stay byte-identical; multi-source installs score each day from one source.
-                        ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
-                        // Steps-estimate calibration: feed the user's manual override in (null = auto-fit),
-                        // and mirror the fitted/manual model back into ProfileStore so the Settings/Steps
-                        // screen can show + adjust it. Mirrors the macOS engine writing into ProfileStore.
-                        manualStepCoefficient = profileStore.stepsManualOverride,
-                        persistStepsCalibration = { cal ->
-                            profileStore.stepsCalibrationCoefficient = cal.coefficient
-                            profileStore.stepsCalibrationSampleDays = cal.sampleDays
-                            profileStore.stepsCalibrationConfidence = cal.confidence
-                            profileStore.stepsCalibrationManual = cal.manual
-                        },
-                        // Persisted steps-calibration motion folds. The analytics layer is Context-free, so
-                        // the payload is read and written here; without it the sixty-day fold is re-paid in
-                        // full after every relaunch. A derived cache — a missing or unreadable payload just
-                        // re-folds (see StepsMotionCache).
-                        stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(appContext) },
-                        stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
-                        // WHOOP 4.0 step auto-calibration: each day's own ticks-per-step divisor. With the
-                        // opt-in off (the default) this is the manual divisor for every day, as before.
-                        stepDivisors = NoopPrefs.stepDivisors(appContext),
-                        // Manual "Recalibrate baseline" anchor (Settings → Charge advanced). The analytics
-                        // layer is Context-free, so read the epoch (whole seconds, written as a Long by the
-                        // button) here and thread it down — foldHistory drops every HRV night before it.
-                        baselineEpoch = NoopPrefs.of(appContext)
-                            .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
-                        recoveryEpoch = NoopPrefs.of(appContext)
-                            .getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
-                        // Route the engine's per-day scoring diagnostic into the SAME shareable strap log
-                        // every other subsystem writes to (ble.externalLog PII-scrubs each line), so a bug
-                        // report ships proof of what was computed per day. Mirrors the macOS sink wired to
-                        // live.append(log:). (Sleep overhaul §2.5.)
-                        diag = { line -> ble.externalLog(line) },
-                        // Experimental sleep staging (V2) — read off SharedPreferences here (the analytics
-                        // layer is Context-free) and thread it into the sleep self-heal. The preference is
-                        // default TRUE, so this normally passes V2. (V7 3b)
-                        useExperimentalSleepV2 = PuffinExperiment.from(appContext).experimentalSleepV2,
-                        // Opt-in motion-aware wake refinement (#364 follow-up) — same Context-free threading.
-                        useMotionAwareWake = PuffinExperiment.from(appContext).motionAwareWake,
-                        // Sleep & Rest test mode (Test Centre E5): when the SLEEP domain is on, route the
-                        // per-day sleep gate trace into the SAME shareable strap log, tagged .sleep so it
-                        // lands under the profile in the export. Zero-cost when off: the gate is one
-                        // SharedPreferences bool read here and the sink stays null, so analyzeDay runs its
-                        // byte-identical untraced path. Mirrors the macOS sleepTraceActive wiring.
-                        sleepTraceSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.SLEEP))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.SLEEP) }
-                            else null,
-                        // Recovery (Charge) test mode (Test Centre Group G): when the RECOVERY domain is on,
-                        // route each night's Charge term-breakdown into the .recovery-tagged strap log so a
-                        // "Charge looks wrong" report shows which term moved it (and which was nil). Zero-cost
-                        // when off: one SharedPreferences bool read and the sink stays null, so the Charge
-                        // score path is byte-identical. Mirrors the macOS recoveryTraceActive wiring.
-                        recoveryTraceSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.RECOVERY))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.RECOVERY) }
-                            else null,
-                        // Steps test mode (Test Centre): when the STEPS domain is on, route the per-day 5/MG
-                        // raw-counter trace + the WHOOP-4 calibration trace into the .steps-tagged strap log so
-                        // a "steps look off" report shows the wrap-aware deltas and the calibration state.
-                        // Zero-cost when off: one SharedPreferences bool read and the sink stays null, so the
-                        // steps total path is byte-identical. Mirrors the macOS stepsTraceActive wiring.
-                        stepsTraceSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.STEPS))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.STEPS) }
-                            else null,
-                        // CAPTURE-B universal diagnostic (Test Centre, domain .universal): when ANY test
-                        // mode is on, stamp each scored day's `dayOwner …` line into the .universal-tagged
-                        // strap log so EVERY export self-diagnoses the read-vs-write identity + provenance.
-                        // active(UNIVERSAL) returns true whenever any non-universal mode is on, so the
-                        // universal line rides whatever domain the user enabled. Zero-cost when all off.
-                        universalSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.UNIVERSAL))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.UNIVERSAL) }
-                            else null,
-                        // Workouts & GPS test mode (#975/#2187): when the WORKOUTS domain is on, route each
-                        // analytics-only/backfill decision into the .workouts-tagged strap log. Zero-cost when
-                        // off: one SharedPreferences bool read and the sink stays null, so normal analytics are
-                        // byte-identical. Mirrors macOS.
-                        workoutsTraceSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.WORKOUTS))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.WORKOUTS) }
-                            else null,
-                        // HRV & Autonomic test mode (#141): when on, route the nightly per-window RMSSD (by
-                        // sleep stage) + the whole-night/deep-only/last-SWS summary to the .hrv-tagged strap
-                        // log, so an "HRV reads high vs WHOOP" report shows which stages lift the average.
-                        hrvTraceSink =
-                            if (com.noop.testcentre.TestCentre.from(appContext)
-                                    .active(com.noop.testcentre.TestDomain.HRV))
-                                { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.HRV) }
-                            else null,
-                        // #141: nightly HRV over deep-sleep windows only when the user picked WHOOP-style.
-                        deepHrvWindow = UnitPrefs.hrvWindow(appContext) == HrvWindow.DEEP_SLEEP,
-                        // #103: SpO₂ candidate @82 display toggle — when ON, the engine computes and
-                        // persists the nightly @82 mean as "spo2_candidate" in metricSeries.
-                        spo2CandidateDisplay = NoopPrefs.spo2CandidateDisplay(appContext),
-                        effortMethod = NoopPrefs.effortMethod(appContext),
-                        dayCycleMode = NoopPrefs.dayCycleMode(appContext),
-                    )
+                    scoreWithTheAppsSettings()
                     // analyzeRecent now hops to Dispatchers.Default; a scope cancellation surfaces as a
                     // CancellationException that runCatching would otherwise swallow, breaking the loop's
                     // own cancellation — rethrow it so onCleared() actually stops the loop. (#125)
@@ -1466,6 +1375,132 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // with a 4.0 and a 5/MG makes them disagree routinely: the 5/MG cannot bond (#1635) so it never
         // becomes the saved device, while every attempt at it re-records WHOOP5_MG.
         ble.reconnectToAddress(saved.first, saved.second)
+    }
+
+    /**
+     * One scoring pass with every setting the app scores under: the wearer's profile, the registry's
+     * day owners, the step calibration, the baseline anchors, the Experimental switches, the Test Centre
+     * sinks. The periodic pass runs it over the usual window; the once-per-model sleep re-stage runs the
+     * same call over the whole history, so an old night is scored under the settings a recent one is.
+     */
+    private suspend fun scoreWithTheAppsSettings(
+        maxDays: Int = 21,
+        preserveUnscoredHistory: Boolean = false,
+    ) {
+        IntelligenceEngine.analyzeRecent(
+            repo = repository,
+            maxDays = maxDays,
+            preserveUnscoredHistory = preserveUnscoredHistory,
+            profile = currentProfile(),
+            importedDeviceId = deviceId,
+            maxHROverride = profileStore.hrMaxOverride
+                .takeIf { it > 0 }?.toDouble(),
+            // I2 read-through (Phase 1B-4): resolve the single owning device per day from the
+            // registry. A single-WHOOP install resolves to [deviceId] for every day, so the
+            // reads stay byte-identical; multi-source installs score each day from one source.
+            ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
+            // Steps-estimate calibration: feed the user's manual override in (null = auto-fit),
+            // and mirror the fitted/manual model back into ProfileStore so the Settings/Steps
+            // screen can show + adjust it. Mirrors the macOS engine writing into ProfileStore.
+            manualStepCoefficient = profileStore.stepsManualOverride,
+            persistStepsCalibration = { cal ->
+                profileStore.stepsCalibrationCoefficient = cal.coefficient
+                profileStore.stepsCalibrationSampleDays = cal.sampleDays
+                profileStore.stepsCalibrationConfidence = cal.confidence
+                profileStore.stepsCalibrationManual = cal.manual
+            },
+            // Persisted steps-calibration motion folds. The analytics layer is Context-free, so
+            // the payload is read and written here; without it the sixty-day fold is re-paid in
+            // full after every relaunch. A derived cache — a missing or unreadable payload just
+            // re-folds (see StepsMotionCache).
+            stepsMotionCacheGet = { NoopPrefs.stepsMotionCache(appContext) },
+            stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
+            // WHOOP 4.0 step auto-calibration: each day's own ticks-per-step divisor. With the
+            // opt-in off (the default) this is the manual divisor for every day, as before.
+            stepDivisors = NoopPrefs.stepDivisors(appContext),
+            // Manual "Recalibrate baseline" anchor (Settings → Charge advanced). The analytics
+            // layer is Context-free, so read the epoch (whole seconds, written as a Long by the
+            // button) here and thread it down — foldHistory drops every HRV night before it.
+            baselineEpoch = NoopPrefs.of(appContext)
+                .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
+            recoveryEpoch = NoopPrefs.of(appContext)
+                .getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
+            // Route the engine's per-day scoring diagnostic into the SAME shareable strap log
+            // every other subsystem writes to (ble.externalLog PII-scrubs each line), so a bug
+            // report ships proof of what was computed per day. Mirrors the macOS sink wired to
+            // live.append(log:). (Sleep overhaul §2.5.)
+            diag = { line -> ble.externalLog(line) },
+            // Experimental sleep staging (V2) — read off SharedPreferences here (the analytics
+            // layer is Context-free) and thread it into the sleep self-heal. The preference is
+            // default TRUE, so this normally passes V2. (V7 3b)
+            useExperimentalSleepV2 = PuffinExperiment.from(appContext).experimentalSleepV2,
+            // Opt-in motion-aware wake refinement (#364 follow-up) — same Context-free threading.
+            useMotionAwareWake = PuffinExperiment.from(appContext).motionAwareWake,
+            // Sleep & Rest test mode (Test Centre E5): when the SLEEP domain is on, route the
+            // per-day sleep gate trace into the SAME shareable strap log, tagged .sleep so it
+            // lands under the profile in the export. Zero-cost when off: the gate is one
+            // SharedPreferences bool read here and the sink stays null, so analyzeDay runs its
+            // byte-identical untraced path. Mirrors the macOS sleepTraceActive wiring.
+            sleepTraceSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.SLEEP))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.SLEEP) }
+                else null,
+            // Recovery (Charge) test mode (Test Centre Group G): when the RECOVERY domain is on,
+            // route each night's Charge term-breakdown into the .recovery-tagged strap log so a
+            // "Charge looks wrong" report shows which term moved it (and which was nil). Zero-cost
+            // when off: one SharedPreferences bool read and the sink stays null, so the Charge
+            // score path is byte-identical. Mirrors the macOS recoveryTraceActive wiring.
+            recoveryTraceSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.RECOVERY))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.RECOVERY) }
+                else null,
+            // Steps test mode (Test Centre): when the STEPS domain is on, route the per-day 5/MG
+            // raw-counter trace + the WHOOP-4 calibration trace into the .steps-tagged strap log so
+            // a "steps look off" report shows the wrap-aware deltas and the calibration state.
+            // Zero-cost when off: one SharedPreferences bool read and the sink stays null, so the
+            // steps total path is byte-identical. Mirrors the macOS stepsTraceActive wiring.
+            stepsTraceSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.STEPS))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.STEPS) }
+                else null,
+            // CAPTURE-B universal diagnostic (Test Centre, domain .universal): when ANY test
+            // mode is on, stamp each scored day's `dayOwner …` line into the .universal-tagged
+            // strap log so EVERY export self-diagnoses the read-vs-write identity + provenance.
+            // active(UNIVERSAL) returns true whenever any non-universal mode is on, so the
+            // universal line rides whatever domain the user enabled. Zero-cost when all off.
+            universalSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.UNIVERSAL))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.UNIVERSAL) }
+                else null,
+            // Workouts & GPS test mode (#975/#2187): when the WORKOUTS domain is on, route each
+            // analytics-only/backfill decision into the .workouts-tagged strap log. Zero-cost when
+            // off: one SharedPreferences bool read and the sink stays null, so normal analytics are
+            // byte-identical. Mirrors macOS.
+            workoutsTraceSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.WORKOUTS))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.WORKOUTS) }
+                else null,
+            // HRV & Autonomic test mode (#141): when on, route the nightly per-window RMSSD (by
+            // sleep stage) + the whole-night/deep-only/last-SWS summary to the .hrv-tagged strap
+            // log, so an "HRV reads high vs WHOOP" report shows which stages lift the average.
+            hrvTraceSink =
+                if (com.noop.testcentre.TestCentre.from(appContext)
+                        .active(com.noop.testcentre.TestDomain.HRV))
+                    { line -> ble.externalLog(line, com.noop.testcentre.TestDomain.HRV) }
+                else null,
+            // #141: nightly HRV over deep-sleep windows only when the user picked WHOOP-style.
+            deepHrvWindow = UnitPrefs.hrvWindow(appContext) == HrvWindow.DEEP_SLEEP,
+            // #103: SpO₂ candidate @82 display toggle — when ON, the engine computes and
+            // persists the nightly @82 mean as "spo2_candidate" in metricSeries.
+            spo2CandidateDisplay = NoopPrefs.spo2CandidateDisplay(appContext),
+            effortMethod = NoopPrefs.effortMethod(appContext),
+            dayCycleMode = NoopPrefs.dayCycleMode(appContext),
+        )
     }
 
     /** Snapshot the user's body profile from SharedPreferences as an analytics [UserProfile]. */

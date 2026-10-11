@@ -679,6 +679,41 @@ object IntelligenceEngine {
         flagSet()
     }
 
+    /** Where the app keeps the version of the learned stage model the whole history was last staged
+     *  with. The same key as Swift `IntelligenceEngine.sleepStageModelRestagedKey`; the value is each
+     *  platform's own and stays on the phone. */
+    const val SLEEP_STAGE_MODEL_RESTAGED_KEY: String = "intelligence.sleepStageModel.restagedVersion"
+
+    /** Whether the stored history still carries hypnograms from before this build's stage model. */
+    fun sleepStageRestageIsPending(installed: String, restaged: String?): Boolean =
+        installed.isNotEmpty() && installed != restaged
+
+    /**
+     * Stage the nights older than the normal scoring window with the learned stage model, once per
+     * model. The usual pass only revisits recent days, so without this a history would read as two
+     * stagers joined at the day the model arrived: REM near 30 % of the night before it and near 20 %
+     * after.
+     *
+     * [rescore] is the caller's full-history scoring pass, run with unscored history preserved, so
+     * edited and dismissed sleep stay protected, the daily figures that depend on the stages are
+     * rewritten with them, and a day with no raw streams is left as it is. The version is recorded
+     * only once that pass has returned, so one that was cancelled or threw runs again. With no model
+     * installed there is nothing to do and nothing is recorded. Returns whether the pass ran.
+     * Mirrors Swift `IntelligenceEngine.runSleepStageModelRestageIfNeeded`.
+     */
+    suspend fun runSleepStageModelRestageIfNeeded(
+        restagedGet: () -> String?,
+        restagedSet: (String) -> Unit,
+        rescore: suspend () -> Unit,
+    ): Boolean {
+        SleepStageModelStore.ensureInstalled()
+        val version = SleepStageLearned.version
+        if (!sleepStageRestageIsPending(installed = version, restaged = restagedGet())) return false
+        rescore()
+        restagedSet(version)
+        return true
+    }
+
     private suspend fun analyzeRecentOnCpu(
         repo: WhoopRepository,
         profile: UserProfile = UserProfile(),

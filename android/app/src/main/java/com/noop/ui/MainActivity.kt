@@ -1293,6 +1293,16 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, true).apply()
     }
 
+    /** The learned sleep stage model the whole history was last staged with, null before the first
+     *  such pass. Written only after the pass has persisted. Never part of a backup. */
+    fun sleepStageModelRestagedVersion(context: Context): String? =
+        of(context).getString(com.noop.analytics.IntelligenceEngine.SLEEP_STAGE_MODEL_RESTAGED_KEY, null)
+
+    fun setSleepStageModelRestagedVersion(context: Context, version: String) {
+        of(context).edit()
+            .putString(com.noop.analytics.IntelligenceEngine.SLEEP_STAGE_MODEL_RESTAGED_KEY, version).apply()
+    }
+
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the
      *  on-upgrade purge of bad-strap-clock rows (far-past / future-dated) never re-runs. Re-running is
      *  harmless (the deletes are idempotent), but the flag avoids the work on every launch. */
