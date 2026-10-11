@@ -37,6 +37,8 @@ struct SleepHealthView: View {
     @State private var model: SleepModel?
     @State private var night: Night?
     @State private var entries: [SleepNightEntry] = []
+    /// Health's week, month and year highlights for time asleep, read from the nights on this page.
+    @State private var sleepHighlights: [HighlightItem] = []
 
     private static let topAnchorID = "sleepHealth.top"
 
@@ -291,7 +293,8 @@ struct SleepHealthView: View {
 
     /// Health's Sleep highlights: the bedtime and duration claims, then the night's stages.
     @ViewBuilder private var highlightCards: some View {
-        ForEach(SleepHighlights.make(entries: entries, anchor: Date())) { SleepHighlightCard(highlight: $0) }
+        ForEach(SleepHighlights.make(entries: entries)) { SleepHighlightCard(highlight: $0) }
+        ForEach(sleepHighlights) { HighlightItemCard(item: $0) }
         if let night, night.stages.asleep > 0, !nightIntervals(night).isEmpty {
             SleepStagesHighlightCard(intervals: nightIntervals(night), onset: night.onsetDate,
                                      asleepMinutes: night.stages.asleep)
@@ -403,6 +406,12 @@ struct SleepHealthView: View {
             importedSleep: repo.importedSleep, habitualMidsleepSec: habitualMidsleepSec,
             motionByStart: motionByStart))
         entries = SleepHistory.entries(navDays: navDays, habitualMidsleepSec: habitualMidsleepSec)
+        if let asleep = MetricCatalog.metric(key: "sleep_total_min", source: Repository.whoopSource) {
+            // Minutes read the same in every unit system, so the defaults do.
+            let units = HealthTrendsUnits.resolve(system: "", temperature: "", effortScale: "")
+            sleepHighlights = await HealthHighlightLoader.metric(asleep, series: SleepHighlights.series(entries),
+                                                                 repo: repo, units: units)?.items ?? []
+        }
         nightOffset = 0
         night = model?.night
         if let key = initialWakeDay, !appliedInitialWakeDay {

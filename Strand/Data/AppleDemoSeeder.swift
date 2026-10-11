@@ -36,12 +36,89 @@ enum AppleDemoSeeder {
     static func seedIfRequested(into store: WhoopStore) async {
         guard requested else { return }
         seedDemoDeviceIfNeeded(into: store)
-        await seedTodayRawIfNeeded(into: store)
         await seedLabMarkersIfNeeded(into: store)
         let existing = (try? await store.dailyMetrics(deviceId: whoop, from: "0000-00-00", to: "9999-99-99")) ?? []
-        guard existing.isEmpty else { return }
-        do { try await seed(into: store) }
-        catch { NSLog("AppleDemoSeeder: seed failed — \(error)") }
+        if existing.isEmpty {
+            do { try await seed(into: store) }
+            catch { NSLog("AppleDemoSeeder: seed failed — \(error)") }
+        }
+        // After the daily seed: both read the workouts it wrote.
+        await seedTodayRawIfNeeded(into: store)
+        await seedHighlightsRawIfNeeded(into: store)
+    }
+
+    /// What the Highlights cards read beyond the daily rows: the phone's steps hour by hour for the last
+    /// fortnight, and heart rate through the last workout (with the minutes after it) and last night.
+    /// Each part only when its window is still empty, so it re-runs as the days move on.
+    private static func seedHighlightsRawIfNeeded(into store: WhoopStore) async {
+        let cal = Calendar.current
+        let now = Int(Date().timeIntervalSince1970)
+        let today = cal.startOfDay(for: Date())
+        var rng = SplitMix64(seed: UInt64(today.timeIntervalSince1970))
+
+        // Steps by the hour, each day's hours adding up to that day's total; today's run to now.
+        let todayTs = Int(today.timeIntervalSince1970)
+        if ((try? await store.appleStepHours(deviceId: apple, fromTs: todayTs, toTs: now)) ?? []).isEmpty {
+            let shape: [Double] = [0, 0, 0, 0, 0, 0, 1, 4, 9, 6, 4, 5, 9, 7, 4, 4, 5, 8, 12, 10, 7, 4, 2, 1]
+            let weight = shape.reduce(0, +)
+            var hours: [(ts: Int, steps: Int)] = []
+            for back in 0...15 {
+                guard let day = cal.date(byAdding: .day, value: -back, to: today) else { continue }
+                let key = HealthHighlightMath.key(day, calendar: cal)
+                let total = ((try? await store.appleDaily(deviceId: apple, from: key, to: key)) ?? []).first?.steps ?? 8_000
+                for (hour, share) in shape.enumerated() where share > 0 {
+                    let ts = Int(day.timeIntervalSince1970) + hour * 3_600
+                    guard ts <= now else { break }
+                    // The hour in progress holds only the part of it that has passed.
+                    let elapsed = min(1, Double(now - ts) / 3_600)
+                    let steps = Double(total) * share / weight * (0.75 + rng.nextDouble() * 0.5) * elapsed
+                    hours.append((ts: ts, steps: Int(steps.rounded())))
+                }
+            }
+            _ = try? await store.upsertAppleStepHours(hours, deviceId: apple)
+        }
+
+        // The daily totals as the importers write them, which is the series the Steps and Calories pages read.
+        if ((try? await store.metricSeries(deviceId: apple, key: "steps", from: "0000-00-00", to: "9999-99-99")) ?? []).isEmpty {
+            let rows = (try? await store.appleDaily(deviceId: apple, from: "0000-00-00", to: "9999-99-99")) ?? []
+            var points: [MetricPoint] = []
+            for row in rows {
+                if let steps = row.steps { points.append(MetricPoint(day: row.day, key: "steps", value: Double(steps))) }
+                if let kcal = row.activeKcal { points.append(MetricPoint(day: row.day, key: "active_kcal", value: kcal)) }
+            }
+            _ = try? await store.upsertMetricSeries(points, deviceId: apple)
+        }
+
+        // The last workout: up to a peak and back, then three and a half minutes of coming down.
+        let recent = (try? await store.workouts(deviceId: whoop, from: now - 7 * 86_400, to: now, limit: 50)) ?? []
+        if let last = recent.filter({ $0.endTs + 240 <= now }).max(by: { $0.endTs < $1.endTs }),
+           ((try? await store.hrSamples(deviceId: whoop, from: last.startTs, to: last.endTs, limit: 1)) ?? []).isEmpty {
+            var hr: [HRSample] = []
+            let span = Double(max(1, last.endTs - last.startTs))
+            for ts in stride(from: last.startTs, to: last.endTs, by: 5) {
+                let phase = Double(ts - last.startTs) / span
+                hr.append(HRSample(ts: ts, bpm: Int(gauss(&rng, 118 + sin(phase * .pi) * 42, 5).clamped(70, 185))))
+            }
+            for ts in stride(from: last.endTs, through: last.endTs + 210, by: 5) {
+                let minutes = Double(ts - last.endTs) / 60
+                hr.append(HRSample(ts: ts, bpm: Int(gauss(&rng, 146 - minutes * 14.5, 1).clamped(60, 185))))
+            }
+            _ = try? await store.insert(Streams(hr: hr), deviceId: whoop)
+        }
+
+        // Last night: settling in the first hour, then low and even until morning.
+        let nights = (try? await store.sleepSessions(deviceId: whoop, from: now - 36 * 3_600, to: now, limit: 8)) ?? []
+        if let night = nights.max(by: { $0.endTs < $1.endTs }),
+           ((try? await store.hrSamples(deviceId: whoop, from: night.startTs, to: min(night.endTs, todayTs + 8 * 3_600 - 1),
+                                        limit: 1)) ?? []).isEmpty {
+            var hr: [HRSample] = []
+            for ts in stride(from: night.startTs, to: night.endTs, by: 30) {
+                let hoursIn = Double(ts - night.startTs) / 3_600
+                let level = hoursIn < 1 ? 66 - hoursIn * 12 : 54 + sin(hoursIn * 1.3) * 2.5
+                hr.append(HRSample(ts: ts, bpm: Int(gauss(&rng, level, 2.5).clamped(42, 100))))
+            }
+            _ = try? await store.insert(Streams(hr: hr), deviceId: whoop)
+        }
     }
 
     /// DEBUG/demo-only: so the Devices screen renders with content under `--demo-seed`, pair a second
@@ -71,6 +148,10 @@ enum AppleDemoSeeder {
         guard end > start,
               ((try? await store.hrSamples(deviceId: whoop, from: start, to: end, limit: 1)) ?? []).isEmpty
         else { return }
+        // Today's workouts get a heart rate of their own (`seedHighlightsRawIfNeeded`), so a resting one
+        // is not laid under them or under the minutes after.
+        let workouts = ((try? await store.workouts(deviceId: whoop, from: start - 7_200, to: end, limit: 20)) ?? [])
+            .map { $0.startTs...($0.endTs + 240) }
         var rng = SplitMix64(seed: UInt64(start))
         var hr: [HRSample] = []
         var rr: [RRInterval] = []
@@ -84,7 +165,9 @@ enum AppleDemoSeeder {
             let beat = (60_000 / bpm + gauss(&rng, 0, jitter)).clamped(400, 1_400)
             rr.append(RRInterval(ts: Int(t), rrMs: Int(beat)))
             if Int(t) >= nextHR {
-                hr.append(HRSample(ts: Int(t), bpm: Int(bpm.rounded())))
+                if !workouts.contains(where: { $0.contains(Int(t)) }) {
+                    hr.append(HRSample(ts: Int(t), bpm: Int(bpm.rounded())))
+                }
                 nextHR = Int(t) + 5
             }
             t += beat / 1_000

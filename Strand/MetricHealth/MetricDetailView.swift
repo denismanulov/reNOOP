@@ -38,12 +38,16 @@ struct MetricDetailView: View {
     @State private var refreshing = false
     /// What an empty Blood Oxygen page adds to "No Data"; resolved with the series, from the registry.
     @State private var spo2Empty: Spo2EmptyState = .standard
+    /// The metric's highlights, for the three metrics that have Health's own (steps, calories, time asleep).
+    @State private var highlights: HighlightGroup?
+
+    /// The cards shown here; the rest are behind "Show All".
+    private static let highlightCards = 3
 
     @Environment(\.dynamicTypeSize) private var dts
     /// Dynamic Type multipliers for a figure's numbers and units: the hero follows the large title, a row the body.
     @ScaledMetric(relativeTo: .largeTitle) private var heroScale: CGFloat = 1
     @ScaledMetric(relativeTo: .body) private var rowScale: CGFloat = 1
-    @ScaledMetric(relativeTo: .title) private var highlightValueSize: CGFloat = 30
 
     // MARK: Derived
 
@@ -273,7 +277,13 @@ struct MetricDetailView: View {
             if loaded && series.isEmpty {
                 emptyState
             }
-            if let highlight = MetricHealthSeries.highlight(series: series, calendar: calendar) {
+            if let highlights {
+                // Steps, calories and time asleep read as Health reads them: today, the week, the month, the year.
+                SectionHeader(title: "Highlights", actionTitle: "Show All",
+                              link: TabRoute.highlights(highlights.subject.kind))
+                ForEach(highlights.items.prefix(Self.highlightCards)) { HighlightItemCard(item: $0) }
+            } else if HighlightCopy.Kind.of(key: metric.key) == nil,
+                      let highlight = MetricHealthSeries.highlight(series: series, calendar: calendar) {
                 SectionHeader(title: "Highlights")
                 highlightCard(highlight)
             }
@@ -335,7 +345,7 @@ struct MetricDetailView: View {
         }
     }
 
-    /// Health's highlight on a data type's page: the category line, one sentence, the average and the latest
+    /// Health's highlight on a data type's page: the category line, one sentence, the average over the latest
     /// figure, then the fortnight's readings as grey bars with the latest in the metric's hue and the
     /// average drawn across them.
     private func highlightCard(_ h: MetricHealthHighlight) -> some View {
@@ -345,74 +355,15 @@ struct MetricDetailView: View {
         case .below: sentence = String(localized: "Your latest reading was below your two-week average.")
         case .close: sentence = String(localized: "Your latest reading was close to your two-week average.")
         }
-        // As Health's highlights: the latest reading in the metric's hue, the average it is read against in grey.
-        let latestTint = tint
-        // Side by side; one under the other at accessibility sizes.
-        let figuresLayout = dts.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-            : AnyLayout(HStackLayout(alignment: .top))
-        return HighlightCard(icon: AllMetricsCatalog.category(metric).icon, title: metric.title, tint: tint, sentence: sentence, spacing: 10) {
-            figuresLayout {
-                highlightFigure(String(localized: "Two-Week Average"), h.average, color: StrandPalette.textSecondary, trailing: false)
-                if !dts.isAccessibilitySize { Spacer(minLength: 8) }
-                highlightFigure(String(localized: "Latest"), h.latest, color: StrandPalette.text(for: latestTint),
-                                trailing: !dts.isAccessibilitySize)
-            }
+        return HighlightCard(icon: AllMetricsCatalog.category(metric).icon, title: metric.title, tint: tint, sentence: sentence) {
+            HighlightLatestFigures(averageTitle: String(localized: "Two-Week Average"),
+                                   average: MetricHealthStyle.tokens(metric, h.average, units: units),
+                                   latestTitle: String(localized: "Latest"),
+                                   latest: MetricHealthStyle.tokens(metric, h.latest, units: units), tint: tint)
         } chart: {
-            highlightBars(h, latestTint: latestTint)
-                .frame(height: 96)
-                .padding(.top, 6)
-            HStack {
-                Text(verbatim: shortDate(h.firstDay))
-                Spacer()
-                Text(verbatim: shortDate(h.lastDay))
-            }
-            .font(StrandFont.pro(13))
-            .foregroundStyle(StrandPalette.textSecondary)
+            HighlightLatestBars(values: h.values, average: h.average, first: shortDate(h.firstDay),
+                                last: shortDate(h.lastDay), tint: tint)
         }
-    }
-
-    private func highlightFigure(_ title: String, _ value: Double, color: Color, trailing: Bool) -> some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            Text(title)
-                .font(StrandFont.pro(15, weight: .semibold))
-                .foregroundStyle(StrandPalette.textSecondary)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                ForEach(Array(MetricHealthStyle.tokens(metric, value, units: units).enumerated()), id: \.offset) { _, t in
-                    Text(verbatim: t.text)
-                        .font(t.isUnit ? StrandFont.pro(17, weight: .semibold) : StrandFont.pro(highlightValueSize, weight: .semibold))
-                        .foregroundStyle(t.isUnit ? StrandPalette.textSecondary : color)
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-        }
-    }
-
-    /// Grey bars for the fortnight, the latest in the metric's hue, the average as a grey line across. The scale
-    /// starts below the lowest reading so day-to-day movement shows, as on Health's highlight charts.
-    private func highlightBars(_ h: MetricHealthHighlight, latestTint: Color) -> some View {
-        let lo0 = h.values.min() ?? 0, hi = max(h.values.max() ?? 1, h.average)
-        let lo = hi > lo0 ? max(0, lo0 - (hi - lo0) * 0.6) : hi * 0.5
-        let span = max(hi - lo, 1e-9)
-        return GeometryReader { geo in
-            let slot = geo.size.width / CGFloat(max(h.values.count, 1))
-            let barWidth = min(18, slot * 0.55)
-            ZStack(alignment: .bottomLeading) {
-                ForEach(Array(h.values.enumerated()), id: \.offset) { i, v in
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(i == h.values.count - 1 ? latestTint : StrandPalette.textTertiary.opacity(0.35))
-                        .frame(width: barWidth, height: max(3, geo.size.height * CGFloat((v - lo) / span)))
-                        .offset(x: slot * CGFloat(i) + (slot - barWidth) / 2)
-                }
-                Capsule()
-                    .fill(StrandPalette.textSecondary)
-                    .frame(height: 3)
-                    .offset(y: -geo.size.height * CGFloat((h.average - lo) / span) + 1.5)
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottomLeading)
-        }
-        .accessibilityHidden(true)
     }
 
     private func shortDate(_ key: String) -> String {
@@ -523,6 +474,11 @@ struct MetricDetailView: View {
                                      candidateDisplayOn: PuffinExperiment.spo2CandidateDisplayEnabled)
             : .standard
         loaded = true
+        // After the page has its chart: the highlights read the whole history (a year against the last).
+        if HighlightCopy.Kind.of(key: metric.key) != nil {
+            highlights = await HealthHighlightLoader.group(.metric(key: metric.key, source: metric.source),
+                                                           repo: repo, units: units)
+        }
     }
 }
 

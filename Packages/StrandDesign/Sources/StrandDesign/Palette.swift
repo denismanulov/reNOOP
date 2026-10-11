@@ -320,7 +320,7 @@ public enum StrandPalette {
     public static let activityTimeEnd      = Color(hex: "#FFE620")
     public static let activityTimeText     = Color(light: "#8C6A00", dark: "#FFE620", lightHC: "#684E00", darkHC: "#FFEE66")
     /// Health's Activity category tint (the flame in the card's title row).
-    public static let activityTitle        = Color(light: "#FA3C1E", dark: "#FF5A36", lightHC: "#D92205", darkHC: "#FF8267")
+    public static let activityTitle        = Color(light: "#FF4E00", dark: "#FF5C22", lightHC: "#D92205", darkHC: "#FF8267")
     /// Fitness's Workout-tab card: the Exercise green washed into the page — deep olive on black in dark
     /// mode, a pale green on the light canvas.
     public static let fitnessCard          = Color(light: "#E3F5D6", dark: "#1B2610")

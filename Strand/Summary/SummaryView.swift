@@ -33,6 +33,9 @@ struct SummaryView: View {
     @State private var sleepInProgress: SummarySleepInProgress?
     /// Health's Trends, as of now (not the picked day): the first few lead the section at the bottom.
     @State private var trends: HealthTrendsSnapshot?
+    /// Health's Highlights, as of now: today against a usual day, the last workout, the week.
+    @State private var highlightItems: [HighlightItem] = []
+    @State private var hasHighlights = false
 
     #if os(macOS)
     @State private var showSettings = false
@@ -145,6 +148,14 @@ struct SummaryView: View {
         .task(id: "trends-\(repo.refreshSeq)-\(skinTempDisplayRaw)") {
             let prefer = SkinTempDisplay.Kind(rawValue: skinTempDisplayRaw) ?? .absolute
             if let loaded = await HealthTrendLoader.load(repo: repo, skinTemp: prefer) { trends = loaded }
+        }
+        .task(id: "highlights-\(repo.refreshSeq)-\(unitSystemRaw)-\(effortScaleRaw)") {
+            let units = HealthTrendsUnits.resolve(system: unitSystemRaw, temperature: temperatureRaw,
+                                                  effortScale: effortScaleRaw)
+            let groups = await HealthHighlightLoader.all(repo: repo, units: units)
+            guard !Task.isCancelled else { return }
+            highlightItems = HealthHighlightLoader.summary(groups, limit: Self.highlightCards)
+            hasHighlights = !groups.isEmpty
         }
         .sensoryFeedbackCompat(trigger: dayOffset)
         .task(id: "\(repo.refreshSeq)-\(dayOffset)-\(dayCycleModeRaw)-\(unitSystemRaw)-\(temperatureRaw)-\(skinTempDisplayRaw)") {
@@ -444,12 +455,42 @@ struct SummaryView: View {
 
     // MARK: - Highlights
 
+    /// An Effort figure on the scale Settings picks, for the training-variety highlight.
+    private var effortFigure: (Double) -> [MetricHealthStyle.Token] {
+        let units = HealthTrendsUnits.resolve(system: unitSystemRaw, temperature: temperatureRaw,
+                                              effortScale: effortScaleRaw)
+        guard let effort = MetricCatalog.metric(key: HeroRingMetric.effort, source: Repository.whoopSource) else {
+            return { [.init(text: ReadinessCopy.number($0, decimals: 1), isUnit: false)] }
+        }
+        return { MetricHealthStyle.tokens(effort, $0, units: units) }
+    }
+
+    /// The highlight cards the Summary leads with; the rest are behind "Show All Highlights".
+    private static let highlightCards = 3
+
+    /// Health's Highlights at the foot of the Summary: the readiness signals that are news, the leading
+    /// few highlights, then the row that opens them all.
     @ViewBuilder private var highlightsSection: some View {
-        if !snapshot.highlights.isEmpty {
+        if !snapshot.highlights.isEmpty || hasHighlights {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Highlights")
                 ForEach(snapshot.highlights) {
-                    SummaryHighlightCard(highlight: $0, effortWeek: snapshot.series["effort"] ?? [])
+                    SummaryHighlightCard(highlight: $0, effortWeek: snapshot.dailySeries["effort"] ?? [],
+                                         effortDays: snapshot.weekKeys, effortFigure: effortFigure)
+                }
+                ForEach(highlightItems) { item in
+                    if let route = item.route {
+                        NavigationLink(value: route) { HighlightItemCard(item: item, chevron: true) }
+                            .buttonStyle(.plain)
+                    } else {
+                        HighlightItemCard(item: item)
+                    }
+                }
+                if hasHighlights {
+                    NavigationLink(value: TabRoute.allHighlights) {
+                        HighlightsLinkRow(title: "Show All Highlights")
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

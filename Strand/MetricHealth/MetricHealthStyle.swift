@@ -142,22 +142,25 @@ enum MetricHealthStyle {
         var effortScale: EffortScale
     }
 
+    /// Minutes as "7 hr 12 min": the hours left out under one, the minutes at a whole hour.
+    static func durationTokens(_ minutes: Double) -> [Token] {
+        let total = Int(minutes.rounded())
+        let h = total / 60, m = total % 60
+        var out: [Token] = []
+        if h > 0 {
+            out += [Token(text: "\(h)", isUnit: false),
+                    Token(text: String(localized: "sleep.unit.hr", defaultValue: "hr"), isUnit: true)]
+        }
+        if m > 0 || h == 0 {
+            out += [Token(text: "\(m)", isUnit: false),
+                    Token(text: String(localized: "sleep.unit.min", defaultValue: "min"), isUnit: true)]
+        }
+        return out
+    }
+
     static func tokens(_ metric: MetricDescriptor, _ value: Double, units: Units) -> [Token] {
         let locale = AppLanguage.activeLocale
-        if metric.unit == "min" {
-            let total = Int(value.rounded())
-            let h = total / 60, m = total % 60
-            var out: [Token] = []
-            if h > 0 {
-                out += [Token(text: "\(h)", isUnit: false),
-                        Token(text: String(localized: "sleep.unit.hr", defaultValue: "hr"), isUnit: true)]
-            }
-            if m > 0 || h == 0 {
-                out += [Token(text: "\(m)", isUnit: false),
-                        Token(text: String(localized: "sleep.unit.min", defaultValue: "min"), isUnit: true)]
-            }
-            return out
-        }
+        if metric.unit == "min" { return durationTokens(value) }
         if metric.key == "strain" {
             return [Token(text: number(UnitFormatter.effortValue(value, scale: units.effortScale), decimals: 1,
                                        locale: locale), isUnit: false),
