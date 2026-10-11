@@ -7,8 +7,8 @@
       locally (Room). INTERNET supports only explicit opt-ins: the bring-your-own-key
       AI Coach and Experimental one-way push to a user-owned endpoint. No account,
       NOOP server, telemetry, or network dependency is introduced by this permission.
-      reNOOP fork: the Friends tab also uses it, and only after the wearer signs in to a
-      friends server there (friends-server/README.md); signed out, that tab sends nothing.
+      reNOOP fork: the Friends tab also uses it, and only after the wearer turns Friends on
+      there (friends-server/README.md); while it is off, that tab sends nothing.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -203,6 +203,28 @@
                  (HC in the platform) uses the `ViewPermissionUsageActivity` alias below instead. -->
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Friends (reNOOP fork): an invite link, `renoop://friends/add?c=<code>`, as the friends
+          server's invite page and a shared message carry it. This activity draws nothing: it hands the
+          code over and brings the app forward by its own launch intent, so a link followed from a
+          browser never stacks a second MainActivity on the running one. The Friends tab then asks
+          before anyone is added; with Friends off nothing is sent. BROWSABLE because the link is
+          followed from a web page.
+        -->
+        <activity
+            android:name="com.noop.ui.friends.FriendsInviteLinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="renoop" android:host="friends" android:pathPrefix="/add" />
             </intent-filter>
         </activity>
 
