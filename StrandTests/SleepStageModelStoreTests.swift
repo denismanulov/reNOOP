@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import CryptoKit
 import WhoopProtocol
 import WhoopStore
 import StrandAnalytics
@@ -90,6 +91,113 @@ final class SleepStageModelStoreTests: XCTestCase {
         XCTAssertTrue(IntelligenceEngine.sleepStageRestageIsPending(installed: "abc", restaged: nil))
         XCTAssertTrue(IntelligenceEngine.sleepStageRestageIsPending(installed: "abc", restaged: "old"))
         XCTAssertFalse(IntelligenceEngine.sleepStageRestageIsPending(installed: "abc", restaged: "abc"))
+    }
+}
+
+/// The trees Android runs, held against the Core ML pair this app runs. Android has no Core ML: it reads
+/// the pair's trees from `android/app/src/main/assets/sleepstage/*.trees`, which
+/// `Tools/SleepML/export_trees.py` writes from the `.mlmodel` files, and its evaluator is tested against
+/// `sleep_stage_oracle.json`, which `SleepStageTrees` (the Swift reader of those files) produced. These
+/// tests close the triangle on the only platform that has both: the files are the bundled models, and
+/// Core ML stages the oracle's night as the oracle says.
+///
+/// When they fail after the models were refit: run `export_trees.py` for both models, then write the
+/// oracle again (`SleepStageTreesTests` in `Packages/StrandAnalytics` says how), and commit all three.
+@MainActor
+final class SleepStageTreesAgainstCoreMLTests: XCTestCase {
+
+    private func repositoryFile(_ relative: String) throws -> URL {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<6 {
+            let candidate = dir.appendingPathComponent(relative)
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            dir = dir.deletingLastPathComponent()
+        }
+        XCTFail("\(relative) not found above \(#filePath): this test must not pass by default")
+        throw CocoaError(.fileNoSuchFile)
+    }
+
+    private func trees(_ name: String) throws -> SleepStageTrees {
+        let url = try repositoryFile("android/app/src/main/assets/sleepstage/\(name).trees")
+        return try XCTUnwrap(SleepStageTrees(text: String(contentsOf: url, encoding: .utf8)))
+    }
+
+    func testTheTreeFilesWereWrittenFromTheBundledModels() throws {
+        for name in ["SleepStageFirst", "SleepStageSecond"] {
+            let model = try Data(contentsOf: repositoryFile("Strand/SleepModel/\(name).mlmodel"))
+            let hex = SHA256.hash(data: model).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(try trees(name).source, hex,
+                           "\(name).trees was written from another \(name).mlmodel: Android would stage with other trees")
+        }
+    }
+
+    func testCoreMLStagesTheOracleNightAsTheTreesDo() throws {
+        let coreML = try XCTUnwrap(SleepStageModelStore.load(from: .main))
+        let url = try repositoryFile("android/app/src/test/resources/sleep_stage_oracle.json")
+        let oracle = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let start = try XCTUnwrap(oracle["start"] as? Int), end = try XCTUnwrap(oracle["end"] as? Int)
+
+        // The night's streams, as the oracle stores them (see its "about").
+        let g = try XCTUnwrap(oracle["gravity"] as? [String: Any])
+        let gFrom = try XCTUnwrap(g["from"] as? Int), scale = try XCTUnwrap(g["scale"] as? Double)
+        let gx = try XCTUnwrap(g["x"] as? [Any]), gy = try XCTUnwrap(g["y"] as? [Any]), gz = try XCTUnwrap(g["z"] as? [Any])
+        var grav: [GravitySample] = []
+        for i in gx.indices {
+            guard let x = (gx[i] as? NSNumber)?.doubleValue, let y = (gy[i] as? NSNumber)?.doubleValue,
+                  let z = (gz[i] as? NSNumber)?.doubleValue else { continue }
+            grav.append(GravitySample(ts: gFrom + i, x: x / scale, y: y / scale, z: z / scale))
+        }
+        let h = try XCTUnwrap(oracle["heartRate"] as? [String: Any])
+        let hFrom = try XCTUnwrap(h["from"] as? Int)
+        let hr = try XCTUnwrap(h["bpm"] as? [Any]).enumerated().compactMap { i, b in
+            (b as? NSNumber).map { HRSample(ts: hFrom + i, bpm: $0.intValue) }
+        }
+        let r = try XCTUnwrap(oracle["beatIntervals"] as? [String: Any])
+        let rFrom = try XCTUnwrap(r["from"] as? Int)
+        let rr = zip(try XCTUnwrap(r["at"] as? [Int]), try XCTUnwrap(r["ms"] as? [Int]))
+            .map { RRInterval(ts: rFrom + $0, rrMs: $1) }
+
+        func matrix(_ key: String) throws -> [[Double]] {
+            try XCTUnwrap(oracle[key] as? [[NSNumber]], key).map { $0.map(\.doubleValue) }
+        }
+        func furthest(_ a: [[Double]], _ b: [[Double]]) -> Double {
+            zip(a, b).map { zip($0, $1).map { abs($0 - $1) }.max() ?? 0 }.max() ?? 0
+        }
+        let rows = SleepStageFeatures.rows(start: start, end: end, grav: grav, hr: hr, rr: rr)
+        let xs = SleepStageContext.firstInput(rows)
+        let p1 = try XCTUnwrap(coreML.first(xs))
+        let p2 = try XCTUnwrap(coreML.second(SleepStageContext.secondInput(first: xs, probabilities: p1)))
+        let expected1 = try matrix("firstProbabilities"), expected2 = try matrix("secondProbabilities")
+        XCTAssertEqual(p1.count, expected1.count)
+        XCTAssertEqual(p2.count, expected2.count)
+        // Core ML evaluates these trees in double precision too: when this was written the furthest
+        // probability stood 2e-17 from the trees' own, the last place of a double. A gap near 1e-7 would
+        // mean one of the two had gone over to single precision, and stages could then part at a tie.
+        let gap1 = furthest(p1, expected1), gap2 = furthest(p2, expected2)
+        print("STAGE TREES first model: furthest probability \(gap1); second: \(gap2)")
+        XCTAssertLessThan(gap1, 1e-12)
+        XCTAssertLessThan(gap2, 1e-12)
+
+        let stages = SleepStageDecoder.decode(p2, prior: coreML.prior, weight: coreML.weight, smoothing: coreML.smoothing)
+        XCTAssertEqual(stages, oracle["stages"] as? [String], "Core ML and the trees stage an epoch differently")
+
+        // And through the door the app uses: the same segments, to the second.
+        SleepStageLearned.model = coreML
+        let segments = try XCTUnwrap(SleepStageLearned.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr))
+        let expected = try XCTUnwrap(oracle["segments"] as? [[Any]])
+        XCTAssertEqual(segments.count, expected.count)
+        for (e, got) in zip(expected, segments) {
+            XCTAssertEqual((e[0] as? NSNumber)?.intValue, got.start)
+            XCTAssertEqual((e[1] as? NSNumber)?.intValue, got.end)
+            XCTAssertEqual(e[2] as? String, got.stage)
+        }
+
+        // The decoder settings the trees carry are the ones Core ML's metadata carries.
+        let fromTrees = try XCTUnwrap(SleepStageModel(first: try trees("SleepStageFirst"),
+                                                      second: try trees("SleepStageSecond"), version: "trees"))
+        XCTAssertEqual(fromTrees.prior, coreML.prior)
+        XCTAssertEqual(fromTrees.weight, coreML.weight)
+        XCTAssertEqual(fromTrees.smoothing, coreML.smoothing)
     }
 }
 

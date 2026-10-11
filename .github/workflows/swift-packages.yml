@@ -20,6 +20,8 @@ on:
       # edit, and one reads Strand/Liquid/LiquidCore.swift. Editing only that side would otherwise skip
       # the guard written for exactly that case. Keep in step with what the tests read.
       - 'android/app/src/test/resources/**'
+      # The learned sleep stage model's trees as Android reads them: SleepStageTreesTests reads these.
+      - 'android/app/src/main/assets/sleepstage/**'
       - 'Strand/Liquid/LiquidCore.swift'
   push:
     branches: [main]
@@ -33,6 +35,8 @@ on:
       # edit, and one reads Strand/Liquid/LiquidCore.swift. Editing only that side would otherwise skip
       # the guard written for exactly that case. Keep in step with what the tests read.
       - 'android/app/src/test/resources/**'
+      # The learned sleep stage model's trees as Android reads them: SleepStageTreesTests reads these.
+      - 'android/app/src/main/assets/sleepstage/**'
       - 'Strand/Liquid/LiquidCore.swift'
   workflow_dispatch:
 
