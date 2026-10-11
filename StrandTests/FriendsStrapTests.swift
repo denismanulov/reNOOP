@@ -30,6 +30,50 @@ final class FriendsStrapTests: XCTestCase {
                        "an empty id records nothing")
     }
 
+    /// A WHOOP 4.0's serial counts on its second sighting. The first is kept in the defaults, not in
+    /// memory, so the second may come after the app was relaunched.
+    func testASerialSeenOnceIsRecordedWhenItIsSeenAgain() {
+        let defaults = FriendsTestDefaults()
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertNil(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults), "one sighting records nothing")
+        XCTAssertTrue(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertEqual(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults), "whoop-4A0123456")
+        XCTAssertNil(defaults.string(forKey: FriendsStrap.sightedIdKeyPrefix + "my-whoop"), "the sighting is spent")
+        XCTAssertTrue(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults),
+                      "a recorded serial stays recorded")
+        XCTAssertNil(defaults.string(forKey: FriendsStrap.sightedIdKeyPrefix + "my-whoop"))
+    }
+
+    /// Two different values are one sighting of each, which is what a per-connection token would give.
+    func testADifferentSerialStartsTheCountAgain() {
+        let defaults = FriendsTestDefaults()
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4B7654321", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertNil(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertTrue(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+    }
+
+    func testAnotherStrapUnderARecordedIdReplacesItOnItsSecondSighting() {
+        let defaults = FriendsTestDefaults()
+        FriendsStrap.note(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults)
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4B7654321", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertEqual(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults), "whoop-4A0123456")
+        XCTAssertTrue(FriendsStrap.sight(adoptedId: "whoop-4B7654321", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertEqual(FriendsStrap.adoptedId(forDeviceId: "my-whoop", defaults: defaults), "whoop-4B7654321")
+    }
+
+    func testSightingsAreCountedPerRegistryIdAndAnEmptyIdIsNoSighting() {
+        let defaults = FriendsTestDefaults()
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "whoop-OTHER", defaults: defaults),
+                       "a sighting under one registry id does not count under another")
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "", forDeviceId: "my-whoop", defaults: defaults))
+        XCTAssertFalse(FriendsStrap.sight(adoptedId: "whoop-4A0123456", forDeviceId: "", defaults: defaults))
+        XCTAssertTrue(defaults.dictionaryRepresentation().keys.allSatisfy { $0.hasPrefix(FriendsStrap.sightedIdKeyPrefix) },
+                      "nothing is recorded yet")
+    }
+
     func testAStrapIsAHandleOnceItsSerialIsKnownAndPendingBefore() {
         XCTAssertEqual(FriendsStrap.identity(hasSerial: true, adoptedId: "whoop-4A0123456"),
                        .handle("98c15f4b6c7ad639bba026d0352acab84406af76243690aac8b169a1a902f707"))

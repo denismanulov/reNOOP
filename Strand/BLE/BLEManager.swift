@@ -1485,6 +1485,7 @@ public final class BLEManager: NSObject, ObservableObject {
                 self.deviceId = activeId
             }
         }
+        sightHeldStrapSerialForFriends()
         // Restore the ECG latch for THIS device now that `deviceId` has settled for the launch. Done
         // here rather than at init because the id is not known that early, and the latch is per device.
         // Read-only: nothing is sent to the strap, matching the rule that these opcodes are never
@@ -5330,10 +5331,51 @@ public final class BLEManager: NSObject, ObservableObject {
         // confirmed. The 5/MG path survives the same hazard only because it re-offers its DIS serial on
         // every connect; a once-only gate has no such second chance, so it must not consume a sighting it
         // cannot act on. Kotlin twin guards its own missing dependency the same way.
-        guard registryStore != nil else { return }
+        guard registryStore != nil else {
+            // Friends keeps it instead: see `friendsSerialAwaitingStore`.
+            if friendsSerialAwaitingStore == nil {
+                log("Friends: the strap's serial arrived before the store was open - held until it is")
+            }
+            friendsSerialAwaitingStore = serial
+            return
+        }
+        sightStrapSerialForFriends(serial)
         guard let confirmed = harvardSerialGate.offer(serial) else { return }
         harvardSerialConfirmed = confirmed
         adoptWhoopSerialIdentity()
+    }
+
+    /// Friends (fork feature): a 4.0 hello serial counted toward the two sightings Friends asks for.
+    /// `harvardSerialGate` counts within one run of the app and guards the re-pointing of history; this
+    /// count is kept between runs and guards only the id Friends binds an account to, so a strap that
+    /// stays connected is known after the app's next launch. Touches no connection state.
+    private func sightStrapSerialForFriends(_ serial: String) {
+        guard let rs = registryStore,
+              let adopted = WhoopSerialIdentity.adoptedId(serial: serial),
+              let active = try? rs.all().first(where: { $0.status == .active }),
+              SourceIdentity.isWhoop(active)
+        else { return }
+        let known = FriendsStrap.adoptedId(forDeviceId: active.id) == adopted
+        guard FriendsStrap.sight(adoptedId: adopted, forDeviceId: active.id) else {
+            // The serial is a device identifier: neither line says any of it.
+            log("Friends: the strap's serial was seen once - it counts when the same value is seen again")
+            return
+        }
+        FriendsStrap.note(adoptedId: adopted, forDeviceId: adopted)
+        if !known { log("Friends: the strap's serial was seen a second time - recorded for the account") }
+    }
+
+    /// Friends (fork feature): a 4.0 hello serial that arrived before `bootstrapStore` made the registry.
+    /// A restored link answers the hello inside the launch's first second, and the store opens after
+    /// that, so on a relaunch with the strap still connected the sighting would be dropped every time.
+    /// Counted once the registry exists. `harvardSerialGate` is not offered it: that gate's own rule
+    /// about a sighting it cannot act on stands as it was.
+    private var friendsSerialAwaitingStore: String?
+
+    private func sightHeldStrapSerialForFriends() {
+        guard let held = friendsSerialAwaitingStore else { return }
+        friendsSerialAwaitingStore = nil
+        sightStrapSerialForFriends(held)
     }
 
     /// #1303: the 5/MG DIS read hands us the strap's OWN serial, so re-point this pairing from its

@@ -48,6 +48,32 @@ enum FriendsStrap {
         defaults.string(forKey: adoptedIdKeyPrefix + deviceId).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// Under this prefix and a registry id: a serial-derived id seen once there and not trusted yet.
+    static let sightedIdKeyPrefix = "friends.strapSightedId."
+
+    /// A WHOOP 4.0's serial is trusted once the same value has come from two connections
+    /// (`RepeatedSerialGate`, #1193). That gate counts within one run of the app, so a strap that stays
+    /// connected, or an app relaunched between its connections, never gets there. This keeps the first
+    /// sighting, so the second may come in a later run: the value is recorded for `deviceId` when it
+    /// repeats, and the answer says whether it is recorded now. Call it once per hello; the two sightings
+    /// are still two hellos, which is all the gate's rule asks for.
+    @discardableResult
+    static func sight(adoptedId: String, forDeviceId deviceId: String, defaults: UserDefaults = .standard) -> Bool {
+        guard !adoptedId.isEmpty, !deviceId.isEmpty else { return false }
+        let key = sightedIdKeyPrefix + deviceId
+        if self.adoptedId(forDeviceId: deviceId, defaults: defaults) == adoptedId {
+            defaults.removeObject(forKey: key)
+            return true
+        }
+        guard defaults.string(forKey: key) == adoptedId else {
+            defaults.set(adoptedId, forKey: key)
+            return false
+        }
+        note(adoptedId: adoptedId, forDeviceId: deviceId, defaults: defaults)
+        defaults.removeObject(forKey: key)
+        return true
+    }
+
     /// Whether a device of this kind has a serial to bind to: a WHOOP strap or an Oura ring.
     static func hasSerial(_ device: PairedDevice) -> Bool {
         SourceIdentity.isWhoop(device) || device.id.hasPrefix(ExperimentalBrand.oura.idPrefix + "-")
