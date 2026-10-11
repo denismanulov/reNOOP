@@ -13,6 +13,8 @@ import StrandDesign
 struct BrowseView: View {
     @AppStorage("noop.coachEnabled") private var coachEnabled = true
     @State private var query = ""
+    @ScaledMetric(relativeTo: .body) private var glyphWidth: CGFloat = 28
+    @ScaledMetric(relativeTo: .body) private var glyphHeight: CGFloat = 24
 
     struct Entry: Identifiable {
         let id: MoreDestination
@@ -24,14 +26,15 @@ struct BrowseView: View {
     /// Health's categories card: the places to read and log data.
     private var categories: [Entry] {
         var rows = [
-            Entry(id: .allMetrics, title: String(localized: "All Metrics"), icon: "square.grid.2x2.fill", tint: StrandPalette.healthOxygen),
-            Entry(id: .trends, title: String(localized: "Trends"), icon: HealthTrendsUnits.icon, tint: StrandPalette.accent),
-            Entry(id: .journal, title: String(localized: "Journal"), icon: "book.pages.fill", tint: StrandPalette.healthMind),
-            Entry(id: .insightsHub, title: String(localized: "What Moves You"), icon: "wand.and.sparkles", tint: StrandPalette.healthTemperature),
-            Entry(id: .labBook, title: String(localized: "Lab Results"), icon: "list.clipboard.fill", tint: StrandPalette.healthSleepCore),
+            Entry(id: .allMetrics, title: String(localized: "All Metrics"), icon: "chart.bar.fill", tint: StrandPalette.healthOxygen),
+            Entry(id: .trends, title: String(localized: "Trends"), icon: HealthTrendsUnits.icon, tint: StrandPalette.healthNutrition),
+            Entry(id: .journal, title: String(localized: "Journal"), icon: "text.book.closed.fill", tint: StrandPalette.healthMind),
+            Entry(id: .insightsHub, title: String(localized: "What Moves You"), icon: "lightbulb.max.fill", tint: StrandPalette.healthTemperature),
+            Entry(id: .labBook, title: String(localized: "Lab Results"), icon: "testtube.2", tint: StrandPalette.healthSleepCore),
+            Entry(id: .sleep, title: String(localized: "Sleep"), icon: "bed.double.fill", tint: StrandPalette.sleepSchedule),
         ]
         if coachEnabled {
-            rows.append(Entry(id: .coach, title: String(localized: "Coach"), icon: "sparkles", tint: StrandPalette.healthBody))
+            rows.append(Entry(id: .coach, title: String(localized: "Coach"), icon: "bubble.left.and.text.bubble.right.fill", tint: StrandPalette.healthBody))
         }
         return rows.sorted(by: Self.alphabetical)
     }
@@ -39,9 +42,9 @@ struct BrowseView: View {
     /// The second card: tools that act rather than show history.
     private var tools: [Entry] {
         [
-            Entry(id: .live, title: String(localized: "Heart Rate"), icon: "waveform.path.ecg", tint: StrandPalette.healthHeart),
-            Entry(id: .breathe, title: String(localized: "Mindfulness"), icon: "lungs.fill", tint: StrandPalette.healthRespiratory),
-            Entry(id: .devices, title: String(localized: "Devices"), icon: "sensor.tag.radiowaves.forward.fill", tint: StrandPalette.textSecondary),
+            Entry(id: .live, title: String(localized: "Heart Rate"), icon: "heart.fill", tint: StrandPalette.healthHeart),
+            Entry(id: .breathe, title: String(localized: "Mindfulness"), icon: "figure.mind.and.body", tint: StrandPalette.healthRespiratory),
+            Entry(id: .devices, title: String(localized: "Devices"), icon: "applewatch", tint: StrandPalette.textSecondary),
         ].sorted(by: Self.alphabetical)
     }
 
@@ -138,9 +141,15 @@ struct BrowseView: View {
                 .font(StrandFont.pro(17, weight: .semibold))
                 .foregroundStyle(StrandPalette.textPrimary)
         } icon: {
+            // Health draws every category glyph two-tone and inside one box, so a wide bed and a narrow
+            // watch read as the same size and the titles start on one line.
             Image(systemName: icon)
-                .font(StrandFont.pro(20, weight: .medium))
+                .resizable()
+                .scaledToFit()
+                .fontWeight(.medium)
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(tint)
+                .frame(width: glyphWidth, height: glyphHeight)
         }
     }
 }
@@ -150,7 +159,7 @@ struct BrowseView: View {
 /// per-screen chrome lives at the single `navigationDestination(for:)` registration in
 /// `RootTabView.browseTab`.
 enum MoreDestination: Hashable {
-    case allMetrics, trends, journal, insightsHub, labBook, coach
+    case allMetrics, trends, journal, insightsHub, labBook, coach, sleep
     case live, breathe, devices
 
     @ViewBuilder var destination: some View {
@@ -161,6 +170,7 @@ enum MoreDestination: Hashable {
         case .insightsHub: InsightsHubView()
         case .labBook:     LabBookView()
         case .coach:       CoachView()
+        case .sleep:       SleepHealthView()
         case .live:        LiveView()
         case .breathe:     BreathingView()
         case .devices:     DevicesView()

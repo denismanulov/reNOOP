@@ -3,8 +3,9 @@ import SwiftUI
 import StrandDesign
 
 /// iOS navigation shell. macOS uses a `NavigationSplitView` sidebar (`RootView`); on iPhone the
-/// natural analogue is a `TabView` with the most-used screens as tabs and everything else under a
-/// "More" list. Every screen is the same `StrandDesign`-built view the macOS app uses.
+/// natural analogue is a `TabView`: Fitness's three tabs (Summary, Workouts, Friends as its Sharing) and
+/// Health's search circle, behind which every other screen is a row. Every screen is the same
+/// `StrandDesign`-built view the macOS app uses.
 struct RootTabView: View {
     /// #1841: shared with Android by NAME and meaning, not by storage — the two platforms keep their own
     /// stores, exactly as the Clock format setting does.
@@ -79,14 +80,16 @@ struct RootTabView: View {
     }
 
     var body: some View {
-        // Health-style tab bar (iOS 26): a compact capsule of the three main tabs, with Browse set apart
-        // as the search-role glass circle. The bar itself stays fully native — iOS 26 supplies Liquid
-        // Glass and its scroll interaction; older releases get the matching system material. Tags are
-        // stable indices into `tabPaths` / `scrollTop` (3 was the retired Coach tab).
+        // The tab bar (iOS 26): a compact capsule of the three main tabs, with Browse set apart as the
+        // search-role glass circle. The bar itself stays fully native — iOS 26 supplies Liquid Glass and
+        // its scroll interaction; older releases get the matching system material. Tags are stable
+        // indices into `tabPaths` / `scrollTop` (2 was the retired Sleep tab, now a Browse row and the
+        // Summary's sleep card).
         tabView
             // The running workout / gym session / intervals as the Music mini-player, on every tab.
             .nowRunningAccessory(isActive: nowRunning.kind != nil)
-            .tint(StrandPalette.accent)
+            // The selected tab in Fitness's key colour; each tab's own content keeps the app's accent.
+            .tint(Self.barTint)
             // #1841: the same "Hide bar when scrolling" preference Android drives its own bar with. Here
             // the system owns the behaviour — iOS 26's tab bar MINIMISES to a pill on scroll down.
         .task {
@@ -107,10 +110,12 @@ struct RootTabView: View {
             case .insightsHub: openInBrowse(.insightsHub)
             case .labBook: openInBrowse(.labBook)
             case .journal: openInBrowse(.journal)
-            // The wake alarm and wind-down live in the Sleep tab's schedule page.
+            // The wake alarm and wind-down live in the Sleep page's schedule, which is a Browse row.
             case .alarms:
-                selectedTab = 2
-                tabPaths[2] = NavigationPath([TabRoute.sleepSchedule])
+                var path = NavigationPath([MoreDestination.sleep])
+                path.append(TabRoute.sleepSchedule)
+                selectedTab = 4
+                tabPaths[4] = path
             case .coach:
                 // Guarded on the master switch, because this route is reachable with Coach OFF: a brief
                 // notification already sitting in Notification Centre still calls `openCoach()` when it is
@@ -209,6 +214,7 @@ struct RootTabView: View {
                 // Settings (pushed from the Summary's profile circle) pushes its pages as SettingsPage values.
                 .settingsDestinations()
         }
+        .tint(StrandPalette.accent)
         // Drive this tab's root scroll-to-top on an at-root re-tap (#198 follow-up).
         .environment(\.scrollToTopSignal, scrollSignal)
     }
@@ -228,6 +234,7 @@ struct RootTabView: View {
                         .toolbarBackground(.hidden, for: .navigationBar)
                 }
         }
+        .tint(StrandPalette.accent)
         .environment(\.scrollToTopSignal, scrollSignal)
     }
 
@@ -238,14 +245,18 @@ struct RootTabView: View {
     private var workoutsRoot: some View {
         tabRoot(WorkoutsHomeView(), path: $tabPaths[1], scrollSignal: scrollTop[1], showsNavigationBar: true)
     }
-    private var sleepRoot: some View {
-        tabRoot(SleepHealthView(), path: $tabPaths[2], scrollSignal: scrollTop[2], showsNavigationBar: true)
-    }
     /// Tag 3 was the retired Coach tab; Friends takes its place in the bar, as Fitness has Sharing.
     private var friendsRoot: some View {
         tabRoot(FriendsView(), path: $tabPaths[3], scrollSignal: scrollTop[3], showsNavigationBar: true)
     }
     private var browseRoot: some View { browseTab(path: $tabPaths[4], scrollSignal: scrollTop[4]) }
+
+    /// The selected tab's colour: Fitness's lime on a dark bar, the Exercise green on a light one.
+    private static var barTint: Color { StrandPalette.activityExerciseText }
+    /// Fitness's Summary glyph, the closing ring, which the system has no symbol for.
+    private static let summaryGlyph = "TabSummaryRing"
+    private static let workoutsGlyph = "figure.run.circle.fill"
+    private static let friendsGlyph = "person.2.fill"
 
     /// iOS 18+ declares tabs with `Tab`, which is what lets Browse take the search role (its own glass
     /// circle on iOS 26). The availability check is fixed for the life of the process, so the branch
@@ -253,18 +264,16 @@ struct RootTabView: View {
     @ViewBuilder private var tabView: some View {
         if #available(iOS 18.0, *) {
             TabView(selection: nativeTabSelection) {
-                Tab("Summary", systemImage: "heart.text.square", value: 0) { summaryRoot }
-                Tab("Sleep", systemImage: "bed.double", value: 2) { sleepRoot }
-                Tab("Workouts", systemImage: "figure.run", value: 1) { workoutsRoot }
-                Tab("Friends", systemImage: "person.2.fill", value: 3) { friendsRoot }
+                Tab("Summary", image: Self.summaryGlyph, value: 0) { summaryRoot }
+                Tab("Workouts", systemImage: Self.workoutsGlyph, value: 1) { workoutsRoot }
+                Tab("Friends", systemImage: Self.friendsGlyph, value: 3) { friendsRoot }
                 Tab("Browse", systemImage: "magnifyingglass", value: 4, role: .search) { browseRoot }
             }
         } else {
             TabView(selection: nativeTabSelection) {
-                summaryRoot.tabItem { Label("Summary", systemImage: "heart.text.square") }.tag(0)
-                sleepRoot.tabItem { Label("Sleep", systemImage: "bed.double") }.tag(2)
-                workoutsRoot.tabItem { Label("Workouts", systemImage: "figure.run") }.tag(1)
-                friendsRoot.tabItem { Label("Friends", systemImage: "person.2.fill") }.tag(3)
+                summaryRoot.tabItem { Label("Summary", image: Self.summaryGlyph) }.tag(0)
+                workoutsRoot.tabItem { Label("Workouts", systemImage: Self.workoutsGlyph) }.tag(1)
+                friendsRoot.tabItem { Label("Friends", systemImage: Self.friendsGlyph) }.tag(3)
                 browseRoot.tabItem { Label("Browse", systemImage: "magnifyingglass") }.tag(4)
             }
         }
