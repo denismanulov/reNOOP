@@ -39,7 +39,6 @@ struct FriendsPhonesPage: View {
                 }
                 ForEach(phones) { phone in row(phone) }
             } footer: {
-                Text("Each phone holds its own key. Removing one stops it reading and uploading at once.")
                 if let failure {
                     Text(verbatim: failure).foregroundStyle(StrandPalette.settingsRed)
                 }

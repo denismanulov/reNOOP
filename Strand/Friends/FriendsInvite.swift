@@ -80,11 +80,11 @@ struct FriendsInvitePage: View {
                 .listRowBackground(Color.clear)
             }
             Section {
-                ShareLink(item: shareText) {
-                    SettingsRowLabel(title: "Share Invite", icon: "square.and.arrow.up", color: StrandPalette.settingsBlue)
-                }
-            } footer: {
-                Text("Whoever uses this code becomes your friend at once and sees what you share. Give it only to the person you mean.")
+                // The page's one action, as the tab's own pages end on theirs: a capsule in its key colour.
+                ShareLink(item: shareText) { Text("Share Invite") }
+                    .buttonStyle(FriendsKeyButtonStyle(large: true))
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
         }
         .settingsForm()
@@ -95,8 +95,9 @@ struct FriendsInvitePage: View {
     }
 }
 
-/// "Add Friend" in the friends sheet: making an invite to hand over, using one that was handed over,
-/// and the invites still waiting to be used.
+/// The friends sheet's own sections, in the order Fitness's Sharing sheet keeps: who the wearer shares
+/// with, led by the row that invites one more, then (what Fitness has no need of) the field for a code
+/// that was handed over and the invites still waiting to be used.
 struct FriendsAddSections: View {
     /// Set to push an invite's page.
     @Binding var shown: FriendsShownInvite?
@@ -104,7 +105,10 @@ struct FriendsAddSections: View {
     @ObservedObject private var store = FriendsStore.shared
     @State private var code = ""
     @State private var working = false
+    /// What the last Add came to: who was added, or why not.
     @State private var message: String?
+    /// Why an invite could not be made.
+    @State private var inviteFailure: String?
     /// Why the last Revoke did not go through.
     @State private var revokeFailure: String?
 
@@ -113,12 +117,60 @@ struct FriendsAddSections: View {
     /// Add is offered for anything typed: what is not a code is answered with the reason under the field.
     private var nothingTyped: Bool { code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+    private var friends: [FriendProfile] {
+        (store.feed?.friends ?? []).sorted { a, b in
+            let order = a.name.localizedCaseInsensitiveCompare(b.name)
+            return order != .orderedSame ? order == .orderedAscending : a.id < b.id
+        }
+    }
+
     var body: some View {
         Section {
             Button(action: invite) {
-                SettingsRowLabel(title: "Invite a Friend", icon: "qrcode", color: StrandPalette.settingsGreen)
+                HStack {
+                    Text("Invite a Friend")
+                    Spacer(minLength: 8)
+                    if working {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "plus.circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(FriendsStyle.onKey, FriendsStyle.key)
+                            .font(StrandFont.pro(23))
+                            .padding(.trailing, 3)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .foregroundStyle(FriendsStyle.key)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .disabled(working || locked)
+            ForEach(friends) { friend in
+                NavigationLink {
+                    FriendDetailView(personID: friend.id)
+                } label: {
+                    HStack(spacing: 15) {
+                        FriendAvatar(person: friend, size: 32)
+                        Text(verbatim: friend.name)
+                            .font(StrandFont.pro(17))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                            .lineLimit(1)
+                    }
+                }
+                // A person's row is as tall as the row above it, and the rule under it starts at their
+                // picture, as Fitness draws both.
+                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+            }
+        } header: {
+            FriendsSheetHeader(title: "Sharing With")
+        } footer: {
+            if let inviteFailure {
+                Text(verbatim: inviteFailure).foregroundStyle(StrandPalette.settingsRed)
+            }
+        }
+        Section {
             HStack(spacing: 8) {
                 TextField("Enter a Code", text: $code)
                     .disableAutocorrection(true)
@@ -130,25 +182,21 @@ struct FriendsAddSections: View {
                 if working {
                     ProgressView()
                 } else {
-                    Button(action: redeem) { Text("Add").font(StrandFont.pro(15, weight: .semibold)) }
+                    Button(action: redeem) { Text("Add") }
                         .friendsCapsuleButton(prominent: true)
                         .disabled(nothingTyped || locked)
                 }
             }
-        } header: {
-            Text("Add Friend")
         } footer: {
             if let message {
                 Text(verbatim: message)
-            } else {
-                Text("An invite works once and makes you friends at once. Paste a link or type its code.")
             }
         }
         if let invites = store.invites, !invites.isEmpty {
             Section {
                 ForEach(invites) { invite in waiting(invite) }
             } header: {
-                Text("Invites Waiting")
+                FriendsSheetHeader(title: "Invites Waiting")
             } footer: {
                 if let revokeFailure {
                     Text(verbatim: revokeFailure).foregroundStyle(StrandPalette.settingsRed)
@@ -177,10 +225,8 @@ struct FriendsAddSections: View {
             }
             .buttonStyle(.plain)
             .disabled(code == nil)
-            Button { revoke(invite) } label: {
-                Text("Revoke").font(StrandFont.pro(15, weight: .semibold)).lineLimit(1)
-            }
-            .friendsCapsuleButton(prominent: false)
+            Button { revoke(invite) } label: { Text("Revoke") }
+                .friendsCapsuleButton(prominent: false)
             .disabled(working || locked)
         }
     }
@@ -192,12 +238,12 @@ struct FriendsAddSections: View {
 
     private func invite() {
         working = true
-        message = nil
+        inviteFailure = nil
         Task {
             if let made = await store.createInvite(), let code = made.code {
                 shown = FriendsShownInvite(invite: made, code: code)
             } else {
-                message = store.errorText
+                inviteFailure = store.errorText
             }
             working = false
         }

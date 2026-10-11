@@ -314,6 +314,11 @@ public enum StrandPalette {
     public static let activityMoveText     = Color(light: "#DC093F", dark: "#FF2D6C", lightHC: "#A5072F", darkHC: "#FF7CA3")
     public static let activityExerciseText = Color(light: "#1D7C00", dark: "#A6FF00", lightHC: "#165F00", darkHC: "#C4FF5C")
     public static let activityStandText    = Color(light: "#007992", dark: "#00E5F0", lightHC: "#005A6D", darkHC: "#7AF4F8")
+    /// The ring Fitness draws round a workout measured by its time (sampled from its Sharing tab): amber
+    /// deepening to yellow, with the yellow its duration is set in. Drawn on black like the three above.
+    public static let activityTimeStart    = Color(hex: "#FFC500")
+    public static let activityTimeEnd      = Color(hex: "#FFE620")
+    public static let activityTimeText     = Color(light: "#8C6A00", dark: "#FFE620", lightHC: "#684E00", darkHC: "#FFEE66")
     /// Health's Activity category tint (the flame in the card's title row).
     public static let activityTitle        = Color(light: "#FA3C1E", dark: "#FF5A36", lightHC: "#D92205", darkHC: "#FF8267")
     /// Fitness's Workout-tab card: the Exercise green washed into the page — deep olive on black in dark
@@ -375,6 +380,11 @@ public enum StrandPalette {
     public static let summaryAvatarBottom = Color(light: "#868A96", dark: "#6B6F7A")
     /// Apple Fitness's Summary tiles (measured on iOS 26.5): the chart's rules and day letters, and the grey
     /// disc behind a tile's chevron. Fitness is dark-only; the light values are the system greys it would take.
+    /// The pixel-thin rules on Fitness's page for a friend (sampled from it): under each of the day's
+    /// figures, and the fainter one under each workout in the list. The light values are the system
+    /// separator's, since Fitness has no light page to sample.
+    public static let fitnessFigureRule = Color(light: "#C6C6C8", dark: "#484848")
+    public static let fitnessListRule   = Color(light: "#C6C6C8", dark: "#2A2A2C")
     public static let fitnessTileRule = Color(light: "#D1D1D6", dark: "#5D5D60", lightHC: "#AEAEB2", darkHC: "#8E8E93")
     public static let fitnessTileDisc = Color(light: "#C7C7CC", dark: "#727275", lightHC: "#8E8E93", darkHC: "#AEAEB2")
     /// The outline of Health's "Show All Health Data" glyph.
@@ -475,6 +485,7 @@ public enum StrandPalette {
             (activityExerciseStart, activityExerciseText), (activityExerciseEnd, activityExerciseText),
             (activityStandStart, activityStandText), (activityStandEnd, activityStandText),
             (healthZoneHigh, healthNutritionText), (fitnessTime, fitnessTime),
+            (activityTimeStart, activityTimeText), (activityTimeEnd, activityTimeText),
         ]
         return (pairs + Array(zip(fitnessGoalHues, fitnessGoalTexts))).first { $0.0 == hue }?.1 ?? hue
     }

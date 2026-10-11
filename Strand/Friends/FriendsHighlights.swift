@@ -56,19 +56,15 @@ enum FriendsHighlights {
 /// instead, each as tall as its text needs.
 struct FriendsHighlightsCarousel: View {
     let highlights: [FriendHighlight]
-    let effortScale: EffortScale
     /// The page's own side margin, which the row breaks out of to run edge to edge.
     let gutter: CGFloat
 
     @Environment(\.dynamicTypeSize) private var dts
-    /// The card's height apart from its ring: the lines over and under it, which grow with the text size.
-    @ScaledMetric(relativeTo: .subheadline) private var textHeight: CGFloat = FriendHighlightCard.height
-        - FriendHighlightCard.ringDiameter
 
-    /// Fitness's own: 16 pt between cards and 25 pt of the next one in sight, so a card is the screen
-    /// less 82 pt (320 pt on a 402 pt screen).
-    static var spacing: CGFloat { 16 }
-    static var peek: CGFloat { 25 }
+    /// Fitness's own: 10 pt between cards and 30⅓ pt of the next one in sight, which leaves a card the
+    /// screen less 80⅔ pt (321⅓ pt on a 402 pt screen). A card is as tall as it is wide.
+    static var spacing: CGFloat { 10 }
+    static var peek: CGFloat { 30.33 }
 
     var body: some View {
         if dts.isAccessibilitySize {
@@ -81,21 +77,21 @@ struct FriendsHighlightsCarousel: View {
                 let width = max(0, geo.size.width - side * 2)
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: Self.spacing) {
-                        ForEach(highlights) { card($0).frame(width: width) }
+                        ForEach(highlights) { card($0).frame(width: width, height: width) }
                     }
                     .friendsScrollTargetLayout(fallbackSide: side)
                 }
                 .scrollIndicators(.hidden)
                 .friendsCardPaging(side: side)
             }
-            .frame(height: FriendHighlightCard.ringDiameter + textHeight)
+            .aspectRatio(FriendHighlightCard.screenToCard, contentMode: .fit)
             .padding(.horizontal, -gutter)
         }
     }
 
     private func card(_ highlight: FriendHighlight) -> some View {
         NavigationLink(value: TabRoute.friend(highlight.personID)) {
-            FriendHighlightCard(highlight: highlight, effortScale: effortScale)
+            FriendHighlightCard(highlight: highlight)
         }
         .buttonStyle(.plain)
     }
@@ -122,84 +118,78 @@ private extension View {
     }
 }
 
-/// One highlight, laid out as Fitness's: who and when across the top, a ring around the activity's
-/// glyph, the figure in the ring's hue and the activity under it. The ring is the workout's Strain. Ring
-/// and glyph are one flat hue, as Fitness draws a highlight in one: its lime, which is made for black,
-/// so on a white card the pair sits on a black disc as the Summary's rings do.
+/// One highlight, laid out as Fitness's: who and when across the top, a closed ring around the
+/// activity's glyph, how long the workout ran in the ring's hue and the activity under it. Fitness draws
+/// a workout measured by its time in yellow, and every workout here carries its length, so the ring and
+/// the figure are that yellow. The hue is made for black, so on a white card the ring sits on a black
+/// disc as the Summary's rings do.
 struct FriendHighlightCard: View {
     let highlight: FriendHighlight
-    let effortScale: EffortScale
 
-    /// The card's height at the default text size.
-    static var height: CGFloat { 322 }
+    /// The screen's width over the card's, which is also the row's width over its height.
+    static var screenToCard: CGFloat { 402 / 321.33 }
     static var radius: CGFloat { 28 }
-    static var ringDiameter: CGFloat { 168 }
 
     @Environment(\.dynamicTypeSize) private var dts
     @Environment(\.colorScheme) private var colorScheme
-    @ScaledMetric(relativeTo: .title2) private var figureSize: CGFloat = 22
-
-    /// Fitness's lime, the bright end of the Exercise ring.
-    private static var lime: Color { StrandPalette.activityExerciseEnd }
-    /// The band the picture and the two lines beside it are centred in.
-    private static var headerHeight: CGFloat { 66 }
+    @ScaledMetric(relativeTo: .title2) private var figureSize: CGFloat = 24
 
     private var workout: FriendsDay.Workout { highlight.workout }
     // The sport travels as the sender's own label; show it in this phone's language when the catalogue
     // knows it, and as sent otherwise.
     private var sport: String { WorkoutSource.localizedSport(workout.sport) }
-    private var duration: String { FriendsFormat.duration(seconds: workout.durationS) }
-    /// Strain where the workout has one, else how long it ran.
-    private var figure: String {
-        workout.strain.map { FriendsFormat.strain($0, scale: effortScale) } ?? duration
-    }
-    private var caption: String {
-        workout.strain == nil ? sport : sport + " · " + duration
-    }
+    private var length: String { FriendsFormat.clockDuration(seconds: workout.durationS) }
+    /// Fitness heads a highlight with the person's short name.
+    private var who: String { FriendsFormat.shortName(highlight.name) }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .top, spacing: 10.67) {
                 FriendAvatar(name: highlight.name, size: 32, id: highlight.personID, rev: highlight.avatarRev)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(highlight.name) completed a workout")
-                        .font(StrandFont.pro(15))
+                    .padding(.top, 3.17)
+                VStack(alignment: .leading, spacing: 2.17) {
+                    Text("\(who) completed a workout")
+                        .font(StrandFont.pro(17))
                         .foregroundStyle(StrandPalette.textPrimary)
                         .lineLimit(dts.isAccessibilitySize ? 4 : 2)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
                     Text(verbatim: FriendsFormat.ago(highlight.endTs))
-                        .font(StrandFont.pro(12))
+                        .font(StrandFont.pro(11))
                         .foregroundStyle(StrandPalette.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .frame(minHeight: Self.headerHeight)
-            .padding(.vertical, dts.isAccessibilitySize ? 12 : 0)
+            .padding(.top, 14.17)
+            // The ring keeps its place whatever the title's length: Fitness sets it 68⅚ pt down.
+            .frame(height: dts.isAccessibilitySize ? nil : 68.83, alignment: .top)
+            .padding(.bottom, dts.isAccessibilitySize ? 12 : 0)
             ZStack {
-                ActivityRingsView(rings: [ActivityRing(id: "strain",
-                                                       fraction: RingFraction.of(workout.strain ?? 100, max: 100),
-                                                       start: Self.lime, end: Self.lime)],
-                                  diameter: Self.ringDiameter, fitness: true, disc: colorScheme == .light)
-                WorkoutTypeIcon(workoutType: workout.sport, size: 60, weight: .semibold, color: Self.lime)
+                ActivityRingsView(rings: [ActivityRing(id: "time", fraction: 1,
+                                                       start: StrandPalette.activityTimeStart,
+                                                       end: StrandPalette.activityTimeEnd)],
+                                  diameter: FriendsStyle.highlightRing.diameter, fitness: true,
+                                  disc: colorScheme == .light, stroke: FriendsStyle.highlightRing.stroke)
+                WorkoutTypeIcon(workoutType: workout.sport, size: 64, weight: .semibold,
+                                color: StrandPalette.activityTimeEnd)
             }
             .accessibilityHidden(true)
-            Text(verbatim: figure)
-                .font(.system(size: figureSize, weight: .medium, design: .rounded))
-                .foregroundStyle(FriendsStyle.key)
+            FriendsFigure.text(length, size: figureSize)
+                .foregroundStyle(StrandPalette.activityTimeText)
                 .lineLimit(1)
-                .padding(.top, 14)
-            Text(verbatim: caption)
-                .font(StrandFont.pro(15))
+                .padding(.top, 17.3)
+            Text(verbatim: sport)
+                .font(StrandFont.pro(17))
                 .foregroundStyle(StrandPalette.textPrimary)
                 .lineLimit(dts.isAccessibilitySize ? 2 : 1)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.8)
+                .padding(.top, -1.3)
             Spacer(minLength: 16)
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .friendsFixedMeasure(dts)
         .friendsCard(radius: Self.radius)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: spoken))
@@ -207,11 +197,7 @@ struct FriendHighlightCard: View {
     }
 
     private var spoken: String {
-        var parts = [String(localized: "\(highlight.name) completed a workout"), FriendsFormat.ago(highlight.endTs),
-                     sport, duration]
-        if let strain = workout.strain {
-            parts.append(String(localized: "Effort") + " " + FriendsFormat.strain(strain, scale: effortScale))
-        }
-        return parts.joined(separator: ", ")
+        [String(localized: "\(highlight.name) completed a workout"), FriendsFormat.ago(highlight.endTs),
+         sport, FriendsFormat.duration(seconds: workout.durationS)].joined(separator: ", ")
     }
 }

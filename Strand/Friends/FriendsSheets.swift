@@ -22,14 +22,16 @@ private extension View {
 
 // MARK: - Friends
 
-/// The sheet behind the tab's bar button. Fitness invites and answers invitations from one place, so
-/// this holds what waits for an answer, inviting a friend, using a friend's code, and the way to the
-/// wearer's own sharing.
+/// The sheet behind the tab's bar button, laid out as Fitness's Sharing sheet: who the wearer shares
+/// with in one card, led by the row that invites another, each person opening their page; and at the
+/// foot the link to how the wearer's own data is handled. What waits for an answer leads the sheet, and
+/// the field for a code sits under the people, since Fitness has neither.
 struct FriendsManageSheet: View {
     @ObservedObject private var store = FriendsStore.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var shown: FriendsShownInvite?
+    @State private var showSharing = false
 
     var body: some View {
         NavigationStack {
@@ -37,24 +39,38 @@ struct FriendsManageSheet: View {
                 FriendsRequestsSection()
                 FriendsAddSections(shown: $shown)
                 Section {
-                    NavigationLink {
-                        FriendsSharingPage(onAccountLeft: { dismiss() })
-                    } label: {
-                        SettingsRowLabel(title: "My Sharing", icon: "person.crop.circle.fill",
-                                         color: StrandPalette.settingsBlue)
+                    Button { showSharing = true } label: {
+                        Text("See how your data is managed…")
+                            .font(StrandFont.pro(17))
+                            .foregroundStyle(FriendsStyle.key)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
                 }
             }
             .settingsForm()
             .navigationTitle(Text("Friends"))
             #if os(iOS)
+            // Fitness sets the sheet's cards 20 pt in from its edges.
+            .contentMargins(.horizontal, 20, for: .scrollContent)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
+                // Fitness closes its sheet from the trailing side.
+                #if os(iOS)
+                ToolbarItem(placement: .topBarTrailing) { SheetCloseButton { dismiss() } }
+                #else
                 ToolbarItem(placement: .cancellationAction) { SheetCloseButton { dismiss() } }
+                #endif
             }
             .navigationDestination(isPresented: Binding(get: { shown != nil }, set: { if !$0 { shown = nil } })) {
                 if let shown { FriendsInvitePage(shown: shown) }
+            }
+            .navigationDestination(isPresented: $showSharing) {
+                FriendsSharingPage(onAccountLeft: { dismiss() })
             }
             .task { await store.loadInvites() }
         }
@@ -94,8 +110,6 @@ struct FriendsServerSheet: View {
                 } footer: {
                     if let refusal {
                         Text(verbatim: refusal).foregroundStyle(StrandPalette.settingsRed)
-                    } else {
-                        Text("Leave this empty to use the standard server. Each server keeps its own account: turning Friends on here does not touch an account on another server.")
                     }
                 }
             }
@@ -151,8 +165,6 @@ struct FriendsSharingPage: View {
                 FriendsHero(name: store.nameFriendsSee(fallback: profile.displayName), own: true,
                             imageData: sharePhoto ? profile.avatarImageData : nil)
                     .friendsHeroRow()
-            } footer: {
-                Text("Your name and photo are the ones in your profile. Change them in Settings.")
             }
             Section {
                 Toggle(isOn: $share.scores) {
@@ -172,8 +184,6 @@ struct FriendsSharingPage: View {
                 }
             } header: {
                 Text("Friends Can See")
-            } footer: {
-                Text("Only what is switched on goes to the server, and only friends see it. Switching something off also erases it from the server.")
             }
             .disabled(onProbation)
             Section {
@@ -188,8 +198,6 @@ struct FriendsSharingPage: View {
                     SettingsRowLabel(title: "What the Server Stores", icon: "doc.text.magnifyingglass",
                                      color: StrandPalette.settingsIndigo)
                 }
-            } footer: {
-                Text("Everything the server holds about you, exactly as it holds it.")
             }
             Section {
                 LabeledContent {

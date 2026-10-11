@@ -70,14 +70,18 @@ struct ActivityRingsView: View {
     /// them on black, as the light appearance needs (the neon hues are made for black).
     var fitness = false
     var disc = true
+    /// A ring's width and the gap between rings in points, where a screen is drawn to Fitness's own
+    /// measure of that ring size (its Sharing tab sets each size differently); nil keeps the proportions.
+    var stroke: CGFloat? = nil
+    var gap: CGFloat? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
     /// The disc's margin around the outer ring.
     private var inset: CGFloat { disc ? diameter * 0.04 : 0 }
-    private var lineWidth: CGFloat { diameter * (fitness ? 0.112 : 0.1) }
-    private var ringGap: CGFloat { diameter * (fitness ? 0.006 : 0.01) }
+    private var lineWidth: CGFloat { stroke ?? diameter * (fitness ? 0.112 : 0.1) }
+    private var ringGap: CGFloat { gap ?? diameter * (fitness ? 0.006 : 0.01) }
 
     var body: some View {
         ZStack {
@@ -135,9 +139,11 @@ private struct RingArc: View, Animatable {
                         .padding(lineWidth / 2)
                         .rotationEffect(.degrees(-90))
                     cap(start, radius: radius, angle: 0)
-                    // The leading end casts a soft shadow back onto the ring, as Activity draws it.
+                    // The leading end casts a soft shadow ahead of itself, onto the ring it is about to
+                    // cover, as Activity draws it: none falls back on the arc it ends.
+                    cap(.black.opacity(0.45), radius: radius, angle: 360 * fraction + shadowLead(radius))
+                        .blur(radius: lineWidth * 0.12)
                     cap(end, radius: radius, angle: 360 * fraction)
-                        .shadow(color: .black.opacity(0.45), radius: lineWidth * 0.12)
                 }
                 if let glyph {
                     RingGlyphView(glyph: glyph, side: lineWidth * ActivityRingGlyph.cellToLineWidth)
@@ -146,6 +152,13 @@ private struct RingArc: View, Animatable {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
+    }
+
+    /// How far ahead of the leading end its shadow sits, in degrees: a little more than the shadow's own
+    /// blur, so the blur does not reach back past the end.
+    private func shadowLead(_ radius: CGFloat) -> Double {
+        guard radius > 0 else { return 0 }
+        return Double(lineWidth * 0.16 / radius) * 180 / .pi
     }
 
     /// A round cap centred on the ring's path at `angle` degrees clockwise from twelve o'clock.

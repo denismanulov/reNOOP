@@ -135,6 +135,51 @@ public enum StrandFont {
         textStyle(for: size).map { .system($0, weight: weight) } ?? .system(size: size, weight: weight)
     }
 
+    /// SF Compact Rounded at a fixed size: the face Fitness sets its Sharing figures in ("108%",
+    /// "923/850KCAL"). The system carries it under a design the SDK gives no name; where that design is
+    /// refused the figure is drawn in SF Rounded. Digits stay proportional, as Fitness's are. Callers
+    /// scale `size` with `@ScaledMetric`.
+    public static func compactRounded(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
+        #if canImport(UIKit)
+        let base = UIFont.systemFont(ofSize: size, weight: platformWeight(weight))
+        guard let descriptor = base.fontDescriptor.withDesign(.init(rawValue: compactRoundedDesign)) else {
+            return .system(size: size, weight: weight, design: .rounded)
+        }
+        return Font(UIFont(descriptor: descriptor, size: size))
+        #elseif canImport(AppKit)
+        let base = NSFont.systemFont(ofSize: size, weight: platformWeight(weight))
+        guard let descriptor = base.fontDescriptor.withDesign(.init(rawValue: compactRoundedDesign)),
+              let font = NSFont(descriptor: descriptor, size: size) else {
+            return .system(size: size, weight: weight, design: .rounded)
+        }
+        return Font(font)
+        #else
+        return .system(size: size, weight: weight, design: .rounded)
+        #endif
+    }
+
+    private static let compactRoundedDesign = "NSCTFontUIFontDesignCompactRounded"
+
+    #if canImport(UIKit)
+    private static func platformWeight(_ weight: Font.Weight) -> UIFont.Weight {
+        switch weight {
+        case .regular: .regular
+        case .semibold: .semibold
+        case .bold: .bold
+        default: .medium
+        }
+    }
+    #elseif canImport(AppKit)
+    private static func platformWeight(_ weight: Font.Weight) -> NSFont.Weight {
+        switch weight {
+        case .regular: .regular
+        case .semibold: .semibold
+        case .bold: .bold
+        default: .medium
+        }
+    }
+    #endif
+
     /// Mono at an arbitrary size.
     public static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)

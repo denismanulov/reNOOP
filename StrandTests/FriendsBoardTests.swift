@@ -19,7 +19,7 @@ final class FriendsBoardTests: XCTestCase {
     func testByAScoreTheHighestLeadsAndTheWearerIsAmongFriends() {
         let rows = FriendsBoard.rows(me: person("me", recovery: 58),
                                      friends: [person("anna", recovery: 56), person("max", recovery: 73)],
-                                     sort: .recovery, todayKey: today)
+                                     sort: .recovery, todayKey: today, meName: "Me")
         XCTAssertEqual(order(rows), ["max", "me", "anna"])
         XCTAssertEqual(rows.map(\.isMe), [false, true, false])
         XCTAssertEqual(rows.map(\.value), [73, 58, 56])
@@ -33,25 +33,33 @@ final class FriendsBoardTests: XCTestCase {
             (.sleep, ["anna", "me"], [80, 70])
         ]
         for (sort, expected, figures) in cases {
-            let rows = FriendsBoard.rows(me: me, friends: [anna], sort: sort, todayKey: today)
+            let rows = FriendsBoard.rows(me: me, friends: [anna], sort: sort, todayKey: today, meName: "Me")
             XCTAssertEqual(order(rows), expected, sort.rawValue)
             XCTAssertEqual(rows.map(\.value), figures, sort.rawValue)
         }
     }
 
-    func testByNameTheWearerLeadsWhateverTheFigures() {
+    func testByNameTheWearerIsFiledUnderTheWordOnTheirCard() {
         let rows = FriendsBoard.rows(me: person("zzz", recovery: 1),
                                      friends: [person("max", recovery: 99), person("anna", day: nil),
                                                person("boris", day: "2026-10-07", recovery: 70)],
-                                     sort: .name, todayKey: today)
-        XCTAssertEqual(order(rows), ["zzz", "anna", "boris", "max"])
-        XCTAssertEqual(rows.map(\.standing), [.today, .noData, .stale("2026-10-07"), .today])
+                                     sort: .name, todayKey: today, meName: "Me")
+        XCTAssertEqual(order(rows), ["anna", "boris", "max", "zzz"], "\"Me\" files after Max, whatever the account is called")
+        XCTAssertEqual(rows.map(\.standing), [.noData, .stale("2026-10-07"), .today, .today])
+        XCTAssertEqual(rows.map(\.isMe), [false, false, false, true])
+    }
+
+    func testByNameTheWordForTheWearerIsTheActiveLanguages() {
+        let friends = [person("anya", name: "Аня"), person("yana", name: "Яна"), person("boris", name: "Борис")]
+        let rows = FriendsBoard.rows(me: person("me", name: "Денис"), friends: friends, sort: .name,
+                                     todayKey: today, meName: "Я")
+        XCTAssertEqual(order(rows), ["anya", "boris", "me", "yana"])
     }
 
     func testByNameTheCardsShowRecovery() {
         XCTAssertEqual(FriendsSort.name.metric, .recovery)
-        XCTAssertEqual(FriendsSort.allCases.map(\.metric), [.recovery, .recovery, .strain, .sleep])
-        let rows = FriendsBoard.rows(me: person("me", recovery: 40, strain: 80), friends: [], sort: .name, todayKey: today)
+        XCTAssertEqual(FriendsSort.allCases.map(\.metric), [.recovery, .recovery, .strain, .sleep, .workouts])
+        let rows = FriendsBoard.rows(me: person("me", recovery: 40, strain: 80), friends: [], sort: .name, todayKey: today, meName: "Me")
         XCTAssertEqual(rows.first?.value, 40)
     }
 
@@ -59,7 +67,7 @@ final class FriendsBoardTests: XCTestCase {
         let rows = FriendsBoard.rows(me: person("me", recovery: 70),
                                      friends: [person("zoe", recovery: 80), person("anna", recovery: 80),
                                                person("max", recovery: 60)],
-                                     sort: .recovery, todayKey: today)
+                                     sort: .recovery, todayKey: today, meName: "Me")
         XCTAssertEqual(order(rows), ["anna", "zoe", "me", "max"])
     }
 
@@ -67,7 +75,7 @@ final class FriendsBoardTests: XCTestCase {
         let rows = FriendsBoard.rows(me: person("me", recovery: 40),
                                      friends: [person("pasha", day: "2026-10-07", recovery: 99),
                                                person("ahead", day: "2026-10-09", recovery: 10)],
-                                     sort: .recovery, todayKey: today)
+                                     sort: .recovery, todayKey: today, meName: "Me")
         XCTAssertEqual(order(rows), ["me", "ahead", "pasha"])
         XCTAssertEqual(rows.map(\.standing), [.today, .today, .stale("2026-10-07")])
         XCTAssertEqual(rows.last?.value, 99, "yesterday's figure is still shown, said to be yesterday's")
@@ -78,7 +86,7 @@ final class FriendsBoardTests: XCTestCase {
             me: person("me", recovery: 40),
             friends: [person("zed", day: nil), person("kate", recovery: 80, sharesScores: false),
                       person("oleg", strain: 30), person("boris", day: "2026-10-06", recovery: 70)],
-            sort: .recovery, todayKey: today)
+            sort: .recovery, todayKey: today, meName: "Me")
         XCTAssertEqual(order(rows), ["me", "boris", "kate", "oleg", "zed"])
         XCTAssertEqual(rows.map(\.standing),
                        [.today, .stale("2026-10-06"), .notShared, .noData, .noData])
@@ -88,9 +96,9 @@ final class FriendsBoardTests: XCTestCase {
     func testTheWearerAloneIsStillOnTheList() {
         for sort in FriendsSort.allCases {
             XCTAssertEqual(order(FriendsBoard.rows(me: person("me", recovery: 50, strain: 50, sleep: 88), friends: [],
-                                                   sort: sort, todayKey: today)), ["me"], sort.rawValue)
+                                                   sort: sort, todayKey: today, meName: "Me")), ["me"], sort.rawValue)
             XCTAssertEqual(FriendsBoard.rows(me: person("me", day: nil), friends: [], sort: sort,
-                                             todayKey: today).map(\.standing), [.noData], sort.rawValue)
+                                             todayKey: today, meName: "Me").map(\.standing), [.noData], sort.rawValue)
         }
     }
 
@@ -103,17 +111,17 @@ final class FriendsBoardTests: XCTestCase {
     }
 
     func testOnlyScoresWithAnAmountBehindThemHaveASecondLine() {
-        XCTAssertEqual(FriendsMetric.allCases.map(\.hasDetail), [false, true, true])
+        XCTAssertEqual(FriendsMetric.allCases.map(\.hasDetail), [false, true, true, true])
     }
 
     func testSleepIsFollowedByTheTimeAsleepAndRecoveryByNothing() {
         let night = FriendsDay.Sleep(startTs: 0, endTs: 0, asleepMin: 488)
         let me = FriendProfile(id: "me", name: "Me", share: FriendsShare(),
                                days: day(FriendsDay(recovery: 70, sleepScore: 59, sleep: night)))
-        XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .sleep, todayKey: today).first?.detail,
+        XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .sleep, todayKey: today, meName: "Me").first?.detail,
                        .asleep(minutes: 488))
-        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .recovery, todayKey: today).first?.detail)
-        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .name, todayKey: today).first?.detail)
+        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .recovery, todayKey: today, meName: "Me").first?.detail)
+        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .name, todayKey: today, meName: "Me").first?.detail)
     }
 
     func testStrainIsFollowedByTheDaysWorkoutMinutes() {
@@ -125,7 +133,7 @@ final class FriendsBoardTests: XCTestCase {
         for c in cases {
             let me = FriendProfile(id: "me", name: "Me", share: FriendsShare(),
                                    days: day(FriendsDay(strain: 31.9, workouts: c.workouts)))
-            XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .strain, todayKey: today).first?.detail,
+            XCTAssertEqual(FriendsBoard.rows(me: me, friends: [], sort: .strain, todayKey: today, meName: "Me").first?.detail,
                            .workouts(minutes: c.minutes), c.name)
         }
     }
@@ -137,14 +145,88 @@ final class FriendsBoardTests: XCTestCase {
                                   days: day(summary))
         let me = person("me", strain: 10, sleep: 10)
         for sort in [FriendsSort.sleep, .strain] {
-            let rows = FriendsBoard.rows(me: me, friends: [quiet], sort: sort, todayKey: today)
+            let rows = FriendsBoard.rows(me: me, friends: [quiet], sort: sort, todayKey: today, meName: "Me")
             XCTAssertNil(rows.first(where: { !$0.isMe })?.detail, sort.rawValue)
         }
         // Scores without the night behind them: the figure stands alone.
-        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .sleep, todayKey: today).first?.detail)
+        XCTAssertNil(FriendsBoard.rows(me: me, friends: [], sort: .sleep, todayKey: today, meName: "Me").first?.detail)
+    }
+
+    // MARK: - By workouts
+
+    private func sporty(_ nick: String, _ workouts: [FriendsDay.Workout]?, sharesWorkouts: Bool = true,
+                        on dayKey: String = "2026-10-08") -> FriendProfile {
+        FriendProfile(id: nick, name: nick.capitalized, share: FriendsShare(workouts: sharesWorkouts),
+                      days: [FriendFeedDay(day: dayKey, summary: FriendsDay(recovery: 50, workouts: workouts))])
+    }
+
+    private func burn(_ kcal: Int?, sport: String = "Running") -> FriendsDay.Workout {
+        FriendsDay.Workout(startTs: 1_791_400_000, sport: sport, durationS: 1_800, kcal: kcal)
+    }
+
+    func testByWorkoutsTheMostEnergyLeadsAndADayWithoutOneCountsAsZero() {
+        let rows = FriendsBoard.rows(me: sporty("me", []),
+                                     friends: [sporty("anna", [burn(250)]), sporty("max", [burn(400), burn(200, sport: "Yoga")])],
+                                     sort: .workouts, todayKey: today, meName: "Me")
+        XCTAssertEqual(order(rows), ["max", "anna", "me"])
+        XCTAssertEqual(rows.map(\.value), [600, 250, 0])
+        XCTAssertEqual(rows.map(\.detail), [.sessions(count: 2, sport: nil), .sessions(count: 1, sport: "Running"),
+                                            .sessions(count: 0, sport: nil)])
+        XCTAssertEqual(rows.map(\.standing), [.today, .today, .today])
+    }
+
+    func testWorkoutsThatCarryNoEnergyAreListedWithoutAFigure() {
+        let rows = FriendsBoard.rows(me: sporty("me", [burn(120)]), friends: [sporty("anna", [burn(nil)])],
+                                     sort: .workouts, todayKey: today, meName: "Me")
+        XCTAssertEqual(order(rows), ["me", "anna"])
+        XCTAssertNil(rows.last?.value, "an unknown amount is not shown as zero")
+        XCTAssertEqual(rows.last?.standing, .today)
+        XCTAssertEqual(rows.last?.detail, .sessions(count: 1, sport: "Running"))
+    }
+
+    func testByWorkoutsOnlyTheWorkoutsSwitchDecidesWhatIsShown() {
+        let cases: [(name: String, friend: FriendProfile, standing: FriendsBoardRow.Standing)] = [
+            ("workouts switched off", sporty("kate", [burn(300)], sharesWorkouts: false), .notShared),
+            ("workouts not read for the day", sporty("kate", nil), .noData),
+            ("nothing uploaded", FriendProfile(id: "kate", name: "Kate"), .noData),
+            ("yesterday's workouts", sporty("kate", [burn(300)], on: "2026-10-07"), .stale("2026-10-07"))
+        ]
+        for c in cases {
+            let rows = FriendsBoard.rows(me: sporty("me", []), friends: [c.friend], sort: .workouts,
+                                         todayKey: today, meName: "Me")
+            XCTAssertEqual(rows.first(where: { !$0.isMe })?.standing, c.standing, c.name)
+        }
+        // Scores switched off do not hide the workouts, which have their own switch.
+        let scoresOff = FriendProfile(id: "kate", name: "Kate", share: FriendsShare(scores: false),
+                                      days: [FriendFeedDay(day: today, summary: FriendsDay(workouts: [burn(300)]))])
+        let rows = FriendsBoard.rows(me: sporty("me", []), friends: [scoresOff], sort: .workouts,
+                                     todayKey: today, meName: "Me")
+        XCTAssertEqual(rows.first?.value, 300)
+    }
+
+    // MARK: - Figures
+
+    func testAWorkoutsLengthReadsAsHoursAndMinutes() {
+        let cases: [(seconds: Int, text: String)] = [
+            (0, "0:00"), (29, "0:00"), (30, "0:01"), (1_800, "0:30"), (3_600, "1:00"), (4_320, "1:12"),
+            (36_000, "10:00"), (-5, "0:00")
+        ]
+        for c in cases {
+            XCTAssertEqual(FriendsFormat.clockDuration(seconds: c.seconds), c.text, "\(c.seconds) s")
+        }
+    }
+
+    func testAPersonGoesByTheirGivenNameInASentence() {
+        let cases: [(name: String, short: String)] = [
+            ("Anna Smith", "Anna"), ("Anna", "Anna"), ("", ""), ("anna_92", "anna_92")
+        ]
+        for c in cases {
+            XCTAssertEqual(FriendsFormat.shortName(c.name), c.short, c.name)
+        }
     }
 
     func testFiguresReadAsTheSummaryWritesThem() {
+        XCTAssertEqual(FriendsMetric.workouts.text(540.4, scale: .hundred), "540")
         XCTAssertEqual(FriendsMetric.recovery.text(72.6, scale: .hundred), "73%")
         XCTAssertEqual(FriendsMetric.sleep.text(88, scale: .hundred), "88%")
         XCTAssertEqual(FriendsMetric.strain.text(38.6, scale: .hundred),

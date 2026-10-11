@@ -1,13 +1,13 @@
 //  FriendsView.swift
-//  NOOP · Friends — the tab, laid out as the Fitness app's Sharing tab in iOS 26: the large title with
-//  one button in the bar, Highlights (what friends did lately) paging side by side, then everyone's
-//  rings under a heading that carries the sort menu and the day. Inviting a friend and whatever waits
-//  for an answer are behind the bar's button, badged with their count, where Fitness keeps its
-//  invitations.
+//  NOOP · Friends — the tab, laid out as the Fitness app's Sharing tab in iOS 26: the large title on the
+//  bar's own row beside its one button, Highlights (what friends did lately) paging side by side, then
+//  everyone's rings under a heading that carries the sort menu and the day. Inviting a friend and
+//  whatever waits for an answer are behind the bar's button, badged with their count, where Fitness
+//  keeps its invitations.
 //
-//  The metrics are Fitness's, measured from the Sharing screenshot in Apple's iPhone User Guide
-//  ("Share your activity in Fitness", iOS 26). Until Friends is turned on the tab is Fitness's
-//  "Share Activity" page, and nothing is sent anywhere.
+//  The metrics are Fitness's, measured from the app itself (iOS 26.5, its Sharing tab with sample
+//  friends). Fitness's Competitions are not here: the tab has none. Until Friends is turned on the tab
+//  is Fitness's "Share Activity" page, and nothing is sent anywhere.
 
 import SwiftUI
 import StrandAnalytics
@@ -40,7 +40,8 @@ struct FriendsView: View {
         .background(StrandPalette.summaryCanvas.ignoresSafeArea())
         .navigationTitle(Text("Friends"))
         #if os(iOS)
-        .navigationBarTitleDisplayMode(store.isOn ? .large : .inline)
+        // Fitness sets its large title on the bar's own row, beside the button.
+        .toolbarTitleDisplayMode(store.isOn ? .inlineLarge : .inline)
         #endif
         .toolbar { toolbar }
         .sheet(isPresented: $showFriends) { FriendsManageSheet() }
@@ -119,30 +120,38 @@ struct FriendsView: View {
     private var board: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: FriendsStyle.cardSpacing) {
+                VStack(alignment: .leading, spacing: 0) {
                     if let error = store.errorText {
                         NoticeCard(title: Text(verbatim: error), systemImage: "exclamationmark.triangle.fill",
                                    tone: .warning, onDismiss: { store.errorText = nil })
+                            .padding(.bottom, FriendsStyle.cardSpacing)
                     }
-                    FriendsNotices(onReview: { showFriends = true })
+                    VStack(spacing: FriendsStyle.cardSpacing) {
+                        FriendsNotices(onReview: { showFriends = true })
+                    }
                     if let feed = store.feed {
                         let highlights = FriendsHighlights.recent(friends: feed.friends, now: store.serverNow())
                         if !highlights.isEmpty {
-                            SectionHeader(title: "friends.highlights")
-                            FriendsHighlightsCarousel(highlights: highlights, effortScale: effortScale,
-                                                      gutter: FriendsStyle.gutter)
+                            FriendsSectionTitle(title: "friends.highlights")
+                                .padding(.top, FriendsStyle.barToTitle)
+                            FriendsHighlightsCarousel(highlights: highlights, gutter: FriendsStyle.gutter)
+                                .padding(.top, FriendsStyle.titleToCard)
                         }
                         FriendsBoardHeader(sort: sort, day: Repository.logicalDay(Date()))
-                            .padding(.top, NoopMetrics.space4)
-                        ForEach(FriendsBoard.rows(me: feed.me, friends: feed.friends, sort: sort.wrappedValue,
-                                                  todayKey: FriendsFormat.todayKey())) { row in
-                            NavigationLink(value: TabRoute.friend(row.person.id)) {
-                                FriendScoreCard(row: row, metric: sort.wrappedValue.metric, effortScale: effortScale,
-                                                ownImageData: profile.avatarImageData)
+                            .padding(.top, highlights.isEmpty ? FriendsStyle.barToTitle : FriendsStyle.carouselToTitle)
+                        VStack(spacing: FriendsStyle.cardSpacing) {
+                            ForEach(FriendsBoard.rows(me: feed.me, friends: feed.friends, sort: sort.wrappedValue,
+                                                      todayKey: FriendsFormat.todayKey(),
+                                                      meName: String(localized: "Me"))) { row in
+                                NavigationLink(value: TabRoute.friend(row.person.id)) {
+                                    FriendScoreCard(row: row, metric: sort.wrappedValue.metric, effortScale: effortScale,
+                                                    ownImageData: profile.avatarImageData)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            if feed.friends.isEmpty { noFriends }
                         }
-                        if feed.friends.isEmpty { noFriends }
+                        .padding(.top, FriendsStyle.dayLineToCard)
                     } else if store.loading {
                         ProgressView().frame(maxWidth: .infinity).padding(.top, NoopMetrics.space8)
                     }
@@ -258,7 +267,7 @@ struct FriendsWelcome: View {
     private var title: LocalizedStringKey {
         switch store.phase {
         case .off, .on: return "Share with Friends"
-        case .waitingForStrap: return "Connect Your Strap"
+        case .waitingForStrap: return "Waiting for Your Strap"
         case .strapBound: return "This Strap Has an Account"
         case .waiting: return "Confirm on Your Other Phone"
         }
@@ -269,7 +278,7 @@ struct FriendsWelcome: View {
         case .off, .on:
             return "See how your friends recovered, trained and slept, and let them see your day."
         case .waitingForStrap:
-            return "Your account is tied to your strap, so the same strap finds it again on a new phone. Connect the strap and this finishes by itself."
+            return "Your account is tied to your strap, so the same strap finds it again on a new phone. This finishes by itself once the app has read the strap, which can take until the strap connects again."
         case .strapBound:
             return "If it is yours from another phone, join it. If the strap came from someone else, start your own."
         case .waiting:
@@ -292,7 +301,6 @@ struct FriendsWelcome: View {
                     .friendsCard(radius: 14)
                     .padding(.bottom, NoopMetrics.space4)
             }
-            note("lock.fill", "Nothing leaves this device until you turn Friends on, and you choose what is shared. Your name and photo are the ones in your profile.")
             Button { Task { await store.turnOn(profile: profile) } } label: { Text("Turn On") }
                 .buttonStyle(FriendsKeyButtonStyle(large: true))
                 .disabled(store.loading)

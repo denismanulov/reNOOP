@@ -753,6 +753,12 @@ enum DemoScreens {
         // Friends against the configured server, and the page the tab shows before an account exists.
         case "friends":  return AnyView(FriendsView().tabRouteDestinations())
         case "friendswelcome": return AnyView(FriendsWelcome().background(StrandPalette.summaryCanvas.ignoresSafeArea()))
+        // One person's page: `--demo-screen friendpage --demo-friend <account id>`.
+        case "friendpage":
+            let id = args.firstIndex(of: "--demo-friend").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
+            return AnyView(FriendDetailView(personID: id))
+        // The sheet behind the Friends tab's bar button.
+        case "friendssheet": return AnyView(FriendsView().tabRouteDestinations().sheet(isPresented: .constant(true)) { FriendsManageSheet() })
         case "insights": return AnyView(NavigationStack { InsightsHubView() })
         // Every notice state side by side (the shared NoticeCard, with each screen's real copy).
         case "notices": return AnyView(NoticeGalleryDemo())
