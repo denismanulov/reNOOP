@@ -20,13 +20,39 @@ import org.junit.Test
  */
 class ProfileStoreAgeMigrationTest {
 
+    /** Twin of Swift `ProfileStoreTests.testWithNothingStoredTheDefaultAgeIsShownAndNothingIsWritten`:
+     *  only a date that came from storage is written back, never the age-30 default. */
     @Test
-    fun freshInstall_defaultsTo30_andPersistsADob() {
+    fun freshInstall_showsTheDefaultAgeAndWritesNothing() {
         val prefs = FakeSharedPreferences()
         val profile = ProfileStore(prefs)
         assertEquals(30, profile.age)
-        // Reading age materialises and persists a DOB so the derivation is stable next launch.
-        assertTrue("a DOB must be persisted after the first read", prefs.contains("date_of_birth"))
+        assertEquals(ProfileStore.dobForAge(30), profile.dateOfBirthMillis)
+        assertTrue("the default is not written", prefs.all.isEmpty())
+        assertNull(profile.backupSnapshot()["profile.age"])
+    }
+
+    /** Twin of `testAStoredDateOfBirthIsKeptAndItsAgeMirrored`. */
+    @Test
+    fun aStoredDateOfBirthIsKept() {
+        val prefs = FakeSharedPreferences()
+        val born = ProfileStore.dobForAge(17)
+        prefs.edit().putLong("date_of_birth", born).apply()
+        val profile = ProfileStore(prefs)
+        assertEquals(born, profile.dateOfBirthMillis)
+        assertEquals(17, profile.age)
+        assertEquals(born, prefs.getLong("date_of_birth", -1))
+    }
+
+    /** Twin of `testSettingTheDateOfBirthStoresIt`: once the wearer answers, the date is stored. */
+    @Test
+    fun settingTheDateOfBirthStoresIt() {
+        val prefs = FakeSharedPreferences()
+        val profile = ProfileStore(prefs)
+        val born = ProfileStore.dobForAge(25)
+        profile.dateOfBirthMillis = born
+        assertEquals(born, prefs.getLong("date_of_birth", -1))
+        assertEquals(25, prefs.getInt("age", -1))
     }
 
     @Test
@@ -36,6 +62,7 @@ class ProfileStoreAgeMigrationTest {
         val profile = ProfileStore(prefs)
         assertEquals(40, profile.age)
         assertTrue("migration persists a derived DOB", prefs.contains("date_of_birth"))
+        assertEquals(40, prefs.getInt("age", -1))
     }
 
     @Test

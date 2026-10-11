@@ -34,12 +34,18 @@ class ProfileStore(private val prefs: SharedPreferences) {
      * anchored DOB the first time it's read, then persists it so the derivation is stable. The setter
      * mirrors the derived Int age under the legacy [KEY_AGE] so the `.noopbak` backup whitelist keeps
      * exporting an age with no change to the cross-platform contract.
+     *
+     * The age-30 default is NOT written: only a date that came from storage is written back, the rule
+     * the Swift `ProfileStore` keeps. There the reason is a launch before the phone's first unlock,
+     * which reads every setting as absent while its writes still land; no component of this app is
+     * direct-boot aware, so that launch cannot happen here, and the rule is kept so that what a
+     * profile nobody has filled in stores is the same on both platforms: nothing.
      */
     var dateOfBirthMillis: Long
         get() {
             if (prefs.contains(KEY_DOB)) return prefs.getLong(KEY_DOB, 0L)
-            val legacyAge = (if (prefs.contains(KEY_AGE)) prefs.getInt(KEY_AGE, 30) else 30)
-                .coerceIn(AGE_MIN, AGE_MAX)
+            if (!prefs.contains(KEY_AGE)) return dobForAge(DEFAULT_AGE)
+            val legacyAge = prefs.getInt(KEY_AGE, DEFAULT_AGE).coerceIn(AGE_MIN, AGE_MAX)
             val dob = dobForAge(legacyAge)
             prefs.edit().putLong(KEY_DOB, dob).putInt(KEY_AGE, legacyAge).apply()
             return dob
@@ -265,6 +271,9 @@ class ProfileStore(private val prefs: SharedPreferences) {
 
     companion object {
         private const val PREFS = "noop_profile"
+        /** The age shown until the wearer gives one. Never stored. */
+        const val DEFAULT_AGE = 30
+
         /** Date of birth as epoch millis — the #146 source of truth for [age]. */
         private const val KEY_DOB = "date_of_birth"
         /** Pre-#146 age key, now kept mirrored from the DOB so the `.noopbak` whitelist (Int age)
