@@ -264,4 +264,20 @@ extension KeyMetric {
         case .skinTemp: return StrandPalette.healthTemperature
         }
     }
+
+    /// The Health category a pinned Summary card files under, as `AllMetricsCatalog.category` files the
+    /// metric page it opens.
+    var healthCategory: HealthCategory {
+        switch self {
+        case .charge, .hrv, .restingHr: return .heart
+        case .effort, .steps, .calories: return .activity
+        case .rest: return .sleep
+        case .bloodOxygen, .respiratory: return .respiratory
+        case .weight, .skinTemp: return .bodyMeasurements
+        }
+    }
+
+    /// The glyph a pinned Summary card carries: its category's, so a metric reads the same on Summary,
+    /// in All Metrics and in Trends.
+    var healthIcon: String { healthCategory.icon }
 }

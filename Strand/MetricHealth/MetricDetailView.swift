@@ -120,7 +120,7 @@ struct MetricDetailView: View {
                 Group {
                     if showsImportState {
                         // Nothing recorded: one way to fill it, in place of an empty chart.
-                        EmptyStateView(title: Text("No Data"), systemImage: metric.icon) {
+                        EmptyStateView(title: Text("No Data"), systemImage: AllMetricsCatalog.category(metric).icon) {
                             NavigationLink { DataSourcesView() } label: { Text("Import History") }
                         }
                     } else if loaded {
@@ -351,7 +351,7 @@ struct MetricDetailView: View {
         let figuresLayout = dts.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
             : AnyLayout(HStackLayout(alignment: .top))
-        return HighlightCard(icon: metric.icon, title: metric.title, tint: tint, sentence: sentence, spacing: 10) {
+        return HighlightCard(icon: AllMetricsCatalog.category(metric).icon, title: metric.title, tint: tint, sentence: sentence, spacing: 10) {
             figuresLayout {
                 highlightFigure(String(localized: "Two-Week Average"), h.average, color: StrandPalette.textSecondary, trailing: false)
                 if !dts.isAccessibilitySize { Spacer(minLength: 8) }

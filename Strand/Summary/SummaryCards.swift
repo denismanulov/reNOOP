@@ -182,7 +182,7 @@ struct SummaryMetricCard: View {
         NavigationLink(value: reading.route) {
             SummaryCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    SummaryCardTitleRow(icon: metric.customizationIcon, title: metric.title,
+                    SummaryCardTitleRow(icon: metric.healthIcon, title: metric.title,
                                         tint: metric.healthTint, trailing: stamp)
                     HStack(alignment: .bottom, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -362,23 +362,19 @@ struct SummaryHighlightCard: View {
         .accessibilityHidden(true)
     }
 
-    private var icon: String {
+    /// The pinned metric a highlight is about; its glyph and hue are that metric's.
+    private var metric: KeyMetric {
         switch highlight.key {
-        case "hrv": return "waveform.path.ecg"
-        case "rhr": return "heart.fill"
-        case "respRate": return "lungs.fill"
-        default: return "figure.run"
+        case "hrv": return .hrv
+        case "rhr": return .restingHr
+        case "respRate": return .respiratory
+        default: return .effort
         }
     }
 
-    private var tint: Color {
-        switch highlight.key {
-        case "hrv": return KeyMetric.hrv.healthTint
-        case "rhr": return KeyMetric.restingHr.healthTint
-        case "respRate": return KeyMetric.respiratory.healthTint
-        default: return KeyMetric.effort.healthTint
-        }
-    }
+    private var icon: String { metric.healthIcon }
+
+    private var tint: Color { metric.healthTint }
 }
 
 /// A Health highlight's figure pair: the tinted reading on the left, the grey one it is read against on the

@@ -30,10 +30,11 @@ enum HomeScreenQuickAction: String, CaseIterable {
 
     private var symbolName: String {
         switch self {
-        case .liveHeartRate: "waveform.path.ecg"
+        // The glyphs Browse lists these screens under, in the outline cut a quick action is drawn in.
+        case .liveHeartRate: "heart"
         case .startWorkout: "figure.run"
-        case .logJournal: "book.pages"
-        case .breathe: "lungs"
+        case .logJournal: "text.book.closed"
+        case .breathe: "figure.mind.and.body"
         }
     }
 
