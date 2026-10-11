@@ -176,8 +176,9 @@ applies in full: for the same streams, Kotlin must produce the same stage for ev
 
 ### The pipeline
 
-All of it except the tree evaluation is pure Swift in
-`Packages/StrandAnalytics/Sources/StrandAnalytics/`:
+All of it is pure Swift in `Packages/StrandAnalytics/Sources/StrandAnalytics/`
+(`SleepStageFeatures.swift`, `SleepStageLearned.swift`, `SleepStageTrees.swift`), with no model
+runtime behind it, so every step has a Kotlin twin to write:
 
 1. `SleepStageFeatures.rows(start:end:grav:hr:rr:)` — one row per 30 s epoch, 26 features
    (`SleepStageFeatures.names`), read from the window and 1800 s either side (`reach`). Motion is in
@@ -200,29 +201,53 @@ All of it except the tree evaluation is pure Swift in
 
 ### The models
 
-`Strand/SleepModel/SleepStageFirst.mlmodel` and `SleepStageSecond.mlmodel` (about 1 MB each). Each is
-a Core ML pipeline: a feature vectorizer, then a boosted-tree classifier (`treeEnsembleClassifier`),
-depth 4. Core ML does not run on Android, so the trees have to be read out of the files:
+On Apple platforms the pair is `Strand/SleepModel/SleepStageFirst.mlmodel` and
+`SleepStageSecond.mlmodel`, run through Core ML. Each is a feature vectorizer followed by a
+boosted-tree classifier: 1200 trees of depth 4 (300 rounds, one tree per class per round).
 
-- A `.mlmodel` is a protobuf (`Model.proto` of the Core ML specification). `coremltools` reads it on
-  any OS (`coremltools.utils.load_spec`); only predicting with it needs macOS. No export exists yet:
-  writing one (trees to a compact file under `android/app/src/main/assets/`, with the decoder
-  settings from the second model's user-defined metadata) is the first step.
-- The models list their classes as `deep, light, rem, wake`. Everything in `StrandAnalytics` uses
-  `wake, light, deep, rem` (`SleepStageDecoder.stages`). `SleepStageModelStore.Runner` reorders by
-  name; a Kotlin evaluator must do the same.
-- The vectorizer fixes the column order. Bind columns by name (`firstNames`, `secondNames`), as the
-  Swift runner does and checks (`takesItsColumns`).
-- A tree ensemble's answer is the sum of the leaf values per class plus the base score, passed
-  through the post-evaluation transform named in the spec (read it from the file, do not assume).
-- The version of a model pair is an FNV-1a hash of the compiled model's bytes
-  (`SleepStageModelStore.fingerprint`). Compiled Core ML bytes do not exist on Android, so the Kotlin
-  side needs its own stable name for the pair (a hash of the exported file is enough). The version is
-  a local cache key and re-stage marker; it is not stored in a backup.
+Core ML does not run on Android, so the same trees are already written out as text:
 
-Attribution travels with the weights: Wearanize+ OA (Radboud University, CC BY 4.0) and sleep-accel
-(Walch et al., PhysioNet, ODC-By 1.0). `SleepStageModelStore.swift` carries the line; the Android copy
-of the weights needs it too.
+- `android/app/src/main/assets/sleepstage/SleepStageFirst.trees` and `SleepStageSecond.trees`, about
+  800 kB each. They are the model. Nothing in them is refit or rounded: every threshold and leaf
+  value is the shortest decimal that reads back as the same double.
+- `Tools/SleepML/export_trees.py` writes them from the `.mlmodel` files (standard library only, runs
+  on any OS). Its header describes the format line by line.
+- `Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStageTrees.swift` is the Swift reader and
+  evaluator of that format. **The Kotlin evaluator is its twin: port that file**, about 150 lines.
+
+The arithmetic, which both platforms must do in the same order:
+
+1. Each class's sum starts at its `base` value.
+2. For every tree in file order, start at node 0 of the tree. At a branch `b <column> <threshold>
+   <yes> <no>`, go to node `<yes>` when `row[column] < threshold`, compared as doubles, else to
+   `<no>`. At a leaf `l <class> <value>`, add the value to that class's sum.
+3. The probabilities are `exp(sum - largest sum)` for each class, divided by the total of those four
+   added in class order.
+4. The file lists its classes as `deep light rem wake`. Everything in `StrandAnalytics` uses
+   `wake, light, deep, rem` (`SleepStageDecoder.stages`): reorder by name, as
+   `SleepStageTrees.probabilities(_:order:)` does.
+
+Other rules of the reader:
+
+- The columns in the file are the input order. A file whose columns are not exactly `firstNames`
+  (first model) or `secondNames` (second) is refused, and so is a pair whose second file does not
+  carry `meta classPrior`, `meta priorWeight`, `meta smoothing` and `meta classes
+  wake,light,deep,rem` (`SleepStageModel.init(first:second:version:)`). A refused pair installs no
+  model, and every night is staged by the recipe.
+- A malformed file is refused whole (`SleepStageTreesTests.testAnythingMalformedIsRefused` lists the
+  cases): a model half-read would stage nights wrongly without saying so.
+- A missing value is `-999`, an ordinary number below every threshold. There is no NaN handling.
+- The version of the pair (the cache key and the re-stage marker) on Apple platforms is a hash of the
+  compiled Core ML bytes. On Android use the two `source` lines of the files (each is the SHA-256 of
+  the `.mlmodel` it was written from), joined. The version stays on the phone; no backup carries it.
+
+Attribution travels with the weights, in each file's comment lines: Wearanize+ OA (Radboud University,
+CC BY 4.0) and sleep-accel (Walch et al., PhysioNet, ODC-By 1.0). Keep those lines when the files are
+copied or repackaged, and name both in the app's licence list.
+
+When the models are refit, the `.mlmodel` files, the two `.trees` files and the oracle below change
+together. `StrandTests/SleepStageModelStoreTests.swift` (`SleepStageTreesAgainstCoreMLTests`) fails
+on the Swift side when a `.trees` file was not written from the bundled `.mlmodel`.
 
 ### Where the app calls it
 
@@ -250,19 +275,45 @@ Swift, in `01b11d33`; each has a Kotlin counterpart to find:
 
 ### Proving parity
 
-- Features, context and decoder are deterministic text-and-arithmetic: port them by oracle. The
-  cases are in `SleepStageFeaturesTests.swift`, `SleepStageContextTests.swift` (9) and
-  `SleepStageLearnedTests.swift` (9); a Swift `main.swift` that prints rows for a spread of synthetic
-  nights gives the literals for the Kotlin tests.
-- The tree evaluator is checked against Core ML: on a Mac, run both models over a few hundred rows
-  and print the probabilities; the Kotlin evaluator must agree to within float rounding, and the
-  decoded stage of every epoch must be equal. `Tools/SleepML` (`sleepml own --db COPY.sqlite --model
-  X.mlmodel --out FILE.csv`) writes per-epoch `stage_model` for a real database copy, which is the
-  end-to-end fixture. It expects the second model beside the first as `X.second.mlmodel`, so copy the
-  shipped pair under those two names before running it.
-- The requirement on speed: no visible lag on an iPhone 11-class phone. Measured on an M1, CPU only,
-  for a 9.6 hour night: about 0.6 s end to end. Measure the Kotlin path on a mid-range phone before
-  the one-time re-stage ships.
+One oracle covers the whole path: `android/app/src/test/resources/sleep_stage_oracle.json` (its
+`about` field describes every key). It is one invented two-hour night, not anyone's recording, with
+a few seconds of motion, forty of pulse and ten minutes of beat intervals left out so that missing
+data is exercised. It holds the night's streams and, for the same night, what each step must
+produce:
+
+| Key | Step it checks |
+|---|---|
+| `gravity`, `heartRate`, `beatIntervals`, `start`, `end` | the input |
+| `features`, `epochStarts` (240 epochs, 26 columns, `null` where not measured) | `SleepStageFeatures.rows` |
+| `firstInput` (the 186 columns, for `sampleEpochs`) | `SleepStageContext.firstInput` |
+| `firstProbabilities` | the first model's trees |
+| `neighbours` (the 60 columns the second model adds, for `sampleEpochs`) | `SleepStageContext.secondInput` |
+| `secondProbabilities` | the second model's trees |
+| `stages` (one per epoch; all four stages occur) | `SleepStageDecoder.decode` |
+| `segments` | `SleepStageLearned.stageSession` |
+
+The Kotlin test reads that file and asserts each step in order, so a mismatch names the step that
+broke. Numbers that pass through `log10` or `exp` may differ in the last place between platforms:
+compare them to 1e-9 (the Swift test's `close`). `epochStarts`, `stages` and `segments` must be
+equal exactly.
+
+How the three implementations are tied together:
+
+- `SleepStageTreesTests` (Swift package) stages the night with `SleepStageTrees` and must reproduce
+  the oracle. It is also what writes it (`SLEEP_STAGE_ORACLE_WRITE=1`).
+- `SleepStageTreesAgainstCoreMLTests` (`StrandTests`, on a Mac) stages the same night with the Core
+  ML pair the iPhone runs. On 2026-10-11 Core ML's probabilities stood 2e-17 from the trees' own,
+  the last place of a double, and every epoch's stage was equal. So the text files are the iPhone's
+  model, not an approximation of it.
+- The Kotlin test against the same file is the third side, and the one this task adds.
+
+For the pieces around the trees, the Swift tests carry more cases than the one night does:
+`SleepStageFeaturesTests.swift`, `SleepStageContextTests.swift` (9), `SleepStageLearnedTests.swift`
+(9: the coverage gate, the tiling, the refusals) and `SleepStageTreesTests.swift` (6). Port those too.
+
+The requirement on speed: no visible lag on an iPhone 11-class phone. Measured on an M1, CPU only,
+for a 9.6 hour night: about 0.6 s end to end through Core ML. Measure the Kotlin path on a mid-range
+phone before the one-time re-stage ships.
 
 Seen on the Swift side: through the app's own pass on a Mac against a copy of one wearer's database,
 60 of 60 sessions kept their bounds and were re-staged (pooled wake 5.9 %, light 56.3 %, deep 17.4 %,
