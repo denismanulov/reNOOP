@@ -2491,5 +2491,25 @@
     <string name="friends_remove_this_phone_body">这部手机上的“好友”将关闭。账号仍保留在你的另一部手机上。</string>
     <string name="friends_delete_account_note">从服务器上清除你的名字和你分享的一切</string>
     <string name="friends_delete_body">从服务器上移除你的名字、照片、你上传的每一天和所有好友关系，并在这部手机上关闭“好友”。此操作无法撤销。</string>
+    <string name="friends_me">我</string>
+    <string name="friends_highlights">精彩时刻</string>
+    <string name="friends_completed_workout">%1$s完成了一次锻炼</string>
+    <string name="friends_rings">圆环</string>
+    <string name="friends_sort">排序</string>
+    <string name="friends_sort_name">姓名</string>
+    <string name="friends_board_day">今天，%1$s</string>
+    <string name="friends_card_not_sharing_scores">未分享评分</string>
+    <string name="friends_card_not_sharing_workouts">未分享锻炼</string>
+    <string name="friends_last_7_days">过去 7 天</string>
+    <string name="friends_sharing_with">分享对象</string>
+    <string name="friends_manage_data">了解如何管理你的数据…</string>
+    <string name="friends_no_hr_day">这一天没有心率数据。</string>
+    <string name="friends_no_sleep_day">这一天没有睡眠记录。</string>
+    <string name="friends_workout_line_hr">平均心率 %1$d</string>
+    <string name="friends_you_not_sharing_hr">你未分享心率。</string>
+    <string name="friends_you_not_sharing_workouts">你未分享锻炼。</string>
+    <plurals name="friends_workouts_count">
+        <item quantity="other">%1$d 次锻炼</item>
+    </plurals>
     <!-- Friends tab (reNOOP fork): end -->
 </resources>

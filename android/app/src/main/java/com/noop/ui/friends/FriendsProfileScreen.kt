@@ -21,17 +21,9 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.R
-import com.noop.friends.FriendPerson
 import com.noop.friends.FriendShare
 import com.noop.friends.FriendsError
 import com.noop.ui.m3.ChevronRight
@@ -66,21 +57,19 @@ import com.noop.ui.m3.RowIcon
 import com.noop.ui.m3.SwitchRow
 import kotlinx.coroutines.launch
 
-// MARK: - Friends tab: my profile
+// MARK: - Friends tab: what the reader shares
 //
-// Who the reader is to their friends and what they send. There is nothing to type here: the name and the
-// photo are the ones of the app's own profile, and the account is known by this phone's key. The page
-// holds what friends can see (four sections and the photo; a section switched off is erased from the
-// server, and the page says so), the friends with a way to remove one, the phones the account lives on,
-// everything the server stores about the reader, and deleting the account for good.
+// Reached from the foot of the friends page. Who the reader is to their friends and what they send. There
+// is nothing to type here: the name and the photo are the ones of the app's own profile, and the account
+// is known by this phone's key. The page holds what friends can see (four sections and the photo), the
+// phones the account lives on, everything the server stores about the reader, which server that is, and
+// deleting the account for good.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FriendsProfileScreen(
     vm: FriendsViewModel,
     onBack: () -> Unit,
-    openAdd: () -> Unit,
-    openFriend: (String) -> Unit,
     openPhones: () -> Unit,
     openExport: () -> Unit,
 ) {
@@ -94,7 +83,6 @@ internal fun FriendsProfileScreen(
 
     var failure by remember { mutableStateOf<FriendsError?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var removing by remember { mutableStateOf<FriendPerson?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -115,7 +103,6 @@ internal fun FriendsProfileScreen(
 
     val profile = me
     val share = profile?.share ?: FriendShare.NONE
-    val friends = feedState.feed?.friends.orEmpty()
     // A phone that joined without confirmation changes nothing until it is confirmed.
     val onProbation = profile?.device?.probationUntil != null
     val canChange = !busy && !onProbation
@@ -152,10 +139,6 @@ internal fun FriendsProfileScreen(
                     )
                 }
             }
-            item(key = "from-settings") {
-                PageNote(Icons.Filled.AccountCircle, stringResource(R.string.friends_profile_from_settings))
-            }
-
             feedState.error?.let { error ->
                 item(key = "refresh-notice") {
                     FriendsRefreshNotice(
@@ -220,29 +203,6 @@ internal fun FriendsProfileScreen(
                     }
                 }
             }
-            item(key = "share-note") {
-                PageNote(Icons.Filled.Lock, stringResource(R.string.friends_share_note))
-            }
-
-            item(key = "friends") {
-                ListGroup(header = stringResource(R.string.friends_profile_friends, friends.size)) {
-                    friends.forEach { person ->
-                        item { shape ->
-                            FriendRow(person, shape, canRemove = !onProbation, onOpen = { openFriend(person.id) }, onRemove = { removing = person })
-                        }
-                    }
-                    item { shape ->
-                        ListRow(
-                            shape = shape,
-                            title = stringResource(R.string.friends_add_open),
-                            titleColor = MaterialTheme.colorScheme.primary,
-                            leading = { RowIcon(Icons.Filled.PersonAdd, tint = MaterialTheme.colorScheme.primary) },
-                            onClick = openAdd,
-                        )
-                    }
-                }
-            }
-
             item(key = "account") {
                 val sent = FriendsAgo.of(lastUploadAt, nowSec)
                 ListGroup(header = stringResource(R.string.friends_account_header)) {
@@ -304,59 +264,4 @@ internal fun FriendsProfileScreen(
             },
         )
     }
-
-    removing?.let { person ->
-        ConfirmDialog(
-            title = stringResource(R.string.friends_remove_title, person.profile.name),
-            message = stringResource(R.string.friends_remove_body),
-            confirmLabel = stringResource(R.string.friends_remove_confirm),
-            destructive = true,
-            onDismiss = { removing = null },
-            onConfirm = {
-                removing = null
-                perform { vm.unfriend(person.id) }
-            },
-        )
-    }
-}
-
-/** A line of explanation under a group, led by a small glyph. */
-@Composable
-private fun PageNote(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** A friend in the profile's list: tap opens their page, the menu removes them. */
-@Composable
-private fun FriendRow(
-    person: FriendPerson,
-    shape: androidx.compose.ui.graphics.Shape,
-    canRemove: Boolean,
-    onOpen: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    ListRow(
-        shape = shape,
-        title = person.profile.name,
-        leading = { FriendAvatar(person.profile.name, person.id, person.profile.avatarRev, size = 40.dp) },
-        trailing = {
-            Box {
-                IconButton(onClick = { menu = true }, enabled = canRemove) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.friends_more_for, person.profile.name))
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.friends_remove_friend)) },
-                        leadingIcon = { Icon(Icons.Filled.PersonRemove, contentDescription = null) },
-                        onClick = { menu = false; onRemove() },
-                    )
-                }
-            }
-        },
-        onClick = onOpen,
-    )
 }

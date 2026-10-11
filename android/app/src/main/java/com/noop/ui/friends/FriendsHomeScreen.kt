@@ -1,50 +1,43 @@
 package com.noop.ui.friends
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GppMaybe
-import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.HourglassEmpty
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.WbTwilight
-import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -53,73 +46,69 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.R
-import com.noop.friends.FriendDay
-import com.noop.friends.FriendPerson
-import com.noop.friends.FriendSleep
 import com.noop.friends.FriendsClaim
 import com.noop.friends.FriendsPhase
-import com.noop.friends.FriendsFeed
 import com.noop.ui.AppToday
 import com.noop.ui.AppViewModel
 import com.noop.ui.EffortScale
 import com.noop.ui.OnScrollToTop
 import com.noop.ui.UnitPrefs
-import com.noop.ui.m3.ChevronRight
-import com.noop.ui.m3.CloverShape
 import com.noop.ui.m3.ConfirmDialog
-import com.noop.ui.m3.CookieShape
-import com.noop.ui.m3.EmptyState
-import com.noop.ui.m3.ExpressiveBar
 import com.noop.ui.m3.Health
 import com.noop.ui.m3.HealthCard
 import com.noop.ui.m3.LargeTitle
-import com.noop.ui.m3.LocalTonalIcons
 import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.NoticeCard
+import com.noop.ui.m3.ProgressRing
 import com.noop.ui.m3.SectionHeader
-import com.noop.ui.m3.TonalIcon
-import com.noop.ui.m3.ValueWithUnit
 import com.noop.ui.sleep.sleepDuration
 import com.noop.ui.sportIcon
+import com.noop.ui.workouts.WorkoutFormat
 import com.noop.ui.workouts.sportLabel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
-// MARK: - Friends tab: home (you beside one friend)
+// MARK: - Friends tab: the list (everyone's day, one card each)
 //
-// Read top to bottom as questions. Who am I comparing with: the chips. How do we stand today: three scores
-// side by side, each with its level, and one sentence that says who leads. What is their heart doing: the
-// latest reading and how old it is. How did we sleep. What happened: the feed. How has the week gone.
-// Every figure on the page is the server's copy, the reader's own included, so "you" here is what a friend
-// sees; a section someone does not share is said in words and never drawn as an empty card.
+// Read top to bottom. What friends did lately: Highlights, their workouts of the last two days, paging
+// side by side. Then everyone, the reader among them as "Me": a person's picture and name, the day's
+// figure for the list's order with the amount behind it on a second line, and the three rings. The menu
+// over the list picks the order and, with it, what the cards show. A card opens that person's page.
+// Inviting a friend and whatever waits for an answer are behind the bar's one button, which counts them.
+//
+// Every figure on the page is the server's copy, the reader's own included, so "Me" here is what a
+// friend sees. The order and what a card shows are decided by [FriendsBoard.rows]; this file draws them.
 
 /** Where the Friends tab's taps go; the shell resolves each to a route on the tab. */
 internal class FriendsActions(
-    val openList: () -> Unit,
     val openFriend: (String) -> Unit,
-    val openAdd: () -> Unit,
-    val openProfile: () -> Unit,
+    /** The page behind the bar's button: who the reader shares with, inviting, and what waits. */
+    val openManage: () -> Unit,
 )
 
-/** The tab's root: the turning-on page until Friends is on, then the home. */
+/** The tab's root: the turning-on page until Friends is on, then the list. */
 @Composable
 internal fun FriendsTabScreen(appVm: AppViewModel, vm: FriendsViewModel, actions: FriendsActions) {
     val phase by vm.phase.collectAsStateWithLifecycle()
@@ -173,14 +162,23 @@ internal fun rememberFriendsToday(appVm: AppViewModel, nowSec: Long): AppToday {
     return remember(todayRow?.day, nowSec) { AppToday.now(todayRow?.day) }
 }
 
+/** From this font scale up a card stacks what it sets side by side at the default size. */
+internal const val FRIENDS_LARGE_TEXT = 1.3f
+
+@Composable
+internal fun friendsLargeText(): Boolean = LocalDensity.current.fontScale >= FRIENDS_LARGE_TEXT
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions: FriendsActions) {
     val context = LocalContext.current
     val state by vm.feed.collectAsStateWithLifecycle()
+    val order by vm.order.collectAsStateWithLifecycle()
     val nowSec = rememberNowSec()
     val today = rememberFriendsToday(appVm, nowSec)
     val scale = remember { UnitPrefs.effortScale(context) }
+    val locale = friendsLocale()
+    val meName = stringResource(R.string.friends_me)
     val feed = state.feed
 
     // The tab opened (or came back): send what changed and fetch. Throttled inside the view model.
@@ -195,10 +193,10 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
     val listState = rememberLazyListState()
     OnScrollToTop { listState.animateScrollToItem(0) }
 
-    var pickedId by rememberSaveable { mutableStateOf<String?>(null) }
-    val friend = feed?.friends?.firstOrNull { it.id == pickedId } ?: feed?.friends?.firstOrNull()
     val waiting = (feed?.claims?.size ?: 0) + (feed?.unconfirmed?.size ?: 0)
     val serverNow = vm.serverNow(nowSec)
+    // Kept for the minute, not the second: a workout does not leave the row between two frames.
+    val highlights = remember(feed, serverNow / 60) { feed?.let { FriendsHighlights.recent(it.friends, serverNow) }.orEmpty() }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).nestedScroll(pull.nestedScrollConnection)) {
         LazyColumn(
@@ -209,10 +207,7 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
         ) {
             item(key = "title") {
                 LargeTitle(stringResource(R.string.nav_friends)) {
-                    AddFriendButton(pending = waiting, onClick = actions.openAdd)
-                    IconButton(onClick = actions.openProfile) {
-                        Icon(Icons.Filled.AccountCircle, contentDescription = stringResource(R.string.friends_profile_open))
-                    }
+                    AddFriendButton(pending = waiting, onClick = actions.openManage)
                 }
             }
 
@@ -227,150 +222,79 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                 }
             }
 
-            // What waits for the wearer's answer leads the page; the answers are given behind "Review".
-            if (feed != null) {
-                feed.me.profile.device?.probationUntil?.let { until ->
-                    item(key = "probation") {
-                        NoticeCard(
-                            icon = Icons.Filled.HourglassEmpty,
-                            title = stringResource(R.string.friends_probation_title),
-                            message = stringResource(R.string.friends_probation_body, friendsMoment(until)),
-                            modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                        )
+            if (feed == null) {
+                if (state.error == null) {
+                    item(key = "loading") {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
-                items(feed.claims, key = { "claim:${it.id}" }) { claim ->
+                return@LazyColumn
+            }
+
+            // What waits for the wearer's answer leads the page; the answers are given behind "Review".
+            feed.me.profile.device?.probationUntil?.let { until ->
+                item(key = "probation") {
                     NoticeCard(
-                        icon = if (claim.kind == FriendsClaim.Kind.JOIN) Icons.Filled.Smartphone else Icons.Filled.Sensors,
-                        title = friendsClaimTitle(claim),
-                        message = friendsClaimDetail(claim),
-                        action = stringResource(R.string.friends_review),
-                        onAction = actions.openAdd,
-                        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                    )
-                }
-                items(feed.unconfirmed, key = { "phone:${it.id}" }) { phone ->
-                    NoticeCard(
-                        icon = Icons.Filled.GppMaybe,
-                        title = stringResource(R.string.friends_unconfirmed_title),
-                        message = friendsJoinedText(phone, serverNow),
-                        action = stringResource(R.string.friends_review),
-                        onAction = actions.openAdd,
+                        icon = Icons.Filled.HourglassEmpty,
+                        title = stringResource(R.string.friends_probation_title),
+                        message = stringResource(R.string.friends_probation_body, friendsMoment(until)),
                         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                     )
                 }
             }
+            items(feed.claims, key = { "claim:${it.id}" }) { claim ->
+                NoticeCard(
+                    icon = if (claim.kind == FriendsClaim.Kind.JOIN) Icons.Filled.Smartphone else Icons.Filled.Sensors,
+                    title = friendsClaimTitle(claim),
+                    message = friendsClaimDetail(claim),
+                    action = stringResource(R.string.friends_review),
+                    onAction = actions.openManage,
+                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                )
+            }
+            items(feed.unconfirmed, key = { "phone:${it.id}" }) { phone ->
+                NoticeCard(
+                    icon = Icons.Filled.GppMaybe,
+                    title = stringResource(R.string.friends_unconfirmed_title),
+                    message = friendsJoinedText(phone, serverNow),
+                    action = stringResource(R.string.friends_review),
+                    onAction = actions.openManage,
+                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                )
+            }
 
-            when {
-                feed == null -> {
-                    if (state.error == null) {
-                        item(key = "loading") {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                    }
+            if (highlights.isNotEmpty()) {
+                item(key = "highlights-header") {
+                    SectionHeader(stringResource(R.string.friends_highlights), Modifier.padding(horizontal = M3Dimens.screenPadding))
                 }
-                friend == null -> {
-                    item(key = "empty") {
-                        EmptyState(
-                            icon = Icons.Filled.Group,
-                            title = stringResource(R.string.friends_empty_title),
-                            message = stringResource(R.string.friends_empty_body),
-                            action = stringResource(R.string.friends_add_open),
-                            onAction = actions.openAdd,
-                        )
-                    }
-                }
-                else -> {
-                    val mine = feed.me.day(today.key)
-                    val theirs = friend.day(today.key)
-                    val name = friend.profile.name
+                item(key = "highlights") { HighlightsRow(highlights, serverNow, actions.openFriend) }
+            }
 
-                    item(key = "status") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = M3Dimens.screenPadding),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val updated = FriendsAgo.of(friend.lastUpdatedAt, serverNow)
-                            FriendsPill(
-                                Icons.Filled.Sync,
-                                if (updated != null) stringResource(R.string.summary_updated, agoText(updated))
-                                else stringResource(R.string.friends_no_upload_yet),
-                            )
-                            Text(
-                                DateTimeFormatter.ofPattern("EEE, d MMM", friendsLocale()).format(today.date),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    item(key = "chips") {
-                        FriendChips(
-                            friends = feed.friends,
-                            selected = friend.id,
-                            onSelect = { pickedId = it },
-                            onAll = actions.openList,
-                        )
-                    }
-
-                    item(key = "duel") {
-                        HeadToHeadCard(feed.me, friend, mine, theirs, scale, onOpenFriend = { actions.openFriend(friend.id) })
-                    }
-
-                    item(key = "hr") {
-                        FriendHeartRate(friend, theirs, serverNow, onOpen = { actions.openFriend(friend.id) })
-                    }
-
-                    item(key = "sleep-header") {
-                        SectionHeader(stringResource(R.string.friends_last_night), Modifier.padding(horizontal = M3Dimens.screenPadding))
-                    }
-                    item(key = "sleep") {
-                        HealthCard(
-                            modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                            shape = RoundedCornerShape(M3Dimens.heroRadius),
-                            contentPadding = PaddingValues(20.dp),
-                            verticalSpacing = 16.dp,
-                        ) {
-                            SleepSide(stringResource(R.string.friends_you), mine?.sleep, shares = feed.me.share.sleep, isMe = true, name = name)
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            SleepSide(name, theirs?.sleep, shares = friend.share.sleep, isMe = false, name = name)
-                        }
-                    }
-
-                    item(key = "feed-header") {
-                        SectionHeader(stringResource(R.string.friends_feed), Modifier.padding(horizontal = M3Dimens.screenPadding))
-                    }
-                    item(key = "feed") {
-                        val events = remember(feed, friend.id, serverNow / 60) {
-                            FriendsEvents.derive(listOf(feed.me to true, friend to false), serverNow)
-                        }
-                        EventsCard(events, today.date, scale, Modifier.padding(horizontal = M3Dimens.screenPadding))
-                    }
-
-                    item(key = "week-header") {
-                        SectionHeader(stringResource(R.string.friends_week), Modifier.padding(horizontal = M3Dimens.screenPadding))
-                    }
-                    item(key = "week") {
-                        WeekCard(
-                            week = remember(feed, friend.id, today.key) { FriendsWeek.of(today.key, feed.me, friend) },
-                            friendName = name,
-                            friendShares = friend.share.scores,
-                            modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                        )
-                    }
-
-                    item(key = "cadence") { FriendsNote(Icons.Filled.Schedule, stringResource(R.string.friends_cadence_note)) }
-                }
+            item(key = "board-header") {
+                BoardHeader(order, vm::setOrder, today.date, Modifier.padding(horizontal = M3Dimens.screenPadding))
+            }
+            val rows = FriendsBoard.rows(feed.me, feed.friends, order, today.key, meName, FriendsBoard.nameOrder(locale))
+            items(rows, key = { "person:${it.person.id}" }) { row ->
+                FriendScoreCard(
+                    row = row,
+                    metric = order.metric,
+                    scale = scale,
+                    today = today,
+                    onClick = { actions.openFriend(row.person.id) },
+                    modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                )
+            }
+            if (feed.friends.isEmpty()) {
+                item(key = "empty") { NoFriendsCard(actions.openManage, Modifier.padding(horizontal = M3Dimens.screenPadding)) }
             }
         }
         PullToRefreshContainer(state = pull, modifier = Modifier.align(Alignment.TopCenter))
     }
 }
 
-/** The add-friend action, with the number of requests waiting on it. */
+/** The bar's one button: it opens the page of friends, and counts what waits there for an answer. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddFriendButton(pending: Int, onClick: () -> Unit) {
@@ -384,396 +308,332 @@ private fun AddFriendButton(pending: Int, onClick: () -> Unit) {
     }
 }
 
-/** Who to compare with: one chip per friend, then "All", which opens the list. */
-@OptIn(ExperimentalMaterial3Api::class)
+// MARK: Highlights
+
+/**
+ * The highlights in a row that pages card by card, a strip of the next one in sight at the edge. At a
+ * large font size the cards stack instead, each as tall as its text needs.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FriendChips(friends: List<FriendPerson>, selected: String, onSelect: (String) -> Unit, onAll: () -> Unit) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = M3Dimens.screenPadding),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(friends, key = { "person:${it.id}" }) { person ->
-            val isSelected = person.id == selected
-            FilterChip(
-                selected = isSelected,
-                onClick = { onSelect(person.id) },
-                label = { Text(person.profile.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                leadingIcon = {
-                    FriendAvatar(
-                        person.profile.name, person.id, person.profile.avatarRev, size = 24.dp,
-                        tone = if (isSelected) AvatarTone.FRIEND else AvatarTone.QUIET,
-                    )
-                },
-                modifier = Modifier.heightIn(min = M3Dimens.minTouch),
-            )
+private fun HighlightsRow(highlights: List<FriendHighlight>, serverNow: Long, openFriend: (String) -> Unit) {
+    if (friendsLargeText()) {
+        Column(
+            Modifier.padding(horizontal = M3Dimens.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
+        ) {
+            highlights.forEach { HighlightCard(it, serverNow, onClick = { openFriend(it.personId) }) }
         }
-        item(key = "all") {
-            AssistChip(
-                onClick = onAll,
-                label = { Text(stringResource(R.string.friends_all)) },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.heightIn(min = M3Dimens.minTouch),
-            )
-        }
+        return
+    }
+    val pager = rememberPagerState(pageCount = { highlights.size })
+    HorizontalPager(
+        state = pager,
+        contentPadding = PaddingValues(horizontal = M3Dimens.screenPadding + HIGHLIGHT_PEEK),
+        pageSpacing = M3Dimens.itemGap,
+        key = { highlights.getOrNull(it)?.id ?: it },
+    ) { page ->
+        val highlight = highlights.getOrNull(page) ?: return@HorizontalPager
+        HighlightCard(highlight, serverNow, onClick = { openFriend(highlight.personId) })
     }
 }
 
-/** Today's three scores for two people, and one or two sentences on who leads. */
+/** How much of the neighbouring highlight shows at either edge. */
+private val HIGHLIGHT_PEEK = 20.dp
+
+/**
+ * One highlight: who and when across the top, a closed ring around the activity's glyph, how long the
+ * workout ran in the ring's hue and the activity under it.
+ */
 @Composable
-private fun HeadToHeadCard(
-    me: FriendPerson,
-    friend: FriendPerson,
-    mine: FriendDay?,
-    theirs: FriendDay?,
-    scale: EffortScale,
-    onOpenFriend: () -> Unit,
-) {
-    val name = friend.profile.name
-    val you = stringResource(R.string.friends_you)
-    val health = Health.colors
+private fun HighlightCard(highlight: FriendHighlight, serverNow: Long, onClick: () -> Unit) {
+    val hue = Health.colors.fitness
+    val workout = highlight.workout
     HealthCard(
-        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+        onClick = onClick,
+        onClickLabel = stringResource(R.string.friends_open_page, highlight.name),
         shape = RoundedCornerShape(M3Dimens.heroRadius),
-        contentPadding = PaddingValues(20.dp),
-        verticalSpacing = 20.dp,
+        contentPadding = PaddingValues(M3Dimens.cardPadding),
+        verticalSpacing = 12.dp,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FriendAvatar(me.profile.name, me.id, me.profile.avatarRev, size = 56.dp, tone = AvatarTone.ME)
-                Text(you, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
-            }
-            Text(
-                stringResource(R.string.friends_today),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            Row(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(M3Dimens.cardRadius))
-                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.friends_open_page, name), onClick = onOpenFriend),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-            ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FriendAvatar(highlight.name, highlight.personId, highlight.avatarRev, size = 40.dp)
+            Column(Modifier.weight(1f)) {
+                // Two lines kept whatever the name's length, so every card of the row is one height.
                 Text(
-                    name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
+                    stringResource(R.string.friends_completed_workout, friendsShortName(highlight.name)),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    minLines = if (friendsLargeText()) 1 else 2,
+                    maxLines = if (friendsLargeText()) 4 else 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                FriendAvatar(name, friend.id, friend.profile.avatarRev, size = 56.dp)
-            }
-        }
-
-        if (!friend.share.scores) {
-            Text(
-                stringResource(R.string.friends_not_sharing_scores, name),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@HealthCard
-        }
-
-        val missing = stringResource(R.string.friends_no_data_today)
-
-        @Composable
-        fun side(side: DuelSide): String {
-            val value = side.value ?: return missing
-            return side.level?.let { stringResource(R.string.friends_value_with_level, value, it) } ?: value
-        }
-
-        @Composable
-        fun spoken(title: String, left: DuelSide, right: DuelSide): String =
-            stringResource(R.string.friends_duel_spoken, title, you, side(left), name, side(right))
-
-        fun leads(a: Double?, b: Double?): Boolean? = if (a == null || b == null || a == b) null else a > b
-
-        val recoveryTitle = stringResource(R.string.today_metric_charge)
-        val myRecovery = recoverySide(mine?.recovery)
-        val theirRecovery = recoverySide(theirs?.recovery)
-        ScoreDuel(
-            title = recoveryTitle, icon = Icons.Filled.Bolt, tint = health.charge,
-            left = myRecovery, right = theirRecovery,
-            leftLeads = leads(mine?.recovery?.toDouble(), theirs?.recovery?.toDouble()),
-            missing = missing, description = spoken(recoveryTitle, myRecovery, theirRecovery),
-        )
-
-        val strainTitle = stringResource(R.string.today_metric_effort)
-        val myStrain = strainSide(mine?.strain, scale)
-        val theirStrain = strainSide(theirs?.strain, scale)
-        ScoreDuel(
-            title = strainTitle, icon = Icons.Filled.LocalFireDepartment, tint = health.effort,
-            left = myStrain, right = theirStrain,
-            leftLeads = leads(mine?.strain, theirs?.strain),
-            missing = missing, description = spoken(strainTitle, myStrain, theirStrain),
-            centre = strainOutOf(scale),
-        )
-
-        val sleepTitle = stringResource(R.string.today_metric_rest)
-        val mySleep = sleepScoreSide(mine?.sleepScore)
-        val theirSleep = sleepScoreSide(theirs?.sleepScore)
-        ScoreDuel(
-            title = sleepTitle, icon = Icons.Filled.Bedtime, tint = health.rest,
-            left = mySleep, right = theirSleep,
-            leftLeads = leads(mine?.sleepScore?.toDouble(), theirs?.sleepScore?.toDouble()),
-            missing = missing, description = spoken(sleepTitle, mySleep, theirSleep),
-        )
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        if (!me.share.scores) {
-            Text(
-                stringResource(R.string.friends_you_not_sharing_scores),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FriendsComparison.lines(mine, theirs).forEach { line ->
-                    Text(comparisonText(line, name), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun recoverySide(recovery: Int?): DuelSide =
-    if (recovery == null) DuelSide(null, null, null)
-    else DuelSide(recovery.toString(), recovery / 100f, recoveryLevelText(recovery))
-
-@Composable
-internal fun strainSide(strain: Double?, scale: EffortScale): DuelSide =
-    if (strain == null) DuelSide(null, null, null)
-    else DuelSide(strainShown(strain, scale), (strain / 100.0).toFloat(), strainLevelText(strain))
-
-@Composable
-internal fun sleepScoreSide(score: Int?): DuelSide =
-    if (score == null) DuelSide(null, null, null)
-    else DuelSide(score.toString(), score / 100f, sleepLevelText(score))
-
-/** One comparison sentence. Names stand in the nominative, so no name is ever declined or given a gender. */
-@Composable
-internal fun comparisonText(line: FriendsComparisonLine, friendName: String): String = when (line) {
-    is FriendsComparisonLine.RecoveryLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_recovery_me, line.points)
-        else stringResource(R.string.friends_cmp_recovery_friend, friendName, line.points)
-    FriendsComparisonLine.RecoveryLevel -> stringResource(R.string.friends_cmp_recovery_level)
-    is FriendsComparisonLine.StrainLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_strain_me)
-        else stringResource(R.string.friends_cmp_strain_friend, friendName)
-    is FriendsComparisonLine.SleepLead ->
-        if (line.side == FriendsSide.ME) stringResource(R.string.friends_cmp_sleep_me, line.points)
-        else stringResource(R.string.friends_cmp_sleep_friend, friendName, line.points)
-    FriendsComparisonLine.NothingShared -> stringResource(R.string.friends_cmp_nothing)
-}
-
-/** The friend's latest heart rate with its age, or the words for why there is none. */
-@Composable
-private fun FriendHeartRate(friend: FriendPerson, day: FriendDay?, serverNow: Long, onOpen: () -> Unit) {
-    val name = friend.profile.name
-    val hr = day?.hr
-    when {
-        !friend.share.hr -> FriendsNote(Icons.Filled.Favorite, stringResource(R.string.friends_not_sharing_hr, name))
-        hr == null -> FriendsNote(Icons.Filled.Favorite, stringResource(R.string.friends_no_hr_today, name))
-        else -> {
-            val age = FriendsAgo.of(hr.lastTs, serverNow)
-            val fresh = age == FriendsAgo.JustNow || (age is FriendsAgo.Minutes && age.count < HR_NOW_WITHIN_MIN)
-            HealthCard(
-                modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                onClick = onOpen,
-                onClickLabel = stringResource(R.string.friends_open_page, name),
-                shape = RoundedCornerShape(M3Dimens.heroRadius),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    TonalIcon(Icons.Filled.Favorite, LocalTonalIcons.current.pink, size = 64.dp, shape = CookieShape)
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(if (fresh) R.string.friends_hr_now else R.string.friends_hr_latest, name),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Health.colors.heart,
-                        )
-                        ValueWithUnit(hr.lastBpm.toString(), stringResource(R.string.metric_unit_bpm))
-                        val agoLine = age?.let { stringResource(R.string.friends_hr_last_reading, agoText(it)) }
-                        val resting = hr.restingBpm?.let { stringResource(R.string.friends_hr_resting, it) }
-                        listOfNotNull(agoLine, resting).forEach {
-                            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    ChevronRight()
-                }
-            }
-        }
-    }
-}
-
-/** A reading younger than this is "now"; an older one is named the latest reading, with its age beside it. */
-private const val HR_NOW_WITHIN_MIN = 10L
-
-/** One person's night: how long, from when to when, and how it stands against its need. */
-@Composable
-internal fun SleepSide(label: String, sleep: FriendSleep?, shares: Boolean, isMe: Boolean, name: String) {
-    val color = Health.colors.sleep
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            if (sleep != null) {
                 Text(
-                    sleepDuration(sleep.asleepMin.toDouble()),
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = color,
-                    maxLines = 1,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    stringResource(R.string.friends_time_range, friendsClock(sleep.startTs), friendsClock(sleep.endTs)),
-                    style = MaterialTheme.typography.bodySmall,
+                    agoText(FriendsAgo.of(highlight.endTs, serverNow) ?: FriendsAgo.JustNow),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }
         }
-        when {
-            sleep != null -> {
-                FriendsSleepGoal.fraction(sleep)?.let { ExpressiveBar(it, color, height = 12.dp) }
-                FriendsSleepGoal.of(sleep)?.let { goal ->
-                    Text(sleepGoalText(goal), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            ProgressRing(fraction = 1f, color = hue, modifier = Modifier.size(120.dp), stroke = 14.dp) {
+                Icon(sportIcon(workout.sport), contentDescription = null, tint = hue, modifier = Modifier.size(48.dp))
+            }
+        }
+        val spokenLength = sleepDuration(workout.durationS / 60.0)
+        Text(
+            friendsClockDuration(workout.durationS),
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
+            color = hue,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = spokenLength },
+        )
+        Text(
+            sportLabel(workout.sport),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = if (friendsLargeText()) 2 else 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+// MARK: The list
+
+/** The heading over the list: its title with the order menu across from it, and the day the figures belong to. */
+@Composable
+private fun BoardHeader(order: FriendsOrder, onOrder: (FriendsOrder) -> Unit, day: LocalDate, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    val sortWord = stringResource(R.string.friends_sort)
+    val chosen = orderLabel(order)
+    Column(modifier.fillMaxWidth().padding(top = M3Dimens.sectionTop - M3Dimens.itemGap)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.friends_rings),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f).padding(start = 4.dp).semantics { heading() },
+            )
+            Box {
+                TextButton(
+                    onClick = { open = true },
+                    // TalkBack says what the button is for, then which order is chosen.
+                    modifier = Modifier.semantics {
+                        contentDescription = sortWord
+                        stateDescription = chosen
+                    },
+                ) {
+                    Text(chosen, maxLines = 1)
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, modifier = Modifier.padding(start = 4.dp).size(18.dp))
+                }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    FriendsOrder.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(orderLabel(option)) },
+                            leadingIcon = {
+                                if (option == order) Icon(Icons.Filled.Check, contentDescription = null)
+                                else Box(Modifier.size(24.dp))
+                            },
+                            onClick = {
+                                open = false
+                                onOrder(option)
+                            },
+                        )
+                    }
                 }
             }
-            !shares -> Text(
-                if (isMe) stringResource(R.string.friends_you_not_sharing_sleep) else stringResource(R.string.friends_not_sharing_sleep, name),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            else -> Text(
-                stringResource(R.string.friends_no_sleep_today),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        }
+        Text(
+            stringResource(
+                R.string.friends_board_day,
+                DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(friendsLocale()).format(day),
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun orderLabel(order: FriendsOrder): String =
+    if (order == FriendsOrder.NAME) stringResource(R.string.friends_sort_name) else metricTitle(order.metric)
+
+/** The name a figure goes by: the three scores as their own tabs name them, and the workouts. */
+@Composable
+internal fun metricTitle(metric: FriendsMetric): String = stringResource(
+    when (metric) {
+        FriendsMetric.RECOVERY -> R.string.today_metric_charge
+        FriendsMetric.STRAIN -> R.string.today_metric_effort
+        FriendsMetric.SLEEP -> R.string.today_metric_rest
+        FriendsMetric.WORKOUTS -> R.string.nav_workouts
+    },
+)
+
+/** The hue a figure is written in: its ring's on the Summary, and the Workouts tab's own for the workouts. */
+@Composable
+internal fun metricHue(metric: FriendsMetric): Color = when (metric) {
+    FriendsMetric.RECOVERY -> Health.colors.charge
+    FriendsMetric.STRAIN -> Health.colors.effort
+    FriendsMetric.SLEEP -> Health.colors.rest
+    FriendsMetric.WORKOUTS -> Health.colors.fitness
+}
+
+/**
+ * One person's card: the picture and the name, the figure for the list's order in its hue with the
+ * amount behind it under, and the rings on the trailing side. A figure that is not today's is set back in
+ * grey and says which day it is from.
+ */
+@Composable
+private fun FriendScoreCard(
+    row: FriendsBoardRow,
+    metric: FriendsMetric,
+    scale: EffortScale,
+    today: AppToday,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val person = row.person
+    val name = if (row.isMe) stringResource(R.string.friends_me) else person.profile.name
+    val fresh = row.standing == FriendsBoardRow.Standing.Today
+    val hue = if (fresh) metricHue(metric) else MaterialTheme.colorScheme.onSurfaceVariant
+    val large = friendsLargeText()
+    // The rings are the person's newest day, the same day the figure is from.
+    val ringsDay = if (person.share.scores) person.days.firstOrNull() else null
+
+    val note = when (val standing = row.standing) {
+        FriendsBoardRow.Standing.Today -> null
+        is FriendsBoardRow.Standing.Stale -> friendsDayText(standing.dayKey, today, weekdays = false)
+        FriendsBoardRow.Standing.NotShared -> stringResource(
+            if (metric == FriendsMetric.WORKOUTS) R.string.friends_card_not_sharing_workouts else R.string.friends_card_not_sharing_scores,
+        )
+        FriendsBoardRow.Standing.NoData -> stringResource(R.string.friends_no_data_today)
+    }
+    val figure = row.value?.let { value ->
+        when (metric) {
+            FriendsMetric.RECOVERY, FriendsMetric.SLEEP -> friendsPercent(value)
+            FriendsMetric.STRAIN -> strainShown(value, scale)
+            FriendsMetric.WORKOUTS -> WorkoutFormat.grouped(value, friendsLocale())
         }
     }
-}
-
-@Composable
-internal fun sleepGoalText(goal: FriendsSleepGoal): String {
-    val need = sleepDuration(goal.needMin.toDouble())
-    return when (goal) {
-        is FriendsSleepGoal.Short -> stringResource(R.string.friends_sleep_short, sleepDuration(goal.byMin.toDouble()), need)
-        is FriendsSleepGoal.Almost -> stringResource(R.string.friends_sleep_almost, need)
-        is FriendsSleepGoal.Met -> stringResource(R.string.friends_sleep_met, need)
+    val unit = if (metric == FriendsMetric.WORKOUTS && figure != null) stringResource(R.string.metric_unit_kcal) else null
+    val spokenFigure = when {
+        figure == null -> null
+        unit != null -> "$figure $unit"
+        else -> metricTitle(metric) + " " + figure
     }
-}
+    // The workouts order's first line: the sport when the day had one workout, how many otherwise.
+    val sessions = (row.detail as? FriendsBoardRow.Detail.Sessions)?.let { detail ->
+        detail.sport?.let { sportLabel(it) } ?: pluralStringResource(R.plurals.friends_workouts_count, detail.count, detail.count)
+    }
+    // The amount behind a score, and what TalkBack calls it. Nothing stands behind Recovery.
+    val amount: Pair<String, String>? = if (!metric.hasDetail) null else when (val detail = row.detail) {
+        is FriendsBoardRow.Detail.Workouts -> {
+            val text = stringResource(R.string.sleep_duration_m, detail.minutes)
+            text to stringResource(R.string.nav_workouts) + " " + text
+        }
+        is FriendsBoardRow.Detail.Asleep -> {
+            val text = sleepDuration(detail.minutes.toDouble())
+            text to stringResource(R.string.summary_time_asleep) + " " + text
+        }
+        is FriendsBoardRow.Detail.Sessions, null -> null
+    }
 
-/** The feed: one row per event, or the words for a quiet few days. */
-@Composable
-internal fun EventsCard(events: List<FriendsEvent>, today: LocalDate, scale: EffortScale, modifier: Modifier = Modifier) {
     HealthCard(
         modifier = modifier,
-        shape = RoundedCornerShape(M3Dimens.heroRadius),
-        contentPadding = PaddingValues(vertical = 8.dp),
-        verticalSpacing = 0.dp,
+        onClick = onClick,
+        onClickLabel = stringResource(R.string.friends_open_page, name),
+        contentPadding = PaddingValues(M3Dimens.cardPadding),
     ) {
-        if (events.isEmpty()) {
-            Text(
-                stringResource(R.string.friends_feed_empty),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            )
+        val text: @Composable (Modifier) -> Unit = { textModifier ->
+            Column(textModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FriendAvatar(
+                        person.profile.name, person.id, person.profile.avatarRev, size = 32.dp,
+                        tone = if (row.isMe) AvatarTone.ME else AvatarTone.FRIEND,
+                    )
+                    // The wearer's own card carries a dot in the hue of its figure.
+                    if (row.isMe) Box(Modifier.size(10.dp).clip(CircleShape).background(hue))
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = if (large) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (sessions != null) {
+                    Text(sessions, style = MaterialTheme.typography.bodyLarge, color = hue, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                val figureLine: @Composable (Modifier) -> Unit = { figureModifier ->
+                    FriendsFigure(figure ?: stringResource(R.string.friends_no_value), unit, hue, spokenFigure, figureModifier)
+                }
+                val noteLine: @Composable (Modifier) -> Unit = { noteModifier ->
+                    if (note != null) {
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (large) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = noteModifier,
+                        )
+                    }
+                }
+                if (large) {
+                    figureLine(Modifier)
+                    noteLine(Modifier)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        figureLine(Modifier.alignByBaseline())
+                        noteLine(Modifier.alignByBaseline().weight(1f, fill = false))
+                    }
+                }
+                if (metric == FriendsMetric.STRAIN || metric == FriendsMetric.SLEEP) {
+                    // Every card under this order keeps the line, so the cards stay one height.
+                    val spoken = amount?.second
+                    Text(
+                        amount?.first ?: " ",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = hue,
+                        maxLines = 1,
+                        modifier = if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier,
+                    )
+                }
+            }
         }
-        events.forEach { event -> EventRow(event, today, scale) }
+        if (large) {
+            text(Modifier.fillMaxWidth())
+            FriendRings(ringsDay, size = CARD_RINGS, stroke = 8.dp, gap = 2.dp)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                text(Modifier.weight(1f))
+                FriendRings(ringsDay, size = CARD_RINGS, stroke = 8.dp, gap = 2.dp)
+            }
+        }
     }
 }
 
-@Composable
-private fun EventRow(event: FriendsEvent, today: LocalDate, scale: EffortScale) {
-    val who = if (event.isMe) stringResource(R.string.friends_you) else event.who.name
-    val tonal = LocalTonalIcons.current
-    val (title, subtitle) = when (event) {
-        is FriendsEvent.Woke -> {
-            val asleep = sleepDuration(event.asleepMin.toDouble())
-            stringResource(R.string.friends_event_woke, who) to (
-                event.sleepScore?.let { stringResource(R.string.friends_event_woke_scored, asleep, it, sleepLevelText(it)) }
-                    ?: stringResource(R.string.friends_event_woke_plain, asleep)
-                )
-        }
-        is FriendsEvent.Workout -> {
-            val w = event.workout
-            val duration = sleepDuration(w.durationS / 60.0)
-            val strain = w.strain?.let { strainShown(it, scale) }
-            stringResource(R.string.friends_event_workout, who, sportLabel(w.sport), duration) to when {
-                strain != null && w.avgHr != null -> stringResource(R.string.friends_event_workout_both, strain, w.avgHr)
-                strain != null -> stringResource(R.string.friends_event_workout_strain, strain)
-                w.avgHr != null -> stringResource(R.string.friends_event_workout_hr, w.avgHr)
-                else -> null
-            }
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = M3Dimens.rowTwoLineHeight)
-            .semantics(mergeDescendants = true) {}
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        when (event) {
-            is FriendsEvent.Woke -> TonalIcon(Icons.Filled.WbTwilight, tonal.purple, size = 44.dp, shape = CloverShape)
-            is FriendsEvent.Workout -> TonalIcon(sportIcon(event.workout.sport), tonal.green, size = 44.dp, shape = CloverShape)
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Text(eventStamp(event.ts, today), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-    }
-}
+private val CARD_RINGS = 68.dp
 
-/** Seven days of Recovery side by side, led by the two averages in a sentence. */
+/** The list with nobody on it but the reader: what the tab is for, and the way to the first friend. */
 @Composable
-internal fun WeekCard(week: FriendsWeek?, friendName: String, friendShares: Boolean, modifier: Modifier = Modifier) {
-    val mineColor = Health.colors.charge
-    val theirColor = MaterialTheme.colorScheme.outline
-    val you = stringResource(R.string.friends_you)
-    HealthCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(M3Dimens.heroRadius),
-        contentPadding = PaddingValues(20.dp),
-        verticalSpacing = 16.dp,
-    ) {
-        val mine = week?.myAverage
-        val theirs = week?.theirAverage
-        val sentence = when {
-            week == null || week.isEmpty ->
-                if (friendShares) stringResource(R.string.friends_week_none) else stringResource(R.string.friends_not_sharing_scores, friendName)
-            mine != null && theirs != null -> stringResource(R.string.friends_week_both, mine, friendName, theirs)
-            mine != null ->
-                if (friendShares) stringResource(R.string.friends_week_only_me, mine, friendName)
-                else stringResource(R.string.friends_week_only_me_unshared, mine, friendName)
-            else -> stringResource(R.string.friends_week_only_friend, friendName, theirs ?: 0)
-        }
-        Text(sentence, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        if (week != null && !week.isEmpty) {
-            PairedWeekChart(
-                week, mineColor, theirColor,
-                description = stringResource(R.string.friends_week_chart_spoken, friendName),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                LegendDot(mineColor, you)
-                LegendDot(theirColor, friendName)
-            }
-        }
+private fun NoFriendsCard(onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    HealthCard(modifier = modifier, contentPadding = PaddingValues(M3Dimens.cardPadding)) {
+        Text(
+            stringResource(R.string.friends_empty_title),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            stringResource(R.string.friends_empty_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FilledTonalButton(onClick = onAdd) { Text(stringResource(R.string.friends_add_open)) }
     }
 }

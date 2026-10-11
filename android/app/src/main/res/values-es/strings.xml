@@ -2511,5 +2511,26 @@
     <string name="friends_remove_this_phone_body">Amigos se desactiva en este teléfono. La cuenta sigue en tu otro teléfono.</string>
     <string name="friends_delete_account_note">Borra del servidor tu nombre y todo lo que compartes</string>
     <string name="friends_delete_body">Elimina del servidor tu nombre, tu foto, todos los días que subiste y todas tus amistades, y desactiva Amigos en este teléfono. No se puede deshacer.</string>
+    <string name="friends_me">Yo</string>
+    <string name="friends_highlights">Destacados</string>
+    <string name="friends_completed_workout">%1$s ha completado un entrenamiento</string>
+    <string name="friends_rings">Anillos</string>
+    <string name="friends_sort">Ordenar</string>
+    <string name="friends_sort_name">Nombre</string>
+    <string name="friends_board_day">Hoy, %1$s</string>
+    <string name="friends_card_not_sharing_scores">No comparte puntuaciones</string>
+    <string name="friends_card_not_sharing_workouts">No comparte entrenamientos</string>
+    <string name="friends_last_7_days">Últimos 7 días</string>
+    <string name="friends_sharing_with">Compartes con</string>
+    <string name="friends_manage_data">Consulta cómo se gestionan tus datos…</string>
+    <string name="friends_no_hr_day">No hay frecuencia cardiaca de este día.</string>
+    <string name="friends_no_sleep_day">No hay ninguna noche registrada para este día.</string>
+    <string name="friends_workout_line_hr">Frecuencia cardiaca media %1$d</string>
+    <string name="friends_you_not_sharing_hr">No compartes tu frecuencia cardiaca.</string>
+    <string name="friends_you_not_sharing_workouts">No compartes tus entrenamientos.</string>
+    <plurals name="friends_workouts_count">
+        <item quantity="one">%1$d entrenamiento</item>
+        <item quantity="other">%1$d entrenamientos</item>
+    </plurals>
     <!-- Friends tab (reNOOP fork): end -->
 </resources>

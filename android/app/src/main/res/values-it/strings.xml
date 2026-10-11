@@ -2481,5 +2481,26 @@
     <string name="friends_remove_this_phone_body">Amici si disattiva su questo telefono. L\'account resta sull\'altro tuo telefono.</string>
     <string name="friends_delete_account_note">Cancella dal server il tuo nome e tutto ciò che condividi</string>
     <string name="friends_delete_body">Rimuove dal server il tuo nome, la tua foto, ogni giornata caricata e ogni amicizia, e disattiva Amici su questo telefono. Non si può annullare.</string>
+    <string name="friends_me">Io</string>
+    <string name="friends_highlights">In evidenza</string>
+    <string name="friends_completed_workout">%1$s ha completato un allenamento</string>
+    <string name="friends_rings">Anelli</string>
+    <string name="friends_sort">Ordina</string>
+    <string name="friends_sort_name">Nome</string>
+    <string name="friends_board_day">Oggi, %1$s</string>
+    <string name="friends_card_not_sharing_scores">Non condivide i punteggi</string>
+    <string name="friends_card_not_sharing_workouts">Non condivide gli allenamenti</string>
+    <string name="friends_last_7_days">Ultimi 7 giorni</string>
+    <string name="friends_sharing_with">Condividi con</string>
+    <string name="friends_manage_data">Scopri come vengono gestiti i tuoi dati…</string>
+    <string name="friends_no_hr_day">Nessuna frequenza cardiaca per questo giorno.</string>
+    <string name="friends_no_sleep_day">Nessuna notte registrata per questo giorno.</string>
+    <string name="friends_workout_line_hr">Frequenza cardiaca media %1$d</string>
+    <string name="friends_you_not_sharing_hr">Non condividi la frequenza cardiaca.</string>
+    <string name="friends_you_not_sharing_workouts">Non condividi gli allenamenti.</string>
+    <plurals name="friends_workouts_count">
+        <item quantity="one">%1$d allenamento</item>
+        <item quantity="other">%1$d allenamenti</item>
+    </plurals>
     <!-- Friends tab (reNOOP fork): end -->
 </resources>
