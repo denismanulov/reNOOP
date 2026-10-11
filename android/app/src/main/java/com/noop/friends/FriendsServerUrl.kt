@@ -86,25 +86,3 @@ object FriendsServerUrl {
     /** The normalised address, or null when [raw] is not one the app will talk to. */
     fun normalised(raw: String): String? = (validate(raw) as? Result.Valid)?.url
 }
-
-/** Nicknames as the server keeps them: 3 to 20 of a-z, 0-9 and _, lower-case, a leading @ ignored. */
-object FriendsNick {
-    private val VALID = Regex("^[a-z0-9_]{3,20}$")
-    const val MIN_LENGTH = 3
-    const val MAX_LENGTH = 20
-    const val PASSWORD_MIN = 8
-    const val PASSWORD_MAX = 128
-    const val NAME_MAX = 40
-
-    /** The nickname as the server would store it, or null when it could not be one. */
-    fun clean(typed: String): String? {
-        val nick = typed.trim().trimStart('@').lowercase(Locale.ROOT)
-        return nick.takeIf { VALID.matches(it) }
-    }
-
-    /** What is typed into a nickname field as it may stand there: lower-case, no @, no other characters. */
-    fun filterTyping(typed: String): String =
-        typed.trimStart('@').lowercase(Locale.ROOT).filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(MAX_LENGTH)
-
-    fun passwordOk(password: String): Boolean = password.length in PASSWORD_MIN..PASSWORD_MAX
-}

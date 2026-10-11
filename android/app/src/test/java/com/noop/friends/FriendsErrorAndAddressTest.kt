@@ -16,32 +16,48 @@ class FriendsErrorAndAddressTest {
 
     // MARK: Error codes
 
+    /** The codes of `friends-server/README.md`, "Errors", each with the status it comes with. */
     @Test
     fun everyCodeTheServerSendsHasItsOwnFailure() {
-        // (status, code) pairs exactly as friends-server/server.py raises them.
         val expected = mapOf(
-            (409 to "nick_taken") to FriendsError.NICK_TAKEN,
-            (401 to "bad_credentials") to FriendsError.BAD_CREDENTIALS,
-            (401 to "unauthorized") to FriendsError.UNAUTHORIZED,
-            (429 to "rate_limited") to FriendsError.RATE_LIMITED,
-            (404 to "no_such_user") to FriendsError.NO_SUCH_USER,
-            (403 to "bad_invite") to FriendsError.BAD_INVITE,
+            (401 to "unsigned") to FriendsError.REJECTED,
+            (401 to "clock_skew") to FriendsError.CLOCK_SKEW,
+            (401 to "unknown_key") to FriendsError.UNKNOWN_KEY,
+            (401 to "replayed") to FriendsError.REJECTED,
+            (401 to "bad_signature") to FriendsError.REJECTED,
+            (403 to "probation") to FriendsError.PROBATION,
             (403 to "server_full") to FriendsError.SERVER_FULL,
-            (400 to "bad_nick") to FriendsError.BAD_NICK,
-            (400 to "bad_name") to FriendsError.BAD_NAME,
-            (400 to "bad_password") to FriendsError.BAD_PASSWORD,
-            (400 to "self_request") to FriendsError.SELF_REQUEST,
-            (404 to "no_request") to FriendsError.NO_REQUEST,
-            (409 to "too_many_friends") to FriendsError.TOO_MANY_FRIENDS,
-            (409 to "too_many_requests") to FriendsError.TOO_MANY_REQUESTS,
-            (415 to "bad_image") to FriendsError.BAD_IMAGE,
-            (413 to "too_large") to FriendsError.TOO_LARGE,
-            (404 to "no_avatar") to FriendsError.NO_AVATAR,
-            (400 to "bad_payload") to FriendsError.REJECTED,
+            (400 to "bad_key") to FriendsError.REJECTED,
             (400 to "bad_json") to FriendsError.REJECTED,
+            (400 to "bad_payload") to FriendsError.REJECTED,
+            (400 to "bad_name") to FriendsError.BAD_NAME,
+            (400 to "bad_platform") to FriendsError.REJECTED,
+            (400 to "bad_strap") to FriendsError.REJECTED,
             (400 to "bad_day") to FriendsError.REJECTED,
+            (400 to "bad_query") to FriendsError.REJECTED,
+            (400 to "bad_length") to FriendsError.REJECTED,
+            (400 to "own_invite") to FriendsError.OWN_INVITE,
+            (404 to "no_claim") to FriendsError.NO_CLAIM,
+            (404 to "no_such_device") to FriendsError.NO_SUCH_DEVICE,
+            (404 to "no_such_invite") to FriendsError.NO_SUCH_INVITE,
+            (404 to "no_such_user") to FriendsError.NO_SUCH_USER,
+            (404 to "no_avatar") to FriendsError.NO_AVATAR,
+            (404 to "strap_free") to FriendsError.STRAP_FREE,
             (404 to "not_found") to FriendsError.REJECTED,
             (405 to "method_not_allowed") to FriendsError.REJECTED,
+            (409 to "already_enrolled") to FriendsError.ALREADY_ENROLLED,
+            (409 to "strap_bound") to FriendsError.STRAP_BOUND,
+            (409 to "claim_settled") to FriendsError.CLAIM_SETTLED,
+            (409 to "last_device") to FriendsError.LAST_DEVICE,
+            (409 to "too_many_devices") to FriendsError.TOO_MANY_DEVICES,
+            (409 to "too_many_invites") to FriendsError.TOO_MANY_INVITES,
+            (409 to "too_many_friends") to FriendsError.TOO_MANY_FRIENDS,
+            (411 to "length_required") to FriendsError.REJECTED,
+            (413 to "too_large") to FriendsError.TOO_LARGE,
+            (415 to "bad_image") to FriendsError.BAD_IMAGE,
+            (429 to "rate_limited") to FriendsError.RATE_LIMITED,
+            (429 to "claim_declined") to FriendsError.CLAIM_DECLINED,
+            (429 to "too_many_claims") to FriendsError.TOO_MANY_CLAIMS,
             (500 to "internal") to FriendsError.SERVER_ERROR,
         )
         for ((answer, error) in expected) {
@@ -49,12 +65,28 @@ class FriendsErrorAndAddressTest {
         }
     }
 
+    /**
+     * `unknown_key` turns Friends off on this phone, so it is believed only as the `401` the contract
+     * sends it with: a proxy's `401` with no code, or the same word under another status, ends nothing.
+     * The same holds for the other refusals the client acts on by itself.
+     */
     @Test
-    fun a401IsADeadSessionOnlyWhenTheServerSaysSo() {
-        // A wrong password and a dead session share the status; only the second signs the phone out.
-        assertEquals(FriendsError.BAD_CREDENTIALS, FriendsError.of(401, "bad_credentials"))
-        assertEquals(FriendsError.UNAUTHORIZED, FriendsError.of(401, "unauthorized"))
-        assertEquals(FriendsError.UNAUTHORIZED, FriendsError.of(401, null))
+    fun aRefusalTheClientActsOnIsBelievedOnlyWithItsOwnStatus() {
+        assertEquals(FriendsError.UNKNOWN_KEY, FriendsError.of(401, "unknown_key"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(401, null))
+        assertEquals(FriendsError.SERVER_ERROR, FriendsError.of(500, "unknown_key"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(403, "unknown_key"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(404, "strap_bound"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(409, "probation"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(409, "no_claim"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(409, "strap_free"))
+        assertEquals(FriendsError.UNKNOWN, FriendsError.of(404, "already_enrolled"))
+    }
+
+    /** No answer, or none the contract describes, is the one case in which what was sent may have been carried out. */
+    @Test
+    fun onlyNoAnswerLeavesARequestInDoubt() {
+        assertEquals(setOf(FriendsError.OFFLINE, FriendsError.BAD_RESPONSE), FriendsError.entries.filter { it.isUnanswered }.toSet())
     }
 
     @Test
@@ -148,8 +180,9 @@ class FriendsErrorAndAddressTest {
     @Test
     fun aClientExistsOnlyForAnAcceptedAddress() {
         assertNotNull(FriendsApi.create("https://renoop.duckdns.org", null))
-        assertNotNull(FriendsApi.create("http://127.0.0.1:8787", "token"))
-        assertNull(FriendsApi.create("http://renoop.duckdns.org", "token"))
+        assertNotNull(FriendsApi.create("https://renoop.duckdns.org", SoftwareFriendsSigner()))
+        assertNotNull(FriendsApi.create("http://127.0.0.1:8787", null))
+        assertNull(FriendsApi.create("http://renoop.duckdns.org", SoftwareFriendsSigner()))
         assertNull(FriendsApi.create("", null))
     }
 
@@ -177,34 +210,5 @@ class FriendsErrorAndAddressTest {
         }
         assertTrue("differs from the Swift twin:\n" + differing.joinToString("\n"), differing.isEmpty())
         assertTrue(lines.size > 100)
-    }
-
-    // MARK: Nicknames
-
-    @Test
-    fun aNicknameIsCleanedTheWayTheServerStoresIt() {
-        assertEquals("ruslan", FriendsNick.clean("@Ruslan"))
-        assertEquals("den_chik7", FriendsNick.clean("  den_chik7 "))
-        assertNull(FriendsNick.clean("ab"))
-        assertNull(FriendsNick.clean("has space"))
-        assertNull(FriendsNick.clean("кириллица"))
-        assertNull(FriendsNick.clean("x".repeat(21)))
-        assertNull(FriendsNick.clean("a/b/c"))
-        assertNull(FriendsNick.clean("../me"))
-    }
-
-    @Test
-    fun typingIsHeldToWhatANicknameMayContain() {
-        assertEquals("ruslan_7", FriendsNick.filterTyping("@Ruslan_7!"))
-        assertEquals("x".repeat(20), FriendsNick.filterTyping("x".repeat(30)))
-        assertEquals("", FriendsNick.filterTyping("Привет"))
-    }
-
-    @Test
-    fun aPasswordIs8To128Characters() {
-        assertFalse(FriendsNick.passwordOk("1234567"))
-        assertTrue(FriendsNick.passwordOk("12345678"))
-        assertTrue(FriendsNick.passwordOk("x".repeat(128)))
-        assertFalse(FriendsNick.passwordOk("x".repeat(129)))
     }
 }

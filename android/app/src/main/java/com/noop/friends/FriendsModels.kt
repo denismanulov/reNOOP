@@ -2,7 +2,8 @@ package com.noop.friends
 
 // MARK: - Friends: what the server holds, as plain values
 //
-// The Friends tab is a reNOOP fork feature (friends-server/README.md is the contract). Everything here is
+// The Friends tab is a reNOOP fork feature (friends-server/README.md is the contract, API version 2).
+// People are known by an opaque account id: there is no nickname and nothing to type. Everything here is
 // a plain value with no Android type in it, so the parsing, the day payload and the tab's reading of a
 // feed are all unit-tested on the JVM. A member the server did not send is null: a friend who does not
 // share a section, or a day the phone had no honest figure for, reads as absent, never as zero.
@@ -26,23 +27,38 @@ data class FriendShare(
     }
 }
 
-/** How another account stands to the signed-in one. */
-enum class FriendRelation(val wire: String) {
-    SELF("self"), FRIEND("friend"), OUTGOING("outgoing"), INCOMING("incoming"), NONE("none");
+/** An account id as the server mints it, and a phone's key id. Checked wherever one goes into a path or a file name. */
+object FriendsId {
+    /** 16 lower-case hex characters. */
+    fun isValid(id: String): Boolean = id.length == 16 && id.all(::isLowerHex)
 
-    companion object {
-        fun of(wire: String?): FriendRelation? = entries.firstOrNull { it.wire == wire }
-    }
+    /** 64 lower-case hex characters: the SHA-256 of a public key. */
+    fun isKeyId(id: String): Boolean = id.length == 64 && id.all(::isLowerHex)
+
+    private fun isLowerHex(ch: Char): Boolean = ch in '0'..'9' || ch in 'a'..'f'
 }
 
-/** An account as others see it. [share] is present on the signed-in account and on a feed entry. */
+/** How this phone stands on the wearer's own account. */
+data class FriendsDeviceState(
+    /** This phone's key id. */
+    val id: String,
+    /** Unix seconds until which this phone may only read and upload; null for a confirmed phone. */
+    val probationUntil: Long? = null,
+)
+
+/**
+ * An account as others see it. [share] comes on the wearer's own account and on a feed entry;
+ * [strapBound] and [device] only on the wearer's own account.
+ */
 data class FriendProfile(
-    val nick: String,
+    /** The account's id on the server: opaque, never shown, never typed. */
+    val id: String,
     val name: String,
     /** 0 when the account has no picture; otherwise it changes whenever the picture does. */
     val avatarRev: Int = 0,
     val share: FriendShare? = null,
-    val relation: FriendRelation? = null,
+    val strapBound: Boolean? = null,
+    val device: FriendsDeviceState? = null,
 )
 
 /** The main sleep of a day. Stage minutes and the need are optional on the wire. */
@@ -96,13 +112,13 @@ data class FriendDay(
     val hr: FriendHr? = null,
 )
 
-/** A person with their days, newest day first: the signed-in account or one friend. */
+/** A person with their days, newest day first: the wearer's own account or one friend. */
 data class FriendPerson(
     val profile: FriendProfile,
     val share: FriendShare,
     val days: List<FriendDay>,
 ) {
-    val nick: String get() = profile.nick
+    val id: String get() = profile.id
 
     /** The day keyed [dayKey], or null when the person uploaded none. */
     fun day(dayKey: String): FriendDay? = days.firstOrNull { it.day == dayKey }
@@ -111,26 +127,96 @@ data class FriendPerson(
     val lastUpdatedAt: Long? get() = days.maxOfOrNull { it.updatedAt }
 }
 
-/** `GET /v1/feed`: the signed-in account and every friend at a glance. */
+/**
+ * A request waiting on a strap: a new phone asking to join the account ([Kind.JOIN]), or another account
+ * asking for the strap ([Kind.TAKE]).
+ */
+data class FriendsClaim(
+    val id: Long,
+    val kind: Kind,
+    /** Six digits shown on both phones, so two claims can be told apart. */
+    val code: String,
+    val state: State,
+    val platform: String? = null,
+    val createdAt: Long,
+    /** When silence alone will grant it (unix seconds); null once settled. */
+    val maturesAt: Long? = null,
+) {
+    enum class Kind(val wire: String) {
+        JOIN("join"), TAKE("take");
+
+        companion object {
+            fun of(wire: String?): Kind? = entries.firstOrNull { it.wire == wire }
+        }
+    }
+
+    enum class State(val wire: String) {
+        PENDING("pending"), APPROVED("approved"), DECLINED("declined"), EXPIRED("expired");
+
+        companion object {
+            fun of(wire: String?): State? = entries.firstOrNull { it.wire == wire }
+        }
+    }
+}
+
+/** One phone of the wearer's account. */
+data class FriendsDevice(
+    /** Its key id. */
+    val id: String,
+    /** "ios", "android" or "mac": all the server knows about the device. */
+    val platform: String,
+    val addedAt: Long,
+    val lastSeenAt: Long,
+    val probationUntil: Long? = null,
+    /** This phone. */
+    val current: Boolean,
+)
+
+/** A one-time invite. */
+data class FriendsInvite(
+    val id: String,
+    /** Said once, in the answer that made the invite. */
+    val code: String? = null,
+    val createdAt: Long? = null,
+    val expiresAt: Long,
+)
+
+/** `GET /v2/feed`: the wearer's own account, every friend, and what waits for an answer. */
 data class FriendsFeed(
     /** The server's clock when it answered (unix seconds): the reference every "N min ago" counts from. */
     val serverTime: Long,
     val me: FriendPerson,
     val friends: List<FriendPerson>,
-    val pendingIncoming: Int,
+    /** Claims waiting for this account's answer. */
+    val claims: List<FriendsClaim> = emptyList(),
+    /** This account's own request for a strap bound to someone else. */
+    val strapClaim: FriendsClaim? = null,
+    /** The account's other phones that joined without confirmation and are still on probation. */
+    val unconfirmed: List<FriendsDevice> = emptyList(),
 )
 
-/** A pending friend request with when it was sent. */
-data class FriendRequest(val profile: FriendProfile, val requestedAt: Long)
+/** `GET /v2/info`. */
+data class FriendsServerInfo(val name: String, val api: Int, val time: Long)
 
-/** `GET /v1/friends/requests`. */
-data class FriendRequests(val incoming: List<FriendRequest>, val outgoing: List<FriendRequest>)
+/** `POST /v2/enroll`: the account, and whether it was made now or is one the key already had. */
+data class FriendsEnrolment(val me: FriendProfile, val isNew: Boolean)
 
-/** `GET /v1/info`. */
-data class FriendsServerInfo(val name: String, val api: Int, val inviteRequired: Boolean)
+/** What the server said to "bind this strap": done, or asked of the account that holds it. */
+sealed class FriendsStrapAnswer {
+    object Bound : FriendsStrapAnswer()
+    data class Claimed(val claim: FriendsClaim) : FriendsStrapAnswer()
+}
 
-/** A sign-up or sign-in answer: the session token and the account it belongs to. */
-class FriendsSession(val token: String, val me: FriendProfile) {
-    // A token must never reach a log through string interpolation.
-    override fun toString(): String = "FriendsSession(nick=${me.nick})"
+/**
+ * The names a build gives the server for a phone: all the server learns about the device. [CURRENT] is
+ * this build's; the other two are what the Swift app sends from an iPhone and from a Mac.
+ */
+object FriendsPlatform {
+    const val CURRENT = "android"
+    const val IOS = "ios"
+    const val MAC = "mac"
+
+    /** What those two are called on a screen: product names, written the same in every language. */
+    const val IPHONE_NAME = "iPhone"
+    const val MAC_NAME = "Mac"
 }
