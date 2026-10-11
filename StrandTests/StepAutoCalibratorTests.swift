@@ -189,11 +189,69 @@ final class StepAutoCalibratorTests: XCTestCase {
     }
 
     func testWalkingNowNeedsFreshClimbingHistory() {
-        XCTAssertTrue(StepAutoCalibrator.isWalkingNow(steady(960...995), now: 1_000))
+        XCTAssertTrue(StepAutoCalibrator.isWalkingNow(steady(940...995), now: 1_000))
         XCTAssertFalse(StepAutoCalibrator.isWalkingNow(steady(900...950), now: 1_000))
         XCTAssertFalse(StepAutoCalibrator.isWalkingNow(
-            (960...995).map { StepSample(ts: $0, counter: 7) }, now: 1_000))
+            (940...995).map { StepSample(ts: $0, counter: 7) }, now: 1_000))
         XCTAssertFalse(StepAutoCalibrator.isWalkingNow([], now: 1_000))
+    }
+
+    // MARK: - What counts as walking right now
+
+    /// One history row a second ending at `last`, built from the counter's per-second increments.
+    private func history(endingAt last: Int, increments: [Int]) -> [StepSample] {
+        var counter = 500
+        let first = last - increments.count
+        return [StepSample(ts: first, counter: counter)] + increments.enumerated().map { offset, ticks in
+            counter += ticks
+            return StepSample(ts: first + 1 + offset, counter: counter)
+        }
+    }
+
+    private let still = [Int](repeating: 0, count: 50)
+    /// 2026-10-10 19:00:30 on a WHOOP 4.0: one buffered release, four more seconds of steps, then nothing.
+    private let fewSteps = [12, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0]
+    /// 2026-10-10 08:01:27 on the same strap: a walk that is eleven seconds old.
+    private let justSetOff = [11, 3, 0, 0, 2, 2, 2, 2, 3, 2, 2]
+
+    func testAFewStepsBetweenRoomsAreNotWalkingNow() {
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(
+            history(endingAt: 993, increments: still + fewSteps), now: 1_000))
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(
+            history(endingAt: 993, increments: still + justSetOff), now: 1_000))
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(steady(960...995), now: 1_000),
+                       "under way for less than the window")
+    }
+
+    func testARealWalksUnevenRecordsAreWalkingNow() {
+        // A steady walk's 1 Hz records carry one to four ticks and now and then none for a second or two.
+        let uneven = (0..<60).map { [2, 2, 1, 2, 0, 3, 2, 2, 0, 0, 4, 2][$0 % 12] }
+        XCTAssertTrue(StepAutoCalibrator.isWalkingNow(history(endingAt: 995, increments: uneven), now: 1_000))
+        let missingSeconds = steady(940...995).filter { $0.ts % 10 != 0 }
+        XCTAssertTrue(StepAutoCalibrator.isWalkingNow(missingSeconds, now: 1_000))
+    }
+
+    func testAWalkThatStoppedOrOnlyJustResumedIsNotWalkingNow() {
+        var paused = [Int](repeating: 2, count: 60)
+        paused.replaceSubrange(30..<33, with: [0, 0, 0])
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(history(endingAt: 995, increments: paused), now: 1_000))
+
+        // A stop at a crossing, then the counter releases what it held back: the walk restarted there.
+        var resumed = [Int](repeating: 2, count: 60)
+        resumed.replaceSubrange(20..<28, with: [0, 0, 0, 0, 0, 0, 0, 11])
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(history(endingAt: 995, increments: resumed), now: 1_000))
+
+        let dawdling = (0..<60).map { $0 % 2 }
+        XCTAssertFalse(StepAutoCalibrator.isWalkingNow(history(endingAt: 995, increments: dawdling), now: 1_000))
+    }
+
+    func testNoBurstIsSpentOnAFewSteps() async {
+        let h = Harness()
+        h.history = history(endingAt: 993, increments: still + fewSteps)
+        await h.calibrator.offloadSettled(batteryPct: 80, appOnScreen: false)
+        XCTAssertEqual(h.streamOn, 0)
+        XCTAssertNil(h.defaults.array(forKey: StepAutoCalibrator.burstTimesKey),
+                     "nothing is charged to the daily limit")
     }
 
     func testLongestContiguousRunSkipsGapsAndDuplicates() {

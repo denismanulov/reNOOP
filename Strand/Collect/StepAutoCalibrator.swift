@@ -34,9 +34,19 @@ final class StepAutoCalibrator {
     static let minBatteryPct = 15.0
     /// The newest history record must be this recent for "walking now" to mean now.
     static let freshnessSeconds = 30
-    /// Ticks the counter must have added over the last `walkingWindowSeconds` to call it walking.
-    static let walkingWindowSeconds = 12
-    static let walkingMinimumTicks = 10
+    /// Seconds of unbroken walking the newest history must end with. A burst starts some ten seconds
+    /// after that history's last record and then needs forty more of the same walk, so the question is
+    /// which walks go on for another minute. Replayed over one wearer's four days (2026-10-07 to 10),
+    /// taking every second as a possible start: with twelve seconds of history the walk outlasted the
+    /// burst from 39% of the starts it allowed, and from 2% on the day spent at home, where four bursts
+    /// out of four went to a few steps between rooms; with forty-five it is 82%, and that day at home
+    /// allows a start in three of its seconds instead of 2,899.
+    static let walkingWindowSeconds = 45
+    /// The longest the counter stands still inside a steady walk. Seven walks of one to twenty-two
+    /// minutes held flat runs of one and two seconds; every stop in them lasted seven or more.
+    static let walkingPauseSeconds = 2
+    /// The slowest mean counter rate that is still a walk. The slowest walk measured ran at 1.5.
+    static let walkingMinimumTicksPerSecond = 1
     /// A pending measurement whose history never arrives is dropped after this long.
     static let pendingMaxAgeSeconds = 6 * 3_600
     /// The largest one-second increment a steady walk produces; anything above is a buffered release.
@@ -275,13 +285,30 @@ final class StepAutoCalibrator {
         return .success((end - start) & 0xFFFF)
     }
 
-    /// True when the newest history is fresh and the counter has been climbing through its last seconds.
+    /// True when the newest history is fresh and ends with `walkingWindowSeconds` of one unbroken walk.
+    ///
+    /// A tick total over those seconds does not say that. The counter holds a walk's first steps back
+    /// and releases them in one record of 11 to 14, so a few steps between two rooms add as much in a
+    /// moment as ten seconds of walking do. Here the counter has to climb the whole way: no buffered
+    /// release (the walk began there), no pause longer than a steady walk has, and a walk's pace overall.
     static func isWalkingNow(_ history: [StepSample], now: Int) -> Bool {
         let sorted = history.sorted { $0.ts < $1.ts }
         guard let newest = sorted.last, now - newest.ts <= freshnessSeconds,
-              let earlier = sorted.last(where: { $0.ts <= newest.ts - walkingWindowSeconds }),
-              newest.ts - earlier.ts <= walkingWindowSeconds + 3 else { return false }
-        return (newest.counter - earlier.counter) & 0xFFFF >= walkingMinimumTicks
+              let from = sorted.lastIndex(where: { $0.ts <= newest.ts - walkingWindowSeconds }),
+              newest.ts - sorted[from].ts <= walkingWindowSeconds + 3 else { return false }
+        let window = sorted[from...]
+        var lastMovedTs = sorted[from].ts
+        for (earlier, later) in zip(window, window.dropFirst()) {
+            let ticks = (later.counter - earlier.counter) & 0xFFFF
+            if ticks > maxSteadyTicksPerSecond * (later.ts - earlier.ts) { return false }
+            if ticks > 0 {
+                lastMovedTs = later.ts
+            } else if later.ts - lastMovedTs > walkingPauseSeconds {
+                return false
+            }
+        }
+        return (newest.counter - sorted[from].counter) & 0xFFFF
+            >= walkingMinimumTicksPerSecond * (newest.ts - sorted[from].ts)
     }
 
     /// The longest stretch of packets whose timestamps run second by second, one packet per second.
