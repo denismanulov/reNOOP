@@ -267,13 +267,14 @@ class StepCalibrationLoopParityOracleTest {
         == pure rules ==
         ticks steady: success(80)
         walking fresh: true
+        walking short: false
         walking stale: false
         walking flat: false
         walking empty: false
         walking wrap: true
         walking sparse: false
         longest run: [20, 21, 22, 23, 24]
-        constants: burst=40 contiguous=30 firstFrame=12000 perDay=4 spacing=3600 battery=402e000000000000 fresh=30 walkWindow=12 walkTicks=10 pendingAge=21600 steady=6 attempts=4 first=1500 retry=2000
+        constants: burst=40 contiguous=30 firstFrame=12000 perDay=4 spacing=3600 battery=402e000000000000 fresh=30 walkWindow=45 walkPause=2 walkRate=1 pendingAge=21600 steady=6 attempts=4 first=1500 retry=2000
         keys: stepAutoCalibration.enabled stepAutoCalibration.state stepAutoCalibration.pending stepAutoCalibration.burstTimes rawStreamProbe.armed
     """.trimIndent()
 
@@ -554,11 +555,12 @@ class StepCalibrationLoopParityOracleTest {
         val window = StepAutoCalibrator.Pending(startTs = 1_000, endTs = 1_040, stepHz = 1.5)
         val steadyTicks = StepAutoCalibrator.ticks(window, steady(990L..1_042L)) as StepAutoCalibrator.Pairing.Ticks
         say("ticks steady: success(${steadyTicks.ticks})")
-        say("walking fresh: ${StepAutoCalibrator.isWalkingNow(steady(960L..995L), now = 1_000)}")
+        say("walking fresh: ${StepAutoCalibrator.isWalkingNow(steady(940L..995L), now = 1_000)}")
+        say("walking short: ${StepAutoCalibrator.isWalkingNow(steady(960L..995L), now = 1_000)}")
         say("walking stale: ${StepAutoCalibrator.isWalkingNow(steady(900L..950L), now = 1_000)}")
-        say("walking flat: ${StepAutoCalibrator.isWalkingNow((960L..995L).map { StepSample("test", it, 7) }, now = 1_000)}")
+        say("walking flat: ${StepAutoCalibrator.isWalkingNow((940L..995L).map { StepSample("test", it, 7) }, now = 1_000)}")
         say("walking empty: ${StepAutoCalibrator.isWalkingNow(emptyList(), now = 1_000)}")
-        val wrapping = (960L..995L).map { StepSample("test", it, ((65_500 + 2 * (it - 960)) and 0xFFFF).toInt()) }
+        val wrapping = (940L..995L).map { StepSample("test", it, ((65_500 + 2 * (it - 940)) and 0xFFFF).toInt()) }
         say("walking wrap: ${StepAutoCalibrator.isWalkingNow(wrapping, now = 1_000)}")
         val sparse = listOf(StepSample("test", 970, 0), StepSample("test", 995, 40))
         say("walking sparse: ${StepAutoCalibrator.isWalkingNow(sparse, now = 1_000)}")
@@ -572,7 +574,7 @@ class StepCalibrationLoopParityOracleTest {
             " firstFrame=${StepAutoCalibrator.FIRST_FRAME_TIMEOUT_MS} perDay=${StepAutoCalibrator.MAX_BURSTS_PER_DAY}" +
             " spacing=${StepAutoCalibrator.MIN_SPACING_SECONDS} battery=${hex(StepAutoCalibrator.MIN_BATTERY_PCT)}" +
             " fresh=${StepAutoCalibrator.FRESHNESS_SECONDS} walkWindow=${StepAutoCalibrator.WALKING_WINDOW_SECONDS}" +
-            " walkTicks=${StepAutoCalibrator.WALKING_MINIMUM_TICKS} pendingAge=${StepAutoCalibrator.PENDING_MAX_AGE_SECONDS}" +
+            " walkPause=${StepAutoCalibrator.WALKING_PAUSE_SECONDS} walkRate=${StepAutoCalibrator.WALKING_MINIMUM_TICKS_PER_SECOND} pendingAge=${StepAutoCalibrator.PENDING_MAX_AGE_SECONDS}" +
             " steady=${StepAutoCalibrator.MAX_STEADY_TICKS_PER_SECOND} attempts=${RawStreamProbe.MAX_ATTEMPTS}" +
             " first=${RawStreamProbe.FIRST_DELAY_MS} retry=${RawStreamProbe.RETRY_DELAY_MS}")
         say("keys: ${StepCalibrationStore.ENABLED_KEY} ${StepCalibrationStore.STATE_KEY} ${StepAutoCalibrator.PENDING_KEY}" +
@@ -589,6 +591,6 @@ class StepCalibrationLoopParityOracleTest {
         }
         assertEquals("line count", want.size, got.size)
         // The comparison cannot quietly stop comparing: 233 lines of Swift output.
-        assertEquals(233, want.size)
+        assertEquals(234, want.size)
     }
 }

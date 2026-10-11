@@ -223,10 +223,69 @@ class StepAutoCalibratorTest {
 
     @Test
     fun walkingNowNeedsFreshClimbingHistory() {
-        assertTrue(StepAutoCalibrator.isWalkingNow(steady(960L..995L), now = 1_000))
+        assertTrue(StepAutoCalibrator.isWalkingNow(steady(940L..995L), now = 1_000))
         assertFalse(StepAutoCalibrator.isWalkingNow(steady(900L..950L), now = 1_000))
-        assertFalse(StepAutoCalibrator.isWalkingNow((960L..995L).map { StepSample("test", it, 7) }, now = 1_000))
+        assertFalse(StepAutoCalibrator.isWalkingNow((940L..995L).map { StepSample("test", it, 7) }, now = 1_000))
         assertFalse(StepAutoCalibrator.isWalkingNow(emptyList(), now = 1_000))
+    }
+
+    // ── What counts as walking right now (twin of the Swift cases; the answers are also in the oracle) ──
+
+    /** One history row a second ending at [last], built from the counter's per-second increments. */
+    private fun history(last: Long, increments: List<Int>): List<StepSample> {
+        var counter = 500
+        val first = last - increments.size
+        return listOf(StepSample("test", first, counter)) + increments.mapIndexed { offset, ticks ->
+            counter += ticks
+            StepSample("test", first + 1 + offset, counter)
+        }
+    }
+
+    private val still = List(50) { 0 }
+    /** 2026-10-10 19:00:30 on a WHOOP 4.0: one buffered release, four more seconds of steps, then nothing. */
+    private val fewSteps = listOf(12, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0)
+    /** 2026-10-10 08:01:27 on the same strap: a walk that is eleven seconds old. */
+    private val justSetOff = listOf(11, 3, 0, 0, 2, 2, 2, 2, 3, 2, 2)
+
+    @Test
+    fun aFewStepsBetweenRoomsAreNotWalkingNow() {
+        assertFalse(StepAutoCalibrator.isWalkingNow(history(993, still + fewSteps), now = 1_000))
+        assertFalse(StepAutoCalibrator.isWalkingNow(history(993, still + justSetOff), now = 1_000))
+        assertFalse("under way for less than the window",
+            StepAutoCalibrator.isWalkingNow(steady(960L..995L), now = 1_000))
+    }
+
+    @Test
+    fun aRealWalksUnevenRecordsAreWalkingNow() {
+        // A steady walk's 1 Hz records carry one to four ticks and now and then none for a second or two.
+        val uneven = (0 until 60).map { listOf(2, 2, 1, 2, 0, 3, 2, 2, 0, 0, 4, 2)[it % 12] }
+        assertTrue(StepAutoCalibrator.isWalkingNow(history(995, uneven), now = 1_000))
+        val missingSeconds = steady(940L..995L).filter { it.ts % 10 != 0L }
+        assertTrue(StepAutoCalibrator.isWalkingNow(missingSeconds, now = 1_000))
+    }
+
+    @Test
+    fun aWalkThatStoppedOrOnlyJustResumedIsNotWalkingNow() {
+        val paused = MutableList(60) { 2 }
+        for (i in 30 until 33) paused[i] = 0
+        assertFalse(StepAutoCalibrator.isWalkingNow(history(995, paused), now = 1_000))
+
+        // A stop at a crossing, then the counter releases what it held back: the walk restarted there.
+        val resumed = MutableList(60) { 2 }
+        listOf(0, 0, 0, 0, 0, 0, 0, 11).forEachIndexed { i, ticks -> resumed[20 + i] = ticks }
+        assertFalse(StepAutoCalibrator.isWalkingNow(history(995, resumed), now = 1_000))
+
+        val dawdling = (0 until 60).map { it % 2 }
+        assertFalse(StepAutoCalibrator.isWalkingNow(history(995, dawdling), now = 1_000))
+    }
+
+    @Test
+    fun noBurstIsSpentOnAFewSteps() {
+        val h = Harness()
+        h.history = history(993, still + fewSteps)
+        h.settle(batteryPct = 80.0)
+        assertEquals(0, h.streamOn)
+        assertEquals("nothing is charged to the daily limit", null, h.prefs.getString(StepAutoCalibrator.BURST_TIMES_KEY))
     }
 
     @Test

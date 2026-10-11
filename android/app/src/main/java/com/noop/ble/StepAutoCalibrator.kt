@@ -74,9 +74,21 @@ class StepAutoCalibrator(
         /** The newest history record must be this recent for "walking now" to mean now. */
         const val FRESHNESS_SECONDS = 30
 
-        /** Ticks the counter must have added over the last [WALKING_WINDOW_SECONDS] to call it walking. */
-        const val WALKING_WINDOW_SECONDS = 12
-        const val WALKING_MINIMUM_TICKS = 10
+        /**
+         * Seconds of unbroken walking the newest history must end with. A burst starts some ten seconds
+         * after that history's last record and then needs forty more of the same walk, so the question is
+         * which walks go on for another minute. Replayed on the Swift side over one wearer's four days,
+         * taking every second as a possible start: with twelve seconds of history the walk outlasted the
+         * burst from 39% of the starts it allowed, and from 2% on a day spent at home, where four bursts
+         * out of four went to a few steps between rooms; with forty-five it is 82%.
+         */
+        const val WALKING_WINDOW_SECONDS = 45
+
+        /** The longest the counter stands still inside a steady walk; every measured stop lasted longer. */
+        const val WALKING_PAUSE_SECONDS = 2
+
+        /** The slowest mean counter rate that is still a walk. The slowest walk measured ran at 1.5. */
+        const val WALKING_MINIMUM_TICKS_PER_SECOND = 1
 
         /** A pending measurement whose history never arrives is dropped after this long. */
         const val PENDING_MAX_AGE_SECONDS = 6 * 3_600
@@ -113,16 +125,33 @@ class StepAutoCalibrator(
         }
 
         /**
-         * True when the newest history is fresh and the counter has been climbing through its last
-         * seconds. Swift twin: `StepAutoCalibrator.isWalkingNow(_:now:)`.
+         * True when the newest history is fresh and ends with [WALKING_WINDOW_SECONDS] of one unbroken
+         * walk. Swift twin: `StepAutoCalibrator.isWalkingNow(_:now:)`.
+         *
+         * A tick total over those seconds does not say that. The counter holds a walk's first steps back
+         * and releases them in one record of 11 to 14, so a few steps between two rooms add as much in a
+         * moment as ten seconds of walking do. Here the counter has to climb the whole way: no buffered
+         * release (the walk began there), no pause longer than a steady walk has, and a walk's pace overall.
          */
         fun isWalkingNow(history: List<StepSample>, now: Long): Boolean {
             val sorted = history.sortedBy { it.ts }
             val newest = sorted.lastOrNull() ?: return false
             if (now - newest.ts > FRESHNESS_SECONDS) return false
-            val earlier = sorted.lastOrNull { it.ts <= newest.ts - WALKING_WINDOW_SECONDS } ?: return false
-            if (newest.ts - earlier.ts > WALKING_WINDOW_SECONDS + 3) return false
-            return ((newest.counter - earlier.counter) and 0xFFFF) >= WALKING_MINIMUM_TICKS
+            val from = sorted.indexOfLast { it.ts <= newest.ts - WALKING_WINDOW_SECONDS }
+            if (from < 0 || newest.ts - sorted[from].ts > WALKING_WINDOW_SECONDS + 3) return false
+            var lastMovedTs = sorted[from].ts
+            for (i in from until sorted.size - 1) {
+                val earlier = sorted[i]; val later = sorted[i + 1]
+                val ticks = (later.counter - earlier.counter) and 0xFFFF
+                if (ticks > MAX_STEADY_TICKS_PER_SECOND * (later.ts - earlier.ts)) return false
+                if (ticks > 0) {
+                    lastMovedTs = later.ts
+                } else if (later.ts - lastMovedTs > WALKING_PAUSE_SECONDS) {
+                    return false
+                }
+            }
+            return ((newest.counter - sorted[from].counter) and 0xFFFF) >=
+                WALKING_MINIMUM_TICKS_PER_SECOND * (newest.ts - sorted[from].ts)
         }
 
         /**
