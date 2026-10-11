@@ -153,6 +153,32 @@ class FriendsErrorAndAddressTest {
         assertNull(FriendsApi.create("", null))
     }
 
+    /**
+     * Every line of the Swift twin's own output ([FriendsWireOracle], section "address"): the two apps
+     * take and refuse the same addresses, and keep the same text for the ones they take.
+     */
+    @Test
+    fun anAddressIsCheckedAsTheSwiftTwinChecksIt() {
+        val lines = FriendsWireOracle.section("address")
+        val differing = lines.mapNotNull { expected ->
+            val input = FriendsWireOracle.input(expected)
+            val answer = when (val result = FriendsServerUrl.validate(input)) {
+                is FriendsServerUrl.Result.Valid -> "ok " + result.url
+                is FriendsServerUrl.Result.Invalid -> "refused " + when (result.problem) {
+                    FriendsServerUrl.Problem.EMPTY -> "empty"
+                    FriendsServerUrl.Problem.MALFORMED -> "malformed"
+                    FriendsServerUrl.Problem.NOT_HTTPS -> "notHTTPS"
+                    FriendsServerUrl.Problem.HAS_CREDENTIALS -> "hasCredentials"
+                    FriendsServerUrl.Problem.HAS_QUERY -> "hasQuery"
+                }
+            }
+            val actual = FriendsWireOracle.line(input, answer)
+            if (actual == expected) null else "swift:  $expected\nkotlin: $actual"
+        }
+        assertTrue("differs from the Swift twin:\n" + differing.joinToString("\n"), differing.isEmpty())
+        assertTrue(lines.size > 100)
+    }
+
     // MARK: Nicknames
 
     @Test
