@@ -98,6 +98,7 @@ import com.noop.ui.m3.RowIcon
 import com.noop.ui.m3.ValueWithUnit
 import com.noop.ui.m3.WeekColumnsChart
 import com.noop.ui.m3.color
+import com.noop.ui.metric.HealthCategory
 import com.noop.ui.m3.keyMetricHue
 import com.noop.ui.m3.ringFraction
 import com.noop.ui.metric.MetricDateLabels
@@ -214,7 +215,9 @@ internal fun captionText(caption: SummaryCaption?): String? = when (caption) {
 
 // MARK: Icons and hues
 
-/** The glyph a Key Metric is drawn with (iOS `KeyMetric.customizationIcon`, Material equivalents). */
+/** The glyph a Key Metric is listed with where the wearer chooses among them, in the layout editor
+ *  (iOS `KeyMetric.customizationIcon`, Material equivalents). A card on Summary takes
+ *  [keyMetricHealthIcon] instead. */
 internal fun keyMetricIcon(metric: KeyMetric): ImageVector = when (metric) {
     KeyMetric.CHARGE -> Icons.Filled.Bolt
     KeyMetric.EFFORT -> Icons.AutoMirrored.Filled.DirectionsRun
@@ -233,13 +236,30 @@ internal fun keyMetricIcon(metric: KeyMetric): ImageVector = when (metric) {
 @Composable
 internal fun keyMetricTint(metric: KeyMetric): Color = keyMetricHue(metric).color
 
-/** A highlight's glyph and hue, by readiness signal. */
-internal fun highlightIcon(key: String): ImageVector = when (key) {
-    "hrv" -> Icons.Filled.MonitorHeart
-    "rhr" -> Icons.Filled.Favorite
-    "respRate" -> Icons.Filled.Air
-    else -> Icons.AutoMirrored.Filled.DirectionsRun
+/** The Health category a pinned Summary card files under, as [AllMetricsCatalog.category] files the
+ *  metric page it opens. Twin of iOS `KeyMetric.healthCategory`. */
+internal fun keyMetricCategory(metric: KeyMetric): HealthCategory = when (metric) {
+    KeyMetric.CHARGE, KeyMetric.HRV, KeyMetric.RESTING_HR -> HealthCategory.HEART
+    KeyMetric.EFFORT, KeyMetric.STEPS, KeyMetric.CALORIES -> HealthCategory.ACTIVITY
+    KeyMetric.REST -> HealthCategory.SLEEP
+    KeyMetric.BLOOD_OXYGEN, KeyMetric.RESPIRATORY -> HealthCategory.RESPIRATORY
+    KeyMetric.WEIGHT, KeyMetric.SKIN_TEMP -> HealthCategory.BODY_MEASUREMENTS
 }
+
+/** The glyph a pinned Summary card carries: its category's, so a metric reads the same on Summary, in
+ *  a highlight, on its own page and in All Metrics. Twin of iOS `KeyMetric.healthIcon`. */
+internal fun keyMetricHealthIcon(metric: KeyMetric): ImageVector = keyMetricCategory(metric).icon
+
+/** The pinned metric a highlight is about, by readiness signal; its glyph is that metric's. */
+internal fun highlightMetric(key: String): KeyMetric = when (key) {
+    "hrv" -> KeyMetric.HRV
+    "rhr" -> KeyMetric.RESTING_HR
+    "respRate" -> KeyMetric.RESPIRATORY
+    else -> KeyMetric.EFFORT
+}
+
+/** A highlight's glyph, by readiness signal. */
+internal fun highlightIcon(key: String): ImageVector = keyMetricHealthIcon(highlightMetric(key))
 
 @Composable
 internal fun highlightTint(key: String): Color = when (key) {
@@ -501,7 +521,7 @@ internal fun PinnedMetricCard(
 ) {
     val tint = keyMetricTint(metric)
     HealthCard(onClick = onClick, verticalSpacing = 6.dp) {
-        CardTitleRow(icon = keyMetricIcon(metric), title = stringResource(metric.titleRes), tint = tint, stamp = stamp)
+        CardTitleRow(icon = keyMetricHealthIcon(metric), title = stringResource(metric.titleRes), tint = tint, stamp = stamp)
         Row(verticalAlignment = Alignment.Bottom) {
             Column(modifier = Modifier.weight(1f)) {
                 ValueWithUnit(

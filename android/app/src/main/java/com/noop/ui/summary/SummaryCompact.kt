@@ -27,9 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -116,15 +114,15 @@ internal fun ScoreDialsCard(ui: SummaryUi, actions: SummaryActions) {
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ScoreDial(
-                figure = figures[0], icon = Icons.Filled.Bolt, fraction = ringFraction(s.charge.pct, 100.0),
+                figure = figures[0], icon = keyMetricHealthIcon(KeyMetric.CHARGE), fraction = ringFraction(s.charge.pct, 100.0),
                 number = percentTokens(s.charge.pct).first().text, modifier = Modifier.weight(1f),
             )
             ScoreDial(
-                figure = figures[1], icon = Icons.Filled.LocalFireDepartment, fraction = ringFraction(s.effort, 100.0),
+                figure = figures[1], icon = keyMetricHealthIcon(KeyMetric.EFFORT), fraction = ringFraction(s.effort, 100.0),
                 number = effortTokens(s.effort, scale, ui.locale).first().text, modifier = Modifier.weight(1f),
             )
             ScoreDial(
-                figure = figures[2], icon = Icons.Filled.Bedtime, fraction = ringFraction(s.rest, 100.0),
+                figure = figures[2], icon = keyMetricHealthIcon(KeyMetric.REST), fraction = ringFraction(s.rest, 100.0),
                 number = percentTokens(s.rest).first().text, modifier = Modifier.weight(1f),
             )
         }
@@ -317,7 +315,7 @@ private fun TileSurface(modifier: Modifier, onClick: () -> Unit, content: @Compo
 private fun ColumnScope.MetricTileContent(metric: KeyMetric, reading: SummaryMetricReading, ui: SummaryUi) {
     val tint = keyMetricTint(metric)
     val series = ui.snapshot.series(reading.seriesKey)
-    TileTitle(keyMetricIcon(metric), stringResource(metric.titleRes), tint)
+    TileTitle(keyMetricHealthIcon(metric), stringResource(metric.titleRes), tint)
     Spacer(Modifier.weight(1f))
     if (reading.chart == SummaryChart.LINE) {
         MiniLineChart(series, tint, Modifier.fillMaxWidth().height(36.dp))
