@@ -3,36 +3,24 @@ package com.noop.friends
 import com.noop.ui.friends.FriendsAgo
 import com.noop.ui.friends.FriendsComparison
 import com.noop.ui.friends.FriendsComparisonLine
-import com.noop.ui.friends.FriendsEvent
-import com.noop.ui.friends.FriendsEvents
-import com.noop.ui.friends.FriendsList
-import com.noop.ui.friends.FriendsSection
 import com.noop.ui.friends.FriendsSide
 import com.noop.ui.friends.FriendsSleepGoal
-import com.noop.ui.friends.FriendsSort
-import com.noop.ui.friends.FriendsWeek
 import com.noop.ui.friends.friendsInitial
 import com.noop.ui.friends.friendsSleepLevel
 import com.noop.ui.friends.friendsStrainLevel
-import com.noop.ui.friends.sections
 import com.noop.ui.sleep.SleepScoreWord
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.LocalDate
 
 /**
  * What the Friends tab works out from a feed without a screen: "updated N min ago", the comparison
- * sentence, the events of the feed, the paired week, the list's order, and a score's level.
+ * sentence, a night against its need, and a score's level.
  */
 class FriendsLogicTest {
     private val now = 1_791_540_000L
     private val today = "2026-10-08"
-
-    private fun person(id: String, name: String = id, share: FriendShare = FriendShare.DEFAULT, vararg days: FriendDay) =
-        FriendPerson(FriendProfile(id, name, share = share), share, days.toList().sortedByDescending { it.day })
 
     private fun day(
         key: String = today,
@@ -153,124 +141,6 @@ class FriendsLogicTest {
         )
     }
 
-    // MARK: The feed's events
-
-    @Test
-    fun aNightAndAWorkoutEachBecomeOneEventNewestFirst() {
-        val me = person(
-            "ruslan", "Руслан", FriendShare.DEFAULT,
-            day(workouts = listOf(FriendWorkout(now - 8_000, "Running", 2_520, 46.7, 148))),
-        )
-        val friend = person(
-            "denchik", "Денис", FriendShare.DEFAULT,
-            day(sleepScore = 88, sleep = FriendSleep(now - 40_000, now - 12_000, 474)),
-            day("2026-10-07", workouts = listOf(FriendWorkout(now - 90_000, "Strength", 3_480, 53.3, 126))),
-        )
-        val events = FriendsEvents.derive(listOf(me to true, friend to false), now)
-        assertEquals(3, events.size)
-
-        val run = events[0] as FriendsEvent.Workout
-        assertTrue(run.isMe)
-        assertEquals("Running", run.workout.sport)
-        // A workout is an event when it ends.
-        assertEquals(now - 8_000 + 2_520, run.ts)
-
-        val woke = events[1] as FriendsEvent.Woke
-        assertFalse(woke.isMe)
-        assertEquals("Денис", woke.who.name)
-        assertEquals(now - 12_000, woke.ts)
-        assertEquals(474, woke.asleepMin)
-        assertEquals(88, woke.sleepScore)
-
-        assertEquals("Strength", (events[2] as FriendsEvent.Workout).workout.sport)
-        assertEquals(events.sortedByDescending { it.ts }, events)
-    }
-
-    @Test
-    fun whatIsNotSharedProducesNoEvent() {
-        val quiet = person("misha", "Миша", FriendShare.NONE, day(recovery = 43, strain = 71.0))
-        assertTrue(FriendsEvents.derive(listOf(quiet to false), now).isEmpty())
-        assertTrue(FriendsEvents.derive(emptyList(), now).isEmpty())
-    }
-
-    @Test
-    fun theFeedIsCutToItsLimitKeepingTheNewest() {
-        val many = (0 until 20).map { FriendWorkout(now - 1_000L * (it + 1), "Walking", 300) }
-        val events = FriendsEvents.derive(listOf(person("ruslan", days = arrayOf(day(workouts = many))) to true), now, limit = 5)
-        assertEquals(5, events.size)
-        assertEquals(now - 1_000 + 300, events.first().ts)
-    }
-
-    @Test
-    fun anEventStampedAheadOfTheServersClockIsLeftOut() {
-        val ahead = person(
-            "denchik", days = arrayOf(
-                day(sleep = FriendSleep(now - 100, now + 7_200, 60), workouts = listOf(FriendWorkout(now - 600, "Yoga", 300))),
-            ),
-        )
-        val events = FriendsEvents.derive(listOf(ahead to false), now)
-        assertEquals(1, events.size)
-        assertTrue(events.single() is FriendsEvent.Workout)
-    }
-
-    // MARK: The week
-
-    @Test
-    fun theWeekPairsSevenDaysEndingTodayOldestFirst() {
-        val me = person("ruslan", days = arrayOf(day(today, recovery = 67), day("2026-10-06", recovery = 71), day("2026-10-01", recovery = 5)))
-        val friend = person("denchik", days = arrayOf(day(today, recovery = 81), day("2026-10-07", recovery = 70), day("2026-10-02", recovery = 74)))
-        val week = FriendsWeek.of(today, me, friend)!!
-        assertEquals((2..8).map { LocalDate.of(2026, 10, it) }, week.days)
-        assertEquals(listOf(null, null, null, null, 71, null, 67), week.mine)
-        assertEquals(listOf(74, null, null, null, null, 70, 81), week.theirs)
-        // A day outside the week (1 October) is not in the average.
-        assertEquals(69, week.myAverage)
-        assertEquals(75, week.theirAverage)
-        assertFalse(week.isEmpty)
-    }
-
-    @Test
-    fun aWeekWithNoScoreHasNoAverageAndSaysItIsEmpty() {
-        val week = FriendsWeek.of(today, person("ruslan"), person("misha", share = FriendShare.NONE))!!
-        assertNull(week.myAverage)
-        assertNull(week.theirAverage)
-        assertTrue(week.isEmpty)
-        assertEquals(7, week.days.size)
-        assertNull(FriendsWeek.of("not a day", null, null))
-        assertTrue(FriendsWeek.of(today, null, null)!!.isEmpty)
-    }
-
-    // MARK: The list
-
-    private fun feed(me: FriendPerson, vararg friends: FriendPerson) = FriendsFeed(now, me, friends.toList())
-
-    @Test
-    fun theListOrdersByTheChosenScoreHighestFirst() {
-        val me = person("ruslan", "Руслан", FriendShare.DEFAULT, day(recovery = 67, strain = 59.0, sleepScore = 74))
-        val denis = person("denchik", "Денис", FriendShare.DEFAULT, day(recovery = 81, strain = 38.6, sleepScore = 88))
-        val misha = person("mishka", "Миша", FriendShare.DEFAULT, day(recovery = 43, strain = 71.0, sleepScore = 52))
-        val all = feed(me, denis, misha)
-        fun order(sort: FriendsSort) = FriendsList.entries(all, sort, today).map { it.person.id }
-        assertEquals(listOf("denchik", "ruslan", "mishka"), order(FriendsSort.RECOVERY))
-        assertEquals(listOf("mishka", "ruslan", "denchik"), order(FriendsSort.STRAIN))
-        assertEquals(listOf("denchik", "ruslan", "mishka"), order(FriendsSort.SLEEP))
-        // The reader's own card is in the list and marked.
-        assertEquals(listOf("ruslan"), FriendsList.entries(all, FriendsSort.RECOVERY, today).filter { it.isMe }.map { it.person.id })
-    }
-
-    @Test
-    fun aPersonWithoutTheFigureIsListedLastNotDropped() {
-        val me = person("ruslan", "Руслан", FriendShare.DEFAULT, day(recovery = 67))
-        val quiet = person("anna", "Анна", FriendShare.NONE)
-        val stale = person("boris", "Борис", FriendShare.DEFAULT, day("2026-10-07", recovery = 99))
-        val zero = person("zed", "Зед", FriendShare.DEFAULT, day(recovery = 0))
-        val entries = FriendsList.entries(feed(me, stale, quiet, zero), FriendsSort.RECOVERY, today)
-        // A real 0 outranks no figure at all; the two without one follow in name order.
-        assertEquals(listOf("ruslan", "zed", "anna", "boris"), entries.map { it.person.id })
-        // Yesterday's score is not passed off as today's.
-        assertNull(entries.last().day)
-    }
-
     // MARK: Sleep against its need
 
     @Test
@@ -308,15 +178,6 @@ class FriendsLogicTest {
         assertEquals(SleepScoreWord.FAIR, friendsSleepLevel(52))
         assertEquals(SleepScoreWord.GOOD, friendsSleepLevel(74))
         assertEquals(SleepScoreWord.OPTIMAL, friendsSleepLevel(88))
-    }
-
-    @Test
-    fun theSharedAndUnsharedSectionsAreNamedInOneOrder() {
-        val (on, off) = FriendShare.DEFAULT.sections()
-        assertEquals(listOf(FriendsSection.SCORES, FriendsSection.SLEEP, FriendsSection.WORKOUTS), on)
-        assertEquals(listOf(FriendsSection.HEART_RATE), off)
-        assertEquals(FriendsSection.entries, FriendShare.NONE.sections().second)
-        assertTrue(FriendShare(true, true, true, true).sections().second.isEmpty())
     }
 
     @Test

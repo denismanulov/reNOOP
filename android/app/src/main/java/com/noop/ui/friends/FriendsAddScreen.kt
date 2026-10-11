@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -44,17 +43,23 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.R
+import com.noop.friends.FriendPerson
 import com.noop.friends.FriendProfile
 import com.noop.friends.FriendsError
 import com.noop.friends.FriendsInvite
 import com.noop.friends.FriendsResult
+import com.noop.ui.m3.ChevronRight
 import com.noop.ui.m3.HealthCard
+import com.noop.ui.m3.ListGroup
+import com.noop.ui.m3.ListRow
 import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.PushedTopBar
+import com.noop.ui.m3.RowIcon
 import com.noop.ui.m3.SectionHeader
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -62,17 +67,31 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-// MARK: - Friends tab: adding a friend, and what waits for an answer
+// MARK: - Friends tab: the page behind the bar's button
+//
+// Who the reader shares with, in one group led by the row that invites one more, each person opening
+// their page; then the field for a code that was handed over, the invites still waiting to be used, and
+// at the foot the way to what the reader shares themselves. What waits for an answer leads the page: a
+// new phone asking to join the account, another account asking for the strap, and a phone that got in
+// while nobody answered, each with its two answers. A phone is told apart by a six-digit code that both
+// phones show.
 //
 // A friend is added by a one-time invite and by nothing else: the server has no directory and no search.
 // The invite travels as a QR the friend's camera reads, as a link in a message, or as ten characters
-// typed here; using it makes two people friends at once. Above that, when there is any: a new phone
-// asking to join the account, another account asking for the strap, and a phone that got in while nobody
-// answered, each with its two answers. A phone is told apart by a six-digit code that both phones show.
+// typed here; using it makes two people friends at once.
+//
+// A pushed page and not a bottom sheet: it holds a text field and leads on to four more pages, which a
+// sheet over the tab would have to stack on itself.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun FriendsAddScreen(vm: FriendsViewModel, onBack: () -> Unit, openInvite: () -> Unit) {
+internal fun FriendsAddScreen(
+    vm: FriendsViewModel,
+    onBack: () -> Unit,
+    openInvite: () -> Unit,
+    openFriend: (String) -> Unit,
+    openSharing: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val feedState by vm.feed.collectAsStateWithLifecycle()
     val invites by vm.invites.collectAsStateWithLifecycle()
@@ -100,6 +119,12 @@ internal fun FriendsAddScreen(vm: FriendsViewModel, onBack: () -> Unit, openInvi
     // A phone that joined without confirmation answers nothing and changes nothing until it is confirmed.
     val locked = feed?.me?.profile?.device?.probationUntil != null
     val serverNow = vm.serverNow(nowSec)
+    val locale = friendsLocale()
+    // In the order the list files names, ignoring case; two people of one name by their account id.
+    val friends = remember(feed, locale) {
+        val names = FriendsBoard.nameOrder(locale)
+        feed?.friends.orEmpty().sortedWith(compareBy<FriendPerson, String>(names) { it.profile.name }.thenBy { it.id })
+    }
 
     /** One thing at a time; [done] is told why it failed, or null when it went through. */
     fun run(done: (FriendsError?) -> Unit, call: suspend () -> FriendsError?) {
@@ -131,7 +156,7 @@ internal fun FriendsAddScreen(vm: FriendsViewModel, onBack: () -> Unit, openInvi
     }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).imePadding()) {
-        PushedTopBar(title = stringResource(R.string.friends_add_title), onBack = onBack)
+        PushedTopBar(title = stringResource(R.string.nav_friends), onBack = onBack)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = M3Dimens.screenPadding, end = M3Dimens.screenPadding, bottom = M3Dimens.bottomBarClearance),
@@ -168,17 +193,30 @@ internal fun FriendsAddScreen(vm: FriendsViewModel, onBack: () -> Unit, openInvi
                 requestFailure?.let { failure -> item(key = "requests-failure") { Footnote(friendsErrorText(failure), error = true) } }
             }
 
-            item(key = "invite") {
+            item(key = "sharing-with") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            run({ inviteFailure = it; if (it == null) openInvite() }) { vm.createInvite() }
-                        },
-                        enabled = !working && !locked,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(stringResource(R.string.friends_invite_a_friend), modifier = Modifier.padding(start = 8.dp))
+                    ListGroup(header = stringResource(R.string.friends_sharing_with)) {
+                        item { shape ->
+                            ListRow(
+                                shape = shape,
+                                title = stringResource(R.string.friends_invite_a_friend),
+                                titleColor = MaterialTheme.colorScheme.primary,
+                                leading = { RowIcon(Icons.Filled.PersonAdd, tint = MaterialTheme.colorScheme.primary) },
+                                enabled = !working && !locked,
+                                onClick = { run({ inviteFailure = it; if (it == null) openInvite() }) { vm.createInvite() } },
+                            )
+                        }
+                        friends.forEach { person ->
+                            item { shape ->
+                                ListRow(
+                                    shape = shape,
+                                    title = person.profile.name,
+                                    leading = { FriendAvatar(person.profile.name, person.id, person.profile.avatarRev, size = 40.dp) },
+                                    trailing = { ChevronRight() },
+                                    onClick = { openFriend(person.id) },
+                                )
+                            }
+                        }
                     }
                     inviteFailure?.let { Footnote(friendsErrorText(it), error = true) }
                 }
@@ -233,6 +271,12 @@ internal fun FriendsAddScreen(vm: FriendsViewModel, onBack: () -> Unit, openInvi
                     )
                 }
                 revokeFailure?.let { failure -> item(key = "revoke-failure") { Footnote(friendsErrorText(failure), error = true) } }
+            }
+
+            item(key = "sharing") {
+                TextButton(onClick = openSharing, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.friends_manage_data), textAlign = TextAlign.Center)
+                }
             }
         }
     }

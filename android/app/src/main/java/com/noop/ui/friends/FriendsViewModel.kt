@@ -1,6 +1,7 @@
 package com.noop.ui.friends
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,7 +15,6 @@ import com.noop.friends.FriendsFeed
 import com.noop.friends.FriendsInvite
 import com.noop.friends.FriendsPhase
 import com.noop.friends.FriendsResult
-import com.noop.friends.FriendsServerUrl
 import com.noop.friends.FriendsStore
 import com.noop.ui.ProfileStore
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +139,17 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
     /** The invite the invite page is showing. */
     val shownInvite: StateFlow<FriendsShownInvite?> = _shownInvite.asStateFlow()
 
+    private val uiPrefs = app.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+    private val _order = MutableStateFlow(FriendsOrder.of(uiPrefs.getString(ORDER_KEY, null)))
+
+    /** The list's order, kept between runs. It also picks the figure the cards show. */
+    val order: StateFlow<FriendsOrder> = _order.asStateFlow()
+
+    fun setOrder(order: FriendsOrder) {
+        _order.value = order
+        uiPrefs.edit().putString(ORDER_KEY, order.wire).apply()
+    }
+
     private val _profileName = MutableStateFlow(ProfileStore.from(app).displayName)
 
     /** The name in the app's own profile: what turning Friends on sends as the wearer's name. */
@@ -172,8 +183,6 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
     fun reloadProfileName() {
         _profileName.value = ProfileStore.from(getApplication()).displayName
     }
-
-    fun dismissError() = store.setError(null)
 
     // MARK: Turning on
 
@@ -328,7 +337,11 @@ internal class FriendsViewModel(app: Application) : AndroidViewModel(app) {
         return if (call()) null else store.error.value ?: FriendsError.UNKNOWN
     }
 
-    /** The reason an address was not taken, for the server dialog. */
-    fun problemOf(change: FriendsStore.ServerChange): FriendsServerUrl.Problem? =
-        (change as? FriendsStore.ServerChange.Refused)?.problem
+    private companion object {
+        /** What the tab's screens keep for themselves: how the reader left them, nothing of an account. */
+        const val UI_PREFS = "noop_friends_ui"
+
+        /** The key the Swift app keeps the same choice under. */
+        const val ORDER_KEY = "friends.sort"
+    }
 }

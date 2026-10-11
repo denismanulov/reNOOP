@@ -52,7 +52,6 @@ import com.noop.ui.friends.FriendsAddScreen
 import com.noop.ui.friends.FriendsExportScreen
 import com.noop.ui.friends.FriendsInviteLinks
 import com.noop.ui.friends.FriendsInviteScreen
-import com.noop.ui.friends.FriendsListScreen
 import com.noop.ui.friends.FriendsPhonesScreen
 import com.noop.ui.friends.FriendsProfileScreen
 import com.noop.ui.friends.FriendsTabScreen
@@ -108,9 +107,9 @@ internal enum class Destination(val route: String) {
     Friends("friends"),
     Browse("browse"),
 
-    // The Friends tab's pages: everyone at a glance, one friend (by account id), adding a friend and what
-    // waits for an answer, one invite, my profile, the account's phones, what the server stores.
-    FriendsList("friends_list"),
+    // The Friends tab's pages: one person (by account id), the friends page behind the bar's button (who
+    // the reader shares with, inviting, what waits for an answer), one invite, what the reader shares,
+    // the account's phones, what the server stores.
     FriendPage("friend/{id}"),
     FriendsAdd("friends_add"),
     FriendsInvite("friends_invite"),
@@ -362,10 +361,8 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     appVm = viewModel,
                     vm = viewModel<FriendsViewModel>(friendsOwner),
                     actions = FriendsActions(
-                        openList = { nav.push(Destination.FriendsList.route) },
                         openFriend = { nav.push(friendRoute(it)) },
-                        openAdd = { nav.push(Destination.FriendsAdd.route) },
-                        openProfile = { nav.push(Destination.FriendsProfile.route) },
+                        openManage = { nav.push(Destination.FriendsAdd.route) },
                     ),
                 )
             }
@@ -375,12 +372,6 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             }
 
             // --- The Friends tab's pages. Each leaves for the tab's root if Friends goes off under it. ---
-            composable(Destination.FriendsList.route) {
-                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
-                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
-                    FriendsListScreen(viewModel, friendsVm, onBack = { nav.popBackStack() }, openFriend = { nav.push(friendRoute(it)) })
-                }
-            }
             composable(Destination.FriendPage.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
                 FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
@@ -390,7 +381,13 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             composable(Destination.FriendsAdd.route) {
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
                 FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
-                    FriendsAddScreen(friendsVm, onBack = { nav.popBackStack() }, openInvite = { nav.push(Destination.FriendsInvite.route) })
+                    FriendsAddScreen(
+                        friendsVm,
+                        onBack = { nav.popBackStack() },
+                        openInvite = { nav.push(Destination.FriendsInvite.route) },
+                        openFriend = { nav.push(friendRoute(it)) },
+                        openSharing = { nav.push(Destination.FriendsProfile.route) },
+                    )
                 }
             }
             composable(Destination.FriendsInvite.route) {
@@ -405,8 +402,6 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     FriendsProfileScreen(
                         friendsVm,
                         onBack = { nav.popBackStack() },
-                        openAdd = { nav.push(Destination.FriendsAdd.route) },
-                        openFriend = { nav.push(friendRoute(it)) },
                         openPhones = { nav.push(Destination.FriendsPhones.route) },
                         openExport = { nav.push(Destination.FriendsExport.route) },
                     )

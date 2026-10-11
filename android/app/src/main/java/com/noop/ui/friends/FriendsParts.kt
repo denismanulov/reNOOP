@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
@@ -35,9 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -50,42 +47,44 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noop.R
+import com.noop.friends.FriendDay
 import com.noop.friends.FriendHrPoint
 import com.noop.friends.FriendsAvatars
 import com.noop.friends.FriendsClaim
 import com.noop.friends.FriendsDevice
 import com.noop.friends.FriendsError
 import com.noop.friends.FriendsPlatform
+import com.noop.ui.AppToday
 import com.noop.ui.ClockPrefs
 import com.noop.ui.EffortScale
 import com.noop.ui.UnitFormatter
+import com.noop.ui.m3.ActivityRings
 import com.noop.ui.m3.CookieShape
 import com.noop.ui.m3.ExpressiveBar
 import com.noop.ui.m3.Health
 import com.noop.ui.m3.LevelBadge
 import com.noop.ui.m3.M3Dimens
 import com.noop.ui.m3.NoticeCard
+import com.noop.ui.m3.ringFraction
+import com.noop.ui.metric.MetricDateLabels
 import com.noop.ui.metric.MetricHealthStyle
-import com.noop.ui.sleep.SleepScoreWord
 import com.noop.ui.sleep.clockLabel
 import com.noop.ui.sleep.scoreWord
 import kotlinx.coroutines.delay
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 // MARK: - Friends tab: the pieces its screens share
 //
-// The avatar on its cookie, the mirrored bars of the head-to-head card, the paired week columns, the
-// day's heart-rate line, and the words every screen needs (an age, a level, a figure on the reader's
+// The avatar on its cookie, a day's three rings, a figure with its unit, the mirrored bars of the
+// head-to-head card, the day's heart-rate line, and the words every screen needs (an age, a level, a figure on the reader's
 // Strain scale, a failure). Colours are the scheme's and [Health.colors]; sizes are type roles.
 
 // MARK: Time
@@ -121,21 +120,21 @@ internal fun friendsClock(ts: Long): String {
     return clockLabel(ts, is24h, locale)
 }
 
-/** When an event happened, as a row's trailing stamp: the time today, "Yesterday", else the short date. */
+/**
+ * How a day is named: "Today", "Yesterday", the weekday for a day of the past week when [weekdays] is
+ * asked for (a person's page dates a workout so), else the short date the rest of the app stamps a day
+ * with. A key that is not a date is shown as it came.
+ */
 @Composable
-internal fun eventStamp(ts: Long, today: LocalDate): String {
-    val day = Instant.ofEpochSecond(ts).atZone(ZoneId.systemDefault()).toLocalDate()
-    return when (day) {
-        today -> friendsClock(ts)
-        today.minusDays(1) -> stringResource(R.string.metric_yesterday)
-        else -> shortDate(day)
+internal fun friendsDayText(dayKey: String, today: AppToday, weekdays: Boolean): String {
+    val locale = friendsLocale()
+    return when (val name = FriendsDayName.of(dayKey, today.date, weekdays)) {
+        null -> dayKey
+        FriendsDayName.Today -> stringResource(R.string.metric_today)
+        FriendsDayName.Yesterday -> stringResource(R.string.metric_yesterday)
+        is FriendsDayName.Weekday -> friendsWeekdayName(name.day, locale)
+        is FriendsDayName.OnDate -> MetricDateLabels.shortDate(dayKey, locale)
     }
-}
-
-@Composable
-internal fun shortDate(day: LocalDate): String {
-    val locale = LocalContext.current.resources.configuration.locales[0]
-    return DateTimeFormatter.ofPattern("d MMM", locale).format(day)
 }
 
 // MARK: Scores in words
@@ -151,10 +150,6 @@ internal fun recoveryLevelText(recovery: Int): String {
         .lowercase(locale).replaceFirstChar { it.titlecase(locale) }
 }
 
-/** Whether a Recovery score sits in the metric page's upper band (primed or peak): the badge on the score's hue. */
-internal fun recoveryIsHigh(recovery: Int): Boolean =
-    MetricHealthStyle.chargeStateRes(recovery.toDouble()).let { it == R.string.metric_state_primed || it == R.string.metric_state_peak }
-
 /** The Strain word, by the Workouts tab's own five levels. */
 @Composable
 internal fun strainLevelText(strain: Double): String = stringResource(
@@ -169,10 +164,6 @@ internal fun strainLevelText(strain: Double): String = stringResource(
 
 @Composable
 internal fun sleepLevelText(score: Int): String = scoreWord(friendsSleepLevel(score))
-
-/** Whether a Sleep score's word is one of the two good ones (for the badge's weight, not its colour). */
-internal fun sleepLevelIsGood(score: Int): Boolean =
-    friendsSleepLevel(score).let { it == SleepScoreWord.GOOD || it == SleepScoreWord.OPTIMAL }
 
 /** A stored 0–100 Strain on the reader's own scale ("12.4" of 21, "59.0" of 100): the app's one formatter. */
 internal fun strainShown(strain: Double, scale: EffortScale): String = UnitFormatter.effortDisplay(strain, scale)
@@ -431,67 +422,49 @@ private fun DuelLevel(level: String?, missing: String, tint: Color, strong: Bool
     }
 }
 
-// MARK: Charts
+// MARK: Rings and figures
 
 /**
- * Seven days as pairs of rounded columns, the reader's in [mineColor] and the friend's in [theirColor],
- * on a 0–100 scale, with the weekday under each pair. A day without a score leaves its column out.
+ * A day's three scores as the Summary's rings, outer to inner Recovery, Strain and Sleep. A score the
+ * day does not carry is an empty ring, and a day that is not there is three of them. Decoration: the
+ * figures the rings stand for are written beside them, so TalkBack passes the rings by.
  */
 @Composable
-internal fun PairedWeekChart(
-    week: FriendsWeek,
-    mineColor: Color,
-    theirColor: Color,
-    description: String,
-    modifier: Modifier = Modifier,
-) {
-    val locale = LocalContext.current.resources.configuration.locales[0]
-    val rule = MaterialTheme.colorScheme.outlineVariant
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = description }) {
-            val slots = week.days.size
-            if (slots == 0) return@Canvas
-            val slot = size.width / slots
-            val bar = (slot * 0.3f).coerceAtMost(14.dp.toPx())
-            val gap = 4.dp.toPx()
-            val floor = size.height - 1.dp.toPx()
-            drawLine(rule, Offset(0f, floor), Offset(size.width, floor), strokeWidth = 1.dp.toPx())
-            fun column(index: Int, value: Int?, color: Color, second: Boolean) {
-                val v = value ?: return
-                val h = (v.coerceIn(0, 100) / 100f * (floor - 2.dp.toPx())).coerceAtLeast(bar)
-                val centre = slot * index + slot / 2
-                val x = if (second) centre + gap / 2 else centre - gap / 2 - bar
-                drawRoundRect(color, Offset(x, floor - h), Size(bar, h), CornerRadius(bar / 2, bar / 2))
-            }
-            for (i in 0 until slots) {
-                column(i, week.mine.getOrNull(i), mineColor, second = false)
-                column(i, week.theirs.getOrNull(i), theirColor, second = true)
-            }
-        }
-        Row(Modifier.fillMaxWidth().clearAndSetSemantics {}) {
-            week.days.forEach { day ->
-                Text(
-                    DateTimeFormatter.ofPattern("EEE", locale).format(day),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
+internal fun FriendRings(day: FriendDay?, size: Dp, stroke: Dp, gap: Dp, modifier: Modifier = Modifier) {
+    ActivityRings(
+        charge = ringFraction(day?.recovery?.toDouble(), 100.0),
+        effort = ringFraction(day?.strain, 100.0),
+        rest = ringFraction(day?.sleepScore?.toDouble(), 100.0),
+        modifier = modifier.size(size).clearAndSetSemantics {},
+        stroke = stroke,
+        gap = gap,
+    )
 }
 
-/** A legend dot with its name. */
+/**
+ * A figure as a card writes one: the number large, in [color], and its unit straight after it, smaller.
+ * [spoken] is what TalkBack says in its place ("Recovery 73%").
+ */
 @Composable
-internal fun LegendDot(color: Color, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(12.dp).clip(CircleShape).background(color))
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+internal fun FriendsFigure(number: String, unit: String?, color: Color, spoken: String?, modifier: Modifier = Modifier) {
+    val numberStyle = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
+    val unitStyle = MaterialTheme.typography.titleMedium
+    val text = buildAnnotatedString {
+        append(number)
+        if (!unit.isNullOrEmpty()) {
+            withStyle(SpanStyle(fontSize = unitStyle.fontSize, fontWeight = unitStyle.fontWeight)) { append(" $unit") }
+        }
     }
+    Text(
+        text,
+        style = numberStyle,
+        color = color,
+        maxLines = 1,
+        modifier = if (spoken != null) modifier.semantics { contentDescription = spoken } else modifier,
+    )
 }
+
+// MARK: Charts
 
 /**
  * A day's heart rate as a line from its first reading to its last, with the clock under its two ends and
