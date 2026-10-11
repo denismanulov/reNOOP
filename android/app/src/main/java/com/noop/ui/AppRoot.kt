@@ -49,11 +49,15 @@ import com.noop.push.SelfHostedPushScreen
 import com.noop.ui.friends.FriendPageScreen
 import com.noop.ui.friends.FriendsActions
 import com.noop.ui.friends.FriendsAddScreen
+import com.noop.ui.friends.FriendsExportScreen
+import com.noop.ui.friends.FriendsInviteLinks
+import com.noop.ui.friends.FriendsInviteScreen
 import com.noop.ui.friends.FriendsListScreen
+import com.noop.ui.friends.FriendsPhonesScreen
 import com.noop.ui.friends.FriendsProfileScreen
-import com.noop.ui.friends.FriendsSignedIn
 import com.noop.ui.friends.FriendsTabScreen
 import com.noop.ui.friends.FriendsViewModel
+import com.noop.ui.friends.FriendsWhileOn
 import com.noop.ui.metric.ALL_METRICS_ROUTE
 import com.noop.ui.metric.AllMetricsScreen
 import com.noop.ui.metric.MetricAllDataScreen
@@ -104,11 +108,15 @@ internal enum class Destination(val route: String) {
     Friends("friends"),
     Browse("browse"),
 
-    // The Friends tab's pages: everyone at a glance, one friend (by nickname), adding a friend, my profile.
+    // The Friends tab's pages: everyone at a glance, one friend (by account id), adding a friend and what
+    // waits for an answer, one invite, my profile, the account's phones, what the server stores.
     FriendsList("friends_list"),
-    FriendPage("friend/{nick}"),
+    FriendPage("friend/{id}"),
     FriendsAdd("friends_add"),
+    FriendsInvite("friends_invite"),
     FriendsProfile("friends_profile"),
+    FriendsPhones("friends_phones"),
+    FriendsExport("friends_export"),
 
     // Browse rows.
     AllMetrics(ALL_METRICS_ROUTE),
@@ -228,6 +236,16 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             }
             null -> Unit
         }
+    }
+
+    // An invite opened by a link (`renoop://friends/add?c=…`) is answered on the Friends tab: the shell
+    // shows the tab, and the tab asks before anyone is added.
+    val inviteArrived by FriendsInviteLinks.arrived.collectAsStateWithLifecycle()
+    LaunchedEffect(inviteArrived) {
+        if (!inviteArrived) return@LaunchedEffect
+        FriendsInviteLinks.shown()
+        NowRunning.collapse()
+        nav.showTabRoot(MainTab.Friends)
     }
 
     /** Selects [tab] as a tap on it would: re-selecting pops to the root, then scrolls the root to the top. */
@@ -356,34 +374,54 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                 BrowseScreen(onOpen = { route -> nav.push(route) }, onBack = { nav.popBackStack() })
             }
 
-            // --- The Friends tab's pages. Each leaves for the tab's root if the session ends under it. ---
+            // --- The Friends tab's pages. Each leaves for the tab's root if Friends goes off under it. ---
             composable(Destination.FriendsList.route) {
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
-                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
                     FriendsListScreen(viewModel, friendsVm, onBack = { nav.popBackStack() }, openFriend = { nav.push(friendRoute(it)) })
                 }
             }
-            composable(Destination.FriendPage.route, arguments = listOf(navArgument("nick") { type = NavType.StringType })) { entry ->
+            composable(Destination.FriendPage.route, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
-                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
-                    FriendPageScreen(viewModel, friendsVm, nick = entry.arguments?.getString("nick").orEmpty(), onBack = { nav.popBackStack() })
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendPageScreen(viewModel, friendsVm, id = entry.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
                 }
             }
             composable(Destination.FriendsAdd.route) {
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
-                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
-                    FriendsAddScreen(friendsVm, onBack = { nav.popBackStack() }, openFriend = { nav.push(friendRoute(it)) })
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsAddScreen(friendsVm, onBack = { nav.popBackStack() }, openInvite = { nav.push(Destination.FriendsInvite.route) })
+                }
+            }
+            composable(Destination.FriendsInvite.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsInviteScreen(friendsVm, onBack = { nav.popBackStack() })
                 }
             }
             composable(Destination.FriendsProfile.route) {
                 val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
-                FriendsSignedIn(friendsVm, onSignedOut = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
                     FriendsProfileScreen(
                         friendsVm,
                         onBack = { nav.popBackStack() },
                         openAdd = { nav.push(Destination.FriendsAdd.route) },
                         openFriend = { nav.push(friendRoute(it)) },
+                        openPhones = { nav.push(Destination.FriendsPhones.route) },
+                        openExport = { nav.push(Destination.FriendsExport.route) },
                     )
+                }
+            }
+            composable(Destination.FriendsPhones.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsPhonesScreen(friendsVm, onBack = { nav.popBackStack() })
+                }
+            }
+            composable(Destination.FriendsExport.route) {
+                val friendsVm = viewModel<FriendsViewModel>(friendsOwner)
+                FriendsWhileOn(friendsVm, onOff = { nav.popBackStack(Destination.Friends.route, inclusive = false) }) {
+                    FriendsExportScreen(friendsVm, onBack = { nav.popBackStack() })
                 }
             }
 
@@ -548,8 +586,8 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     }
 }
 
-/** The page of one friend on the Friends tab, by nickname. */
-private fun friendRoute(nick: String): String = "friend/${android.net.Uri.encode(nick)}"
+/** The page of one friend on the Friends tab, by account id. */
+private fun friendRoute(id: String): String = "friend/${android.net.Uri.encode(id)}"
 
 /** The page of one workout on the Workouts tab. */
 private fun workoutRoute(row: com.noop.data.WorkoutRow): String = "workout/${android.net.Uri.encode(workoutKey(row))}"

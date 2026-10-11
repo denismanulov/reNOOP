@@ -94,20 +94,20 @@ import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, nick: String, onBack: () -> Unit) {
+internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, id: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val feedState by vm.feed.collectAsStateWithLifecycle()
     val pages by vm.pages.collectAsStateWithLifecycle()
-    val page = pages[nick] ?: FriendPageState(loading = true)
+    val page = pages[id] ?: FriendPageState(loading = true)
     val nowSec = rememberNowSec()
     val today = rememberFriendsToday(appVm, nowSec)
     val scale = remember { UnitPrefs.effortScale(context) }
     val serverNow = vm.serverNow(nowSec)
 
-    LaunchedEffect(nick) { vm.loadPage(nick) }
+    LaunchedEffect(id) { vm.loadPage(id) }
 
-    val fromFeed = feedState.feed?.friends?.firstOrNull { it.nick == nick }
+    val fromFeed = feedState.feed?.friends?.firstOrNull { it.id == id }
     val person = page.person ?: fromFeed
     val me = feedState.feed?.me
     var menuOpen by remember { mutableStateOf(false) }
@@ -116,7 +116,7 @@ internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, nick: S
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         PushedTopBar(
-            title = person?.profile?.name ?: stringResource(R.string.friends_handle, nick),
+            title = person?.profile?.name ?: stringResource(R.string.nav_friends),
             onBack = onBack,
             actions = {
                 if (person != null) {
@@ -145,7 +145,7 @@ internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, nick: S
                     FriendsRefreshNotice(
                         error = error,
                         shownAge = if (page.person == null && fromFeed != null) FriendsAgo.of(feedState.fetchedAt, nowSec) else null,
-                        onRetry = { removeError = null; vm.loadPage(nick) },
+                        onRetry = { removeError = null; vm.loadPage(id) },
                         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                     )
                 }
@@ -234,17 +234,15 @@ internal fun FriendPageScreen(appVm: AppViewModel, vm: FriendsViewModel, nick: S
             onConfirm = {
                 confirmRemove = false
                 scope.launch {
-                    when (val answer = vm.unfriend(nick)) {
-                        is FriendsResult.Ok -> onBack()
-                        is FriendsResult.Fail -> removeError = answer.error
-                    }
+                    val failed = vm.unfriend(id)
+                    if (failed == null) onBack() else removeError = failed
                 }
             },
         )
     }
 }
 
-/** The friend's picture, name and nickname, and when their phone last uploaded. */
+/** The friend's picture and name, and when their phone last uploaded. */
 @Composable
 private fun PageHead(person: FriendPerson, serverNow: Long) {
     Column(
@@ -252,18 +250,13 @@ private fun PageHead(person: FriendPerson, serverNow: Long) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FriendAvatar(person.profile.name, person.nick, person.profile.avatarRev, size = 96.dp)
+        FriendAvatar(person.profile.name, person.id, person.profile.avatarRev, size = 96.dp)
         Text(
             person.profile.name,
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             modifier = Modifier.semantics { heading() },
-        )
-        Text(
-            stringResource(R.string.friends_handle, person.nick),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         val updated = FriendsAgo.of(person.lastUpdatedAt, serverNow)
         FriendsPill(

@@ -288,6 +288,10 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // --- Friends (fork feature): drawing an invite's QR code. The encoder only: pure Java, offline,
+    // Apache-2.0, no camera and no scanner. A friend's own camera app reads the code.
+    implementation("com.google.zxing:core:3.5.3")
+
     // --- Health Connect (optional native Android import of steps/HR/HRV/sleep/etc.) ---
     // Pinned to alpha07: alpha11+ require compileSdk 35; this module is compileSdk 34.
     implementation("androidx.health.connect:connect-client:1.1.0-alpha07")

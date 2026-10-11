@@ -24,10 +24,14 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GppMaybe
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material3.AssistChip
@@ -48,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +73,8 @@ import com.noop.R
 import com.noop.friends.FriendDay
 import com.noop.friends.FriendPerson
 import com.noop.friends.FriendSleep
+import com.noop.friends.FriendsClaim
+import com.noop.friends.FriendsPhase
 import com.noop.friends.FriendsFeed
 import com.noop.ui.AppToday
 import com.noop.ui.AppViewModel
@@ -76,6 +83,7 @@ import com.noop.ui.OnScrollToTop
 import com.noop.ui.UnitPrefs
 import com.noop.ui.m3.ChevronRight
 import com.noop.ui.m3.CloverShape
+import com.noop.ui.m3.ConfirmDialog
 import com.noop.ui.m3.CookieShape
 import com.noop.ui.m3.EmptyState
 import com.noop.ui.m3.ExpressiveBar
@@ -91,6 +99,7 @@ import com.noop.ui.m3.ValueWithUnit
 import com.noop.ui.sleep.sleepDuration
 import com.noop.ui.sportIcon
 import com.noop.ui.workouts.sportLabel
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -110,23 +119,51 @@ internal class FriendsActions(
     val openProfile: () -> Unit,
 )
 
-/** The tab's root: the sign-in form with no account on this phone, else the home. */
+/** The tab's root: the turning-on page until Friends is on, then the home. */
 @Composable
 internal fun FriendsTabScreen(appVm: AppViewModel, vm: FriendsViewModel, actions: FriendsActions) {
-    val nick by vm.nick.collectAsStateWithLifecycle()
-    if (nick == null) FriendsConnectScreen(vm) else FriendsHomeScreen(appVm, vm, actions)
+    val phase by vm.phase.collectAsStateWithLifecycle()
+    if (phase == FriendsPhase.On) {
+        FriendsHomeScreen(appVm, vm, actions)
+        FriendsInviteLinkPrompt(vm)
+    } else {
+        FriendsConnectScreen(vm)
+    }
 }
 
 /**
- * A pushed Friends screen. It is drawn only while an account is signed in; when the session ends under it
- * (signed out, deleted, or ended by the server) [onSignedOut] takes the reader back to the tab's root,
- * which is then the sign-in form.
+ * A pushed Friends screen. It is drawn only while Friends is on; when it goes off under it (the account
+ * deleted, this phone removed, or dropped by the server) [onOff] takes the reader back to the tab's
+ * root, which is then the turning-on page and says why.
  */
 @Composable
-internal fun FriendsSignedIn(vm: FriendsViewModel, onSignedOut: () -> Unit, content: @Composable () -> Unit) {
-    val nick by vm.nick.collectAsStateWithLifecycle()
-    LaunchedEffect(nick) { if (nick == null) onSignedOut() }
-    if (nick != null) content()
+internal fun FriendsWhileOn(vm: FriendsViewModel, onOff: () -> Unit, content: @Composable () -> Unit) {
+    val phase by vm.phase.collectAsStateWithLifecycle()
+    val on = phase == FriendsPhase.On
+    LaunchedEffect(on) { if (!on) onOff() }
+    if (on) content()
+}
+
+/**
+ * An invite that arrived by a link is answered here. Nobody is added by opening a link: the tab asks
+ * first. One that arrives while Friends is off waits until it is on.
+ */
+@Composable
+private fun FriendsInviteLinkPrompt(vm: FriendsViewModel) {
+    val scope = rememberCoroutineScope()
+    val code by FriendsInviteLinks.code.collectAsStateWithLifecycle()
+    val pending = code ?: return
+    ConfirmDialog(
+        title = stringResource(R.string.friends_add_open),
+        message = stringResource(R.string.friends_link_body),
+        confirmLabel = stringResource(R.string.friends_add),
+        onDismiss = { FriendsInviteLinks.take() },
+        onConfirm = {
+            FriendsInviteLinks.take()
+            // A refusal is said by the tab's own notice: the store keeps it as the last failure.
+            scope.launch { vm.redeem(pending) }
+        },
+    )
 }
 
 /** The app's one "today", read the way the Summary reads it, so both tabs mean the same day by the word. */
@@ -147,19 +184,20 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
     val feed = state.feed
 
     // The tab opened (or came back): send what changed and fetch. Throttled inside the view model.
-    LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(Unit) { vm.sync() }
 
     val pull = rememberPullToRefreshState()
     LaunchedEffect(pull.isRefreshing) {
         if (!pull.isRefreshing) return@LaunchedEffect
-        vm.refreshNow()
+        vm.syncNow()
         pull.endRefresh()
     }
     val listState = rememberLazyListState()
     OnScrollToTop { listState.animateScrollToItem(0) }
 
-    var pickedNick by rememberSaveable { mutableStateOf<String?>(null) }
-    val friend = feed?.friends?.firstOrNull { it.nick == pickedNick } ?: feed?.friends?.firstOrNull()
+    var pickedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val friend = feed?.friends?.firstOrNull { it.id == pickedId } ?: feed?.friends?.firstOrNull()
+    val waiting = (feed?.claims?.size ?: 0) + (feed?.unconfirmed?.size ?: 0)
     val serverNow = vm.serverNow(nowSec)
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).nestedScroll(pull.nestedScrollConnection)) {
@@ -171,7 +209,7 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
         ) {
             item(key = "title") {
                 LargeTitle(stringResource(R.string.nav_friends)) {
-                    AddFriendButton(pending = feed?.pendingIncoming ?: 0, onClick = actions.openAdd)
+                    AddFriendButton(pending = waiting, onClick = actions.openAdd)
                     IconButton(onClick = actions.openProfile) {
                         Icon(Icons.Filled.AccountCircle, contentDescription = stringResource(R.string.friends_profile_open))
                     }
@@ -183,7 +221,41 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                     FriendsRefreshNotice(
                         error = error,
                         shownAge = if (feed != null) FriendsAgo.of(state.fetchedAt, nowSec) else null,
-                        onRetry = { vm.refresh(force = true) },
+                        onRetry = { vm.sync(force = true) },
+                        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                    )
+                }
+            }
+
+            // What waits for the wearer's answer leads the page; the answers are given behind "Review".
+            if (feed != null) {
+                feed.me.profile.device?.probationUntil?.let { until ->
+                    item(key = "probation") {
+                        NoticeCard(
+                            icon = Icons.Filled.HourglassEmpty,
+                            title = stringResource(R.string.friends_probation_title),
+                            message = stringResource(R.string.friends_probation_body, friendsMoment(until)),
+                            modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                        )
+                    }
+                }
+                items(feed.claims, key = { "claim:${it.id}" }) { claim ->
+                    NoticeCard(
+                        icon = if (claim.kind == FriendsClaim.Kind.JOIN) Icons.Filled.Smartphone else Icons.Filled.Sensors,
+                        title = friendsClaimTitle(claim),
+                        message = friendsClaimDetail(claim),
+                        action = stringResource(R.string.friends_review),
+                        onAction = actions.openAdd,
+                        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                    )
+                }
+                items(feed.unconfirmed, key = { "phone:${it.id}" }) { phone ->
+                    NoticeCard(
+                        icon = Icons.Filled.GppMaybe,
+                        title = stringResource(R.string.friends_unconfirmed_title),
+                        message = friendsJoinedText(phone, serverNow),
+                        action = stringResource(R.string.friends_review),
+                        onAction = actions.openAdd,
                         modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
                     )
                 }
@@ -205,20 +277,9 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                             icon = Icons.Filled.Group,
                             title = stringResource(R.string.friends_empty_title),
                             message = stringResource(R.string.friends_empty_body),
-                            action = stringResource(R.string.friends_add_by_nick),
+                            action = stringResource(R.string.friends_add_open),
                             onAction = actions.openAdd,
                         )
-                    }
-                    if (feed.pendingIncoming > 0) {
-                        item(key = "pending") {
-                            NoticeCard(
-                                icon = Icons.Filled.PersonAdd,
-                                title = pluralStringResource(R.plurals.friends_pending_requests, feed.pendingIncoming, feed.pendingIncoming),
-                                action = stringResource(R.string.friends_pending_open),
-                                onAction = actions.openAdd,
-                                modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
-                            )
-                        }
                     }
                 }
                 else -> {
@@ -249,18 +310,18 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                     item(key = "chips") {
                         FriendChips(
                             friends = feed.friends,
-                            selected = friend.nick,
-                            onSelect = { pickedNick = it },
+                            selected = friend.id,
+                            onSelect = { pickedId = it },
                             onAll = actions.openList,
                         )
                     }
 
                     item(key = "duel") {
-                        HeadToHeadCard(feed.me, friend, mine, theirs, scale, onOpenFriend = { actions.openFriend(friend.nick) })
+                        HeadToHeadCard(feed.me, friend, mine, theirs, scale, onOpenFriend = { actions.openFriend(friend.id) })
                     }
 
                     item(key = "hr") {
-                        FriendHeartRate(friend, theirs, serverNow, onOpen = { actions.openFriend(friend.nick) })
+                        FriendHeartRate(friend, theirs, serverNow, onOpen = { actions.openFriend(friend.id) })
                     }
 
                     item(key = "sleep-header") {
@@ -283,7 +344,7 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                         SectionHeader(stringResource(R.string.friends_feed), Modifier.padding(horizontal = M3Dimens.screenPadding))
                     }
                     item(key = "feed") {
-                        val events = remember(feed, friend.nick, serverNow / 60) {
+                        val events = remember(feed, friend.id, serverNow / 60) {
                             FriendsEvents.derive(listOf(feed.me to true, friend to false), serverNow)
                         }
                         EventsCard(events, today.date, scale, Modifier.padding(horizontal = M3Dimens.screenPadding))
@@ -294,7 +355,7 @@ private fun FriendsHomeScreen(appVm: AppViewModel, vm: FriendsViewModel, actions
                     }
                     item(key = "week") {
                         WeekCard(
-                            week = remember(feed, friend.nick, today.key) { FriendsWeek.of(today.key, feed.me, friend) },
+                            week = remember(feed, friend.id, today.key) { FriendsWeek.of(today.key, feed.me, friend) },
                             friendName = name,
                             friendShares = friend.share.scores,
                             modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
@@ -331,15 +392,15 @@ private fun FriendChips(friends: List<FriendPerson>, selected: String, onSelect:
         contentPadding = PaddingValues(horizontal = M3Dimens.screenPadding),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(friends, key = { "person:${it.nick}" }) { person ->
-            val isSelected = person.nick == selected
+        items(friends, key = { "person:${it.id}" }) { person ->
+            val isSelected = person.id == selected
             FilterChip(
                 selected = isSelected,
-                onClick = { onSelect(person.nick) },
+                onClick = { onSelect(person.id) },
                 label = { Text(person.profile.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = {
                     FriendAvatar(
-                        person.profile.name, person.nick, person.profile.avatarRev, size = 24.dp,
+                        person.profile.name, person.id, person.profile.avatarRev, size = 24.dp,
                         tone = if (isSelected) AvatarTone.FRIEND else AvatarTone.QUIET,
                     )
                 },
@@ -378,7 +439,7 @@ private fun HeadToHeadCard(
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FriendAvatar(me.profile.name, me.nick, me.profile.avatarRev, size = 56.dp, tone = AvatarTone.ME)
+                FriendAvatar(me.profile.name, me.id, me.profile.avatarRev, size = 56.dp, tone = AvatarTone.ME)
                 Text(you, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
             }
             Text(
@@ -402,7 +463,7 @@ private fun HeadToHeadCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                FriendAvatar(name, friend.nick, friend.profile.avatarRev, size = 56.dp)
+                FriendAvatar(name, friend.id, friend.profile.avatarRev, size = 56.dp)
             }
         }
 

@@ -45,14 +45,12 @@ internal object FriendsDaySource {
     /** How many days go up on each run: today and yesterday. */
     const val DAYS = 2
 
-    /** A day's key ("yyyy-MM-dd", the app's own logical day) and what the app holds for it. */
-    class Day(val key: String, val inputs: FriendsDayInputs)
 
     /**
      * Today and yesterday, newest first. Only the sections [share] has on are read at all: a switched-off
      * section costs no query and exists nowhere outside the database.
      */
-    suspend fun recentDays(app: NoopApplication, share: FriendShare): List<Day> = withContext(Dispatchers.IO) {
+    suspend fun recentDays(app: NoopApplication, share: FriendShare): List<FriendsLocalDay> = withContext(Dispatchers.IO) {
         val context = app.applicationContext
         val repo = app.repository
         // The two ids AppViewModel reads with: `deviceId` (its day history) and `activeStrapId` (the rest).
@@ -88,7 +86,7 @@ internal object FriendsDaySource {
                     .map { FriendHrPoint(it.ts, it.bpm) }
             } else emptyList()
 
-            Day(
+            FriendsLocalDay(
                 key,
                 FriendsDayInputs(
                     // A prior night carried onto an unscored today is that night's score, not today's: the

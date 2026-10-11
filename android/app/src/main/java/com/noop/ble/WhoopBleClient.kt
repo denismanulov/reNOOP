@@ -3642,6 +3642,12 @@ class WhoopBleClient(
      * SAME [onSerial] the 5/MG DIS read uses, so both families share one adoption path (#1193).
      */
     private fun noteHarvardSerial(serial: String) {
+        // Friends (fork feature): every hello counts toward the two sightings Friends asks for, and that
+        // count is kept between runs of the app. It has to sit above the listener check below: the gate
+        // here lives for one run and is not advanced without a listener, so a strap that stays connected,
+        // or a hello that arrives with no screen alive, would otherwise never reach two. It touches no
+        // connection state and re-points nothing: see [com.noop.friends.FriendsStrapWatch].
+        com.noop.friends.FriendsStrapWatch.onWhoop4Hello(context, serial, ::logIdentity)
         // Do NOT advance the gate without a listener. The gate confirms EXACTLY ONCE, so a confirmation
         // delivered to a null [onSerial] is not deferred, it is lost for the lifetime of the process —
         // every later sighting returns null because the value is already confirmed. And "no listener" is

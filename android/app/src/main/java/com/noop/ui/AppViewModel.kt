@@ -911,6 +911,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // after a SECOND sighting of the same value — see `WhoopBleClient.noteHarvardSerial` for why a 4.0
         // waits where a 5/MG adopts on the first read (#1193).
         ble.onSerial = { serial ->
+            // Friends (fork feature): the confirmed serial's id is kept against the active registry row,
+            // so the friends account can be bound to this strap. A legacy `my-whoop` row is never
+            // re-pointed onto its serial, so without this nothing would say which strap it is.
+            com.noop.friends.FriendsStrapWatch.onSerialConfirmed(appContext, serial)
             viewModelScope.launch {
                 val serialId = com.noop.data.WhoopSerialIdentity.adoptedId(serial)
                 val currentId = deviceRegistry.activeDeviceId()

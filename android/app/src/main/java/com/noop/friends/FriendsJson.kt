@@ -7,49 +7,61 @@ import org.json.JSONObject
 //
 // Every optional member is read as "absent" when it is missing, null, or of the wrong kind, so a section
 // a friend does not share and a section a newer server spells differently both read as not there rather
-// than as a zero or a crash. Only what a screen cannot stand without (a nickname, a token, the feed's
-// own account) is required; without it the answer is refused whole ([FriendsParseException]).
+// than as a zero or a crash. Only what a screen cannot stand without (an account id, the feed's own
+// account) is required; without it the answer is refused whole ([FriendsParseException]). A list is read
+// around what cannot be read in it: one friend without an id does not cost the others.
 
 /** The answer did not carry what the API documents. Its text names a member, never a value. */
 class FriendsParseException(message: String) : Exception(message)
 
 object FriendsJson {
 
-    /** The `error` code of an error body, or null when the body is not the server's own error shape. */
-    fun errorCode(body: String): String? =
-        runCatching { JSONObject(body).opt("error") as? String }.getOrNull()
+    /** The server's own refusal: its code, and its clock when the refusal is about this phone's. */
+    class Refusal(val code: String?, val serverTime: Long?)
 
+    /** An error body read for its `error` code; both members null when it is not the server's own error shape. */
+    fun refusal(body: String): Refusal {
+        val obj = runCatching { JSONObject(body) }.getOrNull() ?: return Refusal(null, null)
+        return Refusal(obj.opt("error") as? String, obj.long("serverTime"))
+    }
+
+    /** `GET /v2/me`, `PATCH /v2/me`, `PUT /v2/me/avatar`: the wearer's own account. */
     fun profile(body: String): FriendProfile = profile(root(body))
 
-    /** A profile as text [profile] reads back: how the signed-in account is kept between launches. */
-    fun profileText(profile: FriendProfile): String {
-        val obj = JSONObject().put("nick", profile.nick).put("name", profile.name).put("avatarRev", profile.avatarRev)
-        profile.share?.let { s ->
-            obj.put(
-                "share",
-                JSONObject().put("scores", s.scores).put("sleep", s.sleep).put("workouts", s.workouts).put("hr", s.hr),
-            )
-        }
-        return obj.toString()
-    }
+    /** `POST /v2/enroll`. */
+    fun enrolledAccount(body: String): FriendProfile = profile(root(body).obj("me") ?: missing("me"))
 
-    fun session(body: String): FriendsSession {
+    /** `POST /v2/invites/redeem`: the new friend. */
+    fun redeemedFriend(body: String): FriendProfile = profile(root(body).obj("friend") ?: missing("friend"))
+
+    /** `POST /v2/claims`, `GET /v2/claims/mine`. */
+    fun claimAnswer(body: String): FriendsClaim = claim(root(body).obj("claim") ?: missing("claim")) ?: missing("claim")
+
+    /** `PUT /v2/me/strap`: bound, or asked of the account that holds the strap. */
+    fun strapAnswer(body: String): FriendsStrapAnswer {
         val obj = root(body)
-        val token = obj.string("token")?.takeIf { it.isNotBlank() } ?: missing("token")
-        return FriendsSession(token, profile(obj.obj("me") ?: missing("me")))
+        obj.obj("claim")?.let(::claim)?.let { return FriendsStrapAnswer.Claimed(it) }
+        if (obj.bool("bound") == true) return FriendsStrapAnswer.Bound
+        missing("bound")
     }
 
-    /** The new token of a password change. */
-    fun token(body: String): String = root(body).string("token")?.takeIf { it.isNotBlank() } ?: missing("token")
+    /** `GET /v2/me/devices`. */
+    fun devices(body: String): List<FriendsDevice> =
+        (root(body).opt("devices") as? JSONArray ?: missing("devices")).objects().mapNotNull(::device)
 
-    fun nickFree(body: String): Boolean = root(body).bool("free") ?: missing("free")
+    /** `POST /v2/invites`: the one answer that says an invite's code. */
+    fun invite(body: String): FriendsInvite = invite(root(body)) ?: missing("invite")
+
+    /** `GET /v2/invites`. */
+    fun invites(body: String): List<FriendsInvite> =
+        (root(body).opt("invites") as? JSONArray ?: missing("invites")).objects().mapNotNull(::invite)
 
     fun info(body: String): FriendsServerInfo {
         val obj = root(body)
         return FriendsServerInfo(
             name = obj.string("name").orEmpty(),
             api = obj.int("api") ?: missing("api"),
-            inviteRequired = obj.bool("inviteRequired") ?: false,
+            time = obj.long("time") ?: 0L,
         )
     }
 
@@ -59,31 +71,40 @@ object FriendsJson {
             serverTime = obj.long("serverTime") ?: missing("serverTime"),
             me = person(obj.obj("me") ?: missing("me")),
             friends = obj.array("friends").objects().mapNotNull { runCatching { person(it) }.getOrNull() },
-            pendingIncoming = (obj.int("pendingIncoming") ?: 0).coerceAtLeast(0),
+            claims = obj.array("claims").objects().mapNotNull(::claim),
+            strapClaim = obj.obj("strapClaim")?.let(::claim),
+            unconfirmed = obj.array("unconfirmed").objects().mapNotNull(::device),
         )
     }
 
-    /** `GET /v1/users/{nick}/days`: one person in full. */
+    /** `GET /v2/users/{id}/days`: one person in full. */
     fun person(body: String): FriendPerson = person(root(body))
 
-    fun requests(body: String): FriendRequests {
-        val obj = root(body)
-        fun list(key: String) = obj.array(key).objects().mapNotNull { item ->
-            runCatching { FriendRequest(profile(item), item.long("requestedAt") ?: 0L) }.getOrNull()
-        }
-        return FriendRequests(incoming = list("incoming"), outgoing = list("outgoing"))
+    /** A claim as text [claim] reads back: how a request in flight is kept between launches. */
+    fun claimText(claim: FriendsClaim): String {
+        val obj = JSONObject().put("id", claim.id).put("kind", claim.kind.wire).put("code", claim.code)
+            .put("state", claim.state.wire).put("createdAt", claim.createdAt)
+        claim.platform?.let { obj.put("platform", it) }
+        claim.maturesAt?.let { obj.put("maturesAt", it) }
+        return obj.toString()
     }
+
+    /** The claim kept as [text], or null when it does not read back. */
+    fun claim(text: String): FriendsClaim? = runCatching { JSONObject(text) }.getOrNull()?.let(::claim)
 
     // MARK: Pieces
 
     private fun profile(obj: JSONObject): FriendProfile {
-        val nick = obj.string("nick")?.takeIf { it.isNotBlank() } ?: missing("nick")
+        val id = obj.string("id")?.takeIf(FriendsId::isValid) ?: missing("id")
         return FriendProfile(
-            nick = nick,
-            name = obj.string("name")?.takeIf { it.isNotBlank() } ?: nick,
+            id = id,
+            name = FriendsText.trimmed(obj.string("name").orEmpty()),
             avatarRev = (obj.int("avatarRev") ?: 0).coerceAtLeast(0),
             share = obj.obj("share")?.let(::share),
-            relation = FriendRelation.of(obj.string("relation")),
+            strapBound = obj.bool("strapBound"),
+            device = obj.obj("device")?.let { device ->
+                device.string("id")?.let { FriendsDeviceState(it, device.long("probationUntil")) }
+            },
         )
     }
 
@@ -100,6 +121,39 @@ object FriendsJson {
             profile = profile,
             share = profile.share ?: FriendShare.NONE,
             days = obj.array("days").objects().mapNotNull(::day).sortedByDescending { it.day },
+        )
+    }
+
+    /** A claim, or null when it lacks a member or is of a kind or state this app does not know. */
+    private fun claim(obj: JSONObject): FriendsClaim? {
+        return FriendsClaim(
+            id = obj.long("id") ?: return null,
+            kind = FriendsClaim.Kind.of(obj.string("kind")) ?: return null,
+            code = obj.string("code") ?: return null,
+            state = FriendsClaim.State.of(obj.string("state")) ?: return null,
+            platform = obj.string("platform"),
+            createdAt = obj.long("createdAt") ?: return null,
+            maturesAt = obj.long("maturesAt"),
+        )
+    }
+
+    private fun device(obj: JSONObject): FriendsDevice? {
+        return FriendsDevice(
+            id = obj.string("id") ?: return null,
+            platform = obj.string("platform") ?: return null,
+            addedAt = obj.long("addedAt") ?: return null,
+            lastSeenAt = obj.long("lastSeenAt") ?: return null,
+            probationUntil = obj.long("probationUntil"),
+            current = obj.bool("current") ?: return null,
+        )
+    }
+
+    private fun invite(obj: JSONObject): FriendsInvite? {
+        return FriendsInvite(
+            id = obj.string("id") ?: return null,
+            code = obj.string("code"),
+            createdAt = obj.long("createdAt"),
+            expiresAt = obj.long("expiresAt") ?: return null,
         )
     }
 
