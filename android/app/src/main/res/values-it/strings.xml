@@ -2364,11 +2364,11 @@
     <string name="sleep_session_in_bed">%1$s a letto</string>
     <string name="sleep_session_restorative">Il sonno profondo e il sonno REM hanno costituito il %1$s di questo sonno.</string>
     <string name="sleep_session_restorative_good">Il sonno profondo e il sonno REM hanno costituito il %1$s di questo sonno. È una quota sana delle fasi più rigeneranti.</string>
-    <string name="sleep_session_restorative_low">Il sonno profondo e il sonno REM hanno costituito il %1$s di questo sonno. In una notte ben strutturata sono circa la metà.</string>
+    <string name="sleep_session_restorative_low">Il sonno profondo e il sonno REM hanno costituito il %1$s di questo sonno. In una notte ben strutturata sono circa due quinti.</string>
     <string name="sleep_explain_score">Il punteggio riassume una notte su una scala da 0 a 100. Metà dipende da quanto hai dormito; il resto soprattutto da quanto il sonno è stato continuo e da quanto è stato profondo e REM. Da 85 in su è ottimale, da 70 a 84 buono, da 50 a 69 discreto. Per una notte importata da WHOOP, il punteggio è quello di WHOOP.</string>
     <string name="sleep_explain_duration">Il tempo in cui hai dormito davvero, senza il tempo passato sveglio a letto. Il punteggio considera %1$s una notte piena; alla maggior parte degli adulti servono dalle 7 alle 9 ore.</string>
     <string name="sleep_explain_continuity">La quota del tempo a letto in cui hai dormito. Brevi risvegli sono normali e al mattino di solito non si ricordano. Circa nove decimi o più è una notte tranquilla; una quota bassa indica lunghi periodi di veglia.</string>
-    <string name="sleep_explain_restorative">Il sonno profondo e il sonno REM sono le due fasi più rigeneranti. In una notte ben strutturata sono circa la metà del sonno, e il solo sonno profondo almeno un ottavo.</string>
+    <string name="sleep_explain_restorative">Il sonno profondo e il sonno REM sono le due fasi più rigeneranti. In una notte ben strutturata sono circa due quinti del sonno, e il solo sonno profondo almeno un ottavo.</string>
     <string name="sleep_explain_deep">La fase più rigenerante per il corpo: muscoli e tessuti si riparano e il sistema immunitario si rafforza. Si concentra soprattutto nella prima metà della notte.</string>
     <string name="sleep_explain_rem">La fase dei sogni vividi. Sostiene memoria, apprendimento e umore e si concentra soprattutto nella seconda metà della notte.</string>
     <string name="sleep_explain_light">Di solito circa metà della notte. È sonno vero: il corpo riposa e il sonno leggero collega le fasi profonda e REM.</string>

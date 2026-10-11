@@ -2394,11 +2394,11 @@
     <string name="sleep_session_in_bed">W łóżku: %1$s</string>
     <string name="sleep_session_restorative">Sen głęboki i REM stanowiły %1$s tego snu.</string>
     <string name="sleep_session_restorative_good">Sen głęboki i REM stanowiły %1$s tego snu. To zdrowy udział najbardziej regenerujących faz.</string>
-    <string name="sleep_session_restorative_low">Sen głęboki i REM stanowiły %1$s tego snu. W dobrze ułożonej nocy to około połowy.</string>
+    <string name="sleep_session_restorative_low">Sen głęboki i REM stanowiły %1$s tego snu. W dobrze ułożonej nocy to około dwóch piątych.</string>
     <string name="sleep_explain_score">Ocena podsumowuje jedną noc w skali od 0 do 100. Połowa to długość snu; reszta to głównie ciągłość snu oraz udział snu głębokiego i REM. Od 85 wzwyż jest optymalna, od 70 do 84 dobra, od 50 do 69 przeciętna. Dla nocy zaimportowanej z WHOOP pokazywana jest ocena samego WHOOP.</string>
     <string name="sleep_explain_duration">Czas, który naprawdę przespałeś, bez czasu spędzonego w łóżku bez snu. Ocena uznaje %1$s za pełną noc; większość dorosłych potrzebuje od 7 do 9 godzin.</string>
     <string name="sleep_explain_continuity">Część czasu w łóżku, którą przespałeś. Krótkie przebudzenia są normalne i rano zwykle się ich nie pamięta. Około dziewięciu dziesiątych lub więcej to spokojna noc; niski udział oznacza długie okresy bez snu.</string>
-    <string name="sleep_explain_restorative">Sen głęboki i REM to dwie najbardziej regenerujące fazy. W dobrze ułożonej nocy stanowią około połowy snu, a sam sen głęboki co najmniej jedną ósmą.</string>
+    <string name="sleep_explain_restorative">Sen głęboki i REM to dwie najbardziej regenerujące fazy. W dobrze ułożonej nocy stanowią około dwóch piątych snu, a sam sen głęboki co najmniej jedną ósmą.</string>
     <string name="sleep_explain_deep">Faza najbardziej regenerująca ciało: odbudowują się mięśnie i tkanki, wzmacnia się odporność. Przypada głównie na pierwszą połowę nocy.</string>
     <string name="sleep_explain_rem">Faza wyrazistych snów. Wspiera pamięć, uczenie się i nastrój; przypada głównie na drugą połowę nocy.</string>
     <string name="sleep_explain_light">Zwykle około połowy nocy. To prawdziwy sen: ciało odpoczywa, a lekki sen łączy fazy głęboką i REM.</string>

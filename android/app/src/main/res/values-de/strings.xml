@@ -2624,11 +2624,11 @@
     <string name="sleep_session_in_bed">%1$s im Bett</string>
     <string name="sleep_session_restorative">Tief- und REM-Schlaf machten %1$s dieses Schlafs aus.</string>
     <string name="sleep_session_restorative_good">Tief- und REM-Schlaf machten %1$s dieses Schlafs aus. Das ist ein gesunder Anteil der erholsamsten Phasen.</string>
-    <string name="sleep_session_restorative_low">Tief- und REM-Schlaf machten %1$s dieses Schlafs aus. In einer gut aufgebauten Nacht ist es etwa die Hälfte.</string>
+    <string name="sleep_session_restorative_low">Tief- und REM-Schlaf machten %1$s dieses Schlafs aus. In einer gut aufgebauten Nacht sind es etwa zwei Fünftel.</string>
     <string name="sleep_explain_score">Der Wert fasst eine Nacht auf einer Skala von 0 bis 100 zusammen. Die Hälfte davon ist, wie lange du geschlafen hast; der Rest ist vor allem, wie ungestört der Schlaf war und wie viel davon Tief- und REM-Schlaf war. Ab 85 ist er optimal, 70 bis 84 gut, 50 bis 69 mäßig. Bei einer aus WHOOP importierten Nacht ist es der Wert von WHOOP selbst.</string>
     <string name="sleep_explain_duration">Die Zeit, die du tatsächlich geschlafen hast, ohne die Wachzeit im Bett. Der Wert rechnet %1$s als volle Nacht; die meisten Erwachsenen brauchen 7 bis 9 Stunden.</string>
     <string name="sleep_explain_continuity">Der Anteil deiner Zeit im Bett, den du geschlafen hast. Kurzes Aufwachen ist normal und am Morgen meist vergessen. Etwa neun Zehntel oder mehr sind eine ruhige Nacht; ein niedriger Anteil bedeutet lange Wachphasen.</string>
-    <string name="sleep_explain_restorative">Tief- und REM-Schlaf sind die beiden erholsamsten Phasen. In einer gut aufgebauten Nacht machen sie etwa die Hälfte deines Schlafs aus, der Tiefschlaf allein mindestens ein Achtel.</string>
+    <string name="sleep_explain_restorative">Tief- und REM-Schlaf sind die beiden erholsamsten Phasen. In einer gut aufgebauten Nacht machen sie etwa zwei Fünftel deines Schlafs aus, der Tiefschlaf allein mindestens ein Achtel.</string>
     <string name="sleep_explain_deep">Die körperlich erholsamste Phase: Muskeln und Gewebe regenerieren, das Immunsystem wird gestärkt. Sie liegt vor allem in der ersten Nachthälfte.</string>
     <string name="sleep_explain_rem">Die Phase der lebhaften Träume. Sie unterstützt Gedächtnis, Lernen und Stimmung und liegt vor allem in der zweiten Nachthälfte.</string>
     <string name="sleep_explain_light">Meist etwa die Hälfte der Nacht. Es ist echter Schlaf: Der Körper ruht, und der Leichtschlaf verbindet Tief- und REM-Phasen.</string>

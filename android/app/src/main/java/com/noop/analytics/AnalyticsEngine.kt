@@ -785,8 +785,13 @@ object AnalyticsEngine {
             // #319: the motion-coverage + staging context behind the Rest number, so a high score on a poor
             // night can be explained from an export — WHOOP 4.0 banks motion coarsely (sparse=true), so most
             // epochs default to sleep → over-counted duration → high Rest; `stager` says whether V1/V2 ran.
+            // With a learned stage model installed, `stager` names only the recipe it falls back to: the
+            // model stages the night wherever motion and heart rate are dense, and which of the two staged
+            // this one is not recorded here. Said beside the line so it does not claim the recipe ran.
+            val learned = SleepStageLearned.version
             traceSink(RestScorer.sleepMotionLine(day, gravity.size, hr.size,
-                gravitySparse, useSleepStagerV2, skinTempFamily))
+                gravitySparse, useSleepStagerV2, skinTempFamily) +
+                (if (learned.isEmpty()) "" else " learned=$learned (stages dense nights; stager= is its fallback)"))
             // #271: the ONSET decision — did HR dip when the window opened, or did it open on a still-but-
             // awake stretch (HR still ~baseline)? Both the day-median baseline AND the at-onset window read
             // from the SAME HR that DETECTION ran over (`dayHr ?: hr` — the full calendar day when the caller
@@ -1597,10 +1602,17 @@ object RestScorer {
 
     /**
      * Healthy restorative (deep + REM) share of asleep time. A share at/above this earns full
-     * restorative credit; below it scales linearly. ~0.50 reflects ~20% deep + ~25–30% REM in a
-     * well-structured night.
+     * restorative credit; below it scales linearly.
+     *
+     * Was 0.50, a figure the recipe stager met because it over-calls REM: against human-scored PSG
+     * (`Tools/SleepML`, 122 people) [SleepStagerV2] puts REM 5.4 points of the night too high. In the
+     * PSG itself deep + REM is about 41 % of sleep, and the learned stage model ([SleepStageLearned])
+     * reproduces that, where a 0.50 target would have given full marks to almost no night. 0.38 keeps
+     * the term where it stood under the recipe. It moved here in the same change that turned the model
+     * on: under the recipe alone 0.38 would hand out full marks too easily. Swift twin:
+     * `AnalyticsEngine.RestScorer.restorativeTarget`.
      */
-    const val restorativeTargetShare: Double = 0.50
+    const val restorativeTargetShare: Double = 0.38
 
     /**
      * Deep-sleep share of asleep time that earns FULL restorative credit (~13% is the healthy floor

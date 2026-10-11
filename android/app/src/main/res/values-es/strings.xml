@@ -2394,11 +2394,11 @@
     <string name="sleep_session_in_bed">%1$s en la cama</string>
     <string name="sleep_session_restorative">El sueño profundo y el REM supusieron el %1$s de este sueño.</string>
     <string name="sleep_session_restorative_good">El sueño profundo y el REM supusieron el %1$s de este sueño. Es una proporción saludable de las fases más reparadoras.</string>
-    <string name="sleep_session_restorative_low">El sueño profundo y el REM supusieron el %1$s de este sueño. En una noche bien estructurada son cerca de la mitad.</string>
+    <string name="sleep_session_restorative_low">El sueño profundo y el REM supusieron el %1$s de este sueño. En una noche bien estructurada son cerca de dos quintos.</string>
     <string name="sleep_explain_score">La puntuación resume una noche en una escala de 0 a 100. La mitad es cuánto dormiste; el resto es sobre todo lo continuo que fue el sueño y cuánto fue profundo y REM. De 85 en adelante es óptima, de 70 a 84 buena, de 50 a 69 aceptable. En una noche importada de WHOOP, la puntuación es la del propio WHOOP.</string>
     <string name="sleep_explain_duration">El tiempo que dormiste de verdad, sin contar el tiempo despierto en la cama. La puntuación considera %1$s una noche completa; la mayoría de los adultos necesita entre 7 y 9 horas.</string>
     <string name="sleep_explain_continuity">La parte del tiempo en cama que pasaste dormido. Los despertares breves son normales y casi siempre se olvidan por la mañana. Unas nueve décimas partes o más es una noche tranquila; una parte baja significa largos ratos despierto.</string>
-    <string name="sleep_explain_restorative">El sueño profundo y el REM son las dos fases más reparadoras. En una noche bien estructurada suman cerca de la mitad del sueño, y el profundo por sí solo al menos una octava parte.</string>
+    <string name="sleep_explain_restorative">El sueño profundo y el REM son las dos fases más reparadoras. En una noche bien estructurada suman cerca de dos quintos del sueño, y el profundo por sí solo al menos una octava parte.</string>
     <string name="sleep_explain_deep">La fase más reparadora para el cuerpo: se reparan músculos y tejidos y se refuerza el sistema inmunitario. Se da sobre todo en la primera mitad de la noche.</string>
     <string name="sleep_explain_rem">La fase de los sueños vívidos. Favorece la memoria, el aprendizaje y el ánimo, y se da sobre todo en la segunda mitad de la noche.</string>
     <string name="sleep_explain_light">Suele ser cerca de la mitad de la noche. Es sueño de verdad: el cuerpo descansa, y el sueño ligero enlaza las fases profunda y REM.</string>

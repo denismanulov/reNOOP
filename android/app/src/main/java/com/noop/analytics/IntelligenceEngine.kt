@@ -559,6 +559,9 @@ object IntelligenceEngine {
         // #1005: time the whole pass so a re-score STORM is visible in the strap log (the trigger lines
         // record WHY each pass runs; this records how many nights and how long — the CPU cost per run).
         val reScoreStart = System.nanoTime()
+        // The learned stage model, read from the assets on the first pass of the process and installed
+        // before any night is staged. In this wrapper, never in `analyzeRecentOnCpu` (see its ratchet).
+        SleepStageModelStore.ensureInstalled()
         // Serialise the whole pass so overlapping callers never run two rescores in parallel (see
         // [analyzeGate]). The heavy scoring already ran off the caller's thread via withContext above; the
         // lock is held only for this engine's own passes, never across an unrelated suspension.

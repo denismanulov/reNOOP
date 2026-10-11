@@ -2374,11 +2374,11 @@
     <string name="sleep_session_in_bed">卧床 %1$s</string>
     <string name="sleep_session_restorative">深睡和快速动眼睡眠占这次睡眠的 %1$s。</string>
     <string name="sleep_session_restorative_good">深睡和快速动眼睡眠占这次睡眠的 %1$s，这是恢复效果最好的阶段的健康占比。</string>
-    <string name="sleep_session_restorative_low">深睡和快速动眼睡眠占这次睡眠的 %1$s。结构良好的一晚大约占一半。</string>
+    <string name="sleep_session_restorative_low">深睡和快速动眼睡眠占这次睡眠的 %1$s。结构良好的一晚大约占五分之二。</string>
     <string name="sleep_explain_score">评分用 0 到 100 分概括一晚的睡眠。一半取决于睡了多久，其余主要取决于睡眠是否连续，以及深睡和快速动眼睡眠的多少。85 分及以上为最佳，70 到 84 分为良好，50 到 69 分为一般。从 WHOOP 导入的夜晚显示的是 WHOOP 自己的评分。</string>
     <string name="sleep_explain_duration">实际睡着的时间，不包括躺在床上清醒的时间。评分把 %1$s 算作完整的一晚；大多数成年人需要 7 到 9 小时。</string>
     <string name="sleep_explain_continuity">卧床时间中真正睡着的比例。短暂醒来很正常，早上通常已不记得。约九成或以上是安稳的一晚；比例偏低说明清醒的时间较长。</string>
-    <string name="sleep_explain_restorative">深睡和快速动眼睡眠是恢复效果最好的两个阶段。结构良好的一晚中，它们约占睡眠的一半，其中深睡至少占八分之一。</string>
+    <string name="sleep_explain_restorative">深睡和快速动眼睡眠是恢复效果最好的两个阶段。结构良好的一晚中，它们约占睡眠的五分之二，其中深睡至少占八分之一。</string>
     <string name="sleep_explain_deep">对身体恢复最有效的阶段：肌肉和组织得到修复，免疫系统得到增强。主要出现在前半夜。</string>
     <string name="sleep_explain_rem">做梦最生动的阶段。有助于记忆、学习和情绪，主要出现在后半夜。</string>
     <string name="sleep_explain_light">通常约占一晚的一半。这是真正的睡眠：身体在休息，浅睡把深睡和快速动眼阶段连接起来。</string>

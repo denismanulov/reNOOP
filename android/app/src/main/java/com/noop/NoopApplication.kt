@@ -50,6 +50,16 @@ class NoopApplication : Application() {
         // Whether an activity is in front of the wearer, for the BLE client's step auto-calibration
         // (it takes no measurement while the app is on screen). Before any activity can resume.
         registerActivityLifecycleCallbacks(AppOnScreen)
+        // Where the learned sleep stage model's two tree files are read from. Nothing is read here: the
+        // first scoring or re-stage pass of the process reads and parses them, off the main thread.
+        com.noop.analytics.SleepStageModelStore.register(
+            log = { android.util.Log.w("SleepStageModel", it) },
+        ) { name ->
+            runCatching {
+                assets.open("${com.noop.analytics.SleepStageModelStore.ASSET_DIR}/$name")
+                    .bufferedReader().use { it.readText() }
+            }.getOrNull()
+        }
         // #1008: pin the pre-change Overnight-only default for existing installs before anything
         // reads it. Idempotent; a no-op on fresh installs and on every launch after the first.
         com.noop.ui.NoopPrefs.migrateContinuousHrvOvernightDefault(this)

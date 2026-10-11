@@ -2387,11 +2387,11 @@
     <string name="sleep_session_in_bed">%1$s na cama</string>
     <string name="sleep_session_restorative">O sono profundo e o REM representaram %1$s deste sono.</string>
     <string name="sleep_session_restorative_good">O sono profundo e o REM representaram %1$s deste sono. É uma boa proporção das fases mais reparadoras.</string>
-    <string name="sleep_session_restorative_low">O sono profundo e o REM representaram %1$s deste sono. Numa noite bem estruturada são cerca de metade.</string>
+    <string name="sleep_session_restorative_low">O sono profundo e o REM representaram %1$s deste sono. Numa noite bem estruturada são cerca de dois quintos.</string>
     <string name="sleep_explain_score">A pontuação resume uma noite numa escala de 0 a 100. Metade é quanto tempo dormiu; o resto é sobretudo quão contínuo foi o sono e quanto dele foi profundo e REM. A partir de 85 é ideal, de 70 a 84 boa, de 50 a 69 razoável. Numa noite importada do WHOOP, a pontuação é a do próprio WHOOP.</string>
     <string name="sleep_explain_duration">O tempo que dormiu realmente, sem o tempo acordado na cama. A pontuação considera %1$s uma noite completa; a maioria dos adultos precisa de 7 a 9 horas.</string>
     <string name="sleep_explain_continuity">A parte do tempo na cama que passou a dormir. Despertares breves são normais e de manhã quase sempre esquecidos. Cerca de nove décimos ou mais é uma noite calma; uma parte baixa significa longos períodos acordado.</string>
-    <string name="sleep_explain_restorative">O sono profundo e o REM são as duas fases mais reparadoras. Numa noite bem estruturada representam cerca de metade do sono, e só o sono profundo pelo menos um oitavo.</string>
+    <string name="sleep_explain_restorative">O sono profundo e o REM são as duas fases mais reparadoras. Numa noite bem estruturada representam cerca de dois quintos do sono, e só o sono profundo pelo menos um oitavo.</string>
     <string name="sleep_explain_deep">A fase mais reparadora para o corpo: os músculos e os tecidos recuperam e o sistema imunitário reforça-se. Ocorre sobretudo na primeira metade da noite.</string>
     <string name="sleep_explain_rem">A fase dos sonhos vívidos. Apoia a memória, a aprendizagem e o humor, e ocorre sobretudo na segunda metade da noite.</string>
     <string name="sleep_explain_light">Normalmente cerca de metade da noite. É sono a sério: o corpo descansa, e o sono leve liga as fases profunda e REM.</string>

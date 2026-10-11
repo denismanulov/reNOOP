@@ -2639,11 +2639,11 @@
     <string name="sleep_session_in_bed">%1$s in bed</string>
     <string name="sleep_session_restorative">Deep and REM sleep made up %1$s of this sleep.</string>
     <string name="sleep_session_restorative_good">Deep and REM sleep made up %1$s of this sleep. That is a healthy share of the most restoring stages.</string>
-    <string name="sleep_session_restorative_low">Deep and REM sleep made up %1$s of this sleep. A well-structured night has about half.</string>
+    <string name="sleep_session_restorative_low">Deep and REM sleep made up %1$s of this sleep. A well-structured night has about two fifths.</string>
     <string name="sleep_explain_score">The score sums up one night on a scale of 0 to 100. Half of it is how long you slept; the rest is mostly how unbroken the sleep was and how much of it was deep and REM. 85 and above is optimal, 70 to 84 good, 50 to 69 fair. For a night imported from WHOOP, the score is WHOOP’s own.</string>
     <string name="sleep_explain_duration">The time you were actually asleep, without the time spent awake in bed. The score counts %1$s as a full night; most adults need between 7 and 9 hours.</string>
     <string name="sleep_explain_continuity">The share of your time in bed that you spent asleep. Brief awakenings are normal and mostly forgotten by morning. Around nine tenths or more is a calm night; a low share means long stretches awake.</string>
-    <string name="sleep_explain_restorative">Deep and REM are the two most restoring stages. In a well-structured night they make up about half of your sleep, with deep sleep alone at least an eighth of it.</string>
+    <string name="sleep_explain_restorative">Deep and REM are the two most restoring stages. In a well-structured night they make up about two fifths of your sleep, with deep sleep alone at least an eighth of it.</string>
     <string name="sleep_explain_deep">The most physically restoring stage: muscles and tissues repair and the immune system strengthens. It comes mostly in the first half of the night.</string>
     <string name="sleep_explain_rem">The stage of vivid dreams. It supports memory, learning and mood, and comes mostly in the second half of the night.</string>
     <string name="sleep_explain_light">Usually about half of the night. It is real sleep: the body rests, and light sleep links the deep and REM stages.</string>

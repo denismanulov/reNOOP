@@ -69,6 +69,7 @@ object SleepStageHealer {
     ): String? {
         val lo = start - READ_PAD_SECONDS
         val hi = end + READ_PAD_SECONDS
+        SleepStageModelStore.ensureInstalled()
         val grav = repo.gravitySamplesForDevice(deviceId, lo, hi, IntelligenceEngine.STREAM_LIMIT)
         // Cheap density gate FIRST (count only) so a sparse imported night skips the three further reads.
         if (!isDense(grav, start, end)) return null
@@ -125,11 +126,14 @@ object SleepStageHealer {
         useMotionAwareWake: Boolean = false,
     ): String? {
         if (!isDense(grav, start, end)) return null
-        val segs = if (useExperimentalSleepV2) {
-            SleepStagerV2.stageSession(start = start, end = end, grav = grav, hr = hr, rr = rr, resp = resp)
-        } else {
-            SleepStager.stageSession(start = start, end = end, grav = grav, hr = hr, rr = rr, resp = resp)
-        }
+        // The learned stage model stages the window when the night's motion and heart rate are dense
+        // enough for it ([SleepStageLearned]); the switch only chooses the recipe it falls back to.
+        val segs = SleepStageLearned.stageSession(start = start, end = end, grav = grav, hr = hr, rr = rr)
+            ?: if (useExperimentalSleepV2) {
+                SleepStagerV2.stageSession(start = start, end = end, grav = grav, hr = hr, rr = rr, resp = resp)
+            } else {
+                SleepStager.stageSession(start = start, end = end, grav = grav, hr = hr, rr = rr, resp = resp)
+            }
         val refined = WakeMotionRefinement.apply(segs, grav, steps, useMotionAwareWake)
         return AnalyticsEngine.encodeStages(refined)
     }
@@ -254,6 +258,9 @@ object SleepStageHealer {
         val end: Long,
         val experimentalSleepV2: Boolean,
         val motionAwareWake: Boolean,
+        /** The learned stage model in use, empty when none: a night staged under one model is staged
+         *  again under another. Twin of `model=` in Swift `Repository.restageWitness`. */
+        val stageModel: String,
         val hrCount: Int,
         val hrMaxTs: Long,
         val streams: String,
@@ -269,6 +276,7 @@ object SleepStageHealer {
         useExperimentalSleepV2: Boolean,
         useMotionAwareWake: Boolean,
     ): RestageInputs? = try {
+        SleepStageModelStore.ensureInstalled()
         val lo = start - READ_PAD_SECONDS
         val hi = end + READ_PAD_SECONDS
         // The same integer arithmetic as WHOOP4_RR_INTERVALS_SQL's hour bounds; min/max keep the
@@ -279,6 +287,7 @@ object SleepStageHealer {
         RestageInputs(
             strapDeviceId = deviceId, start = start, end = end,
             experimentalSleepV2 = useExperimentalSleepV2, motionAwareWake = useMotionAwareWake,
+            stageModel = SleepStageLearned.version,
             hrCount = hrCount, hrMaxTs = hrMaxTs,
             streams = repo.dayStreamFingerprint(deviceId, from, to),
             rrPolicy = repo.rrReadPolicy(deviceId),

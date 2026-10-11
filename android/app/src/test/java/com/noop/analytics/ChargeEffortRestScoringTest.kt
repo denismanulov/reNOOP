@@ -25,6 +25,9 @@ class ChargeEffortRestScoringTest {
 
     private val EPS = 1e-9
 
+    /** The composite is rounded to two decimals, as `RestScorer.rest` returns it. */
+    private fun round2(x: Double): Double = Math.round(x * 100.0) / 100.0
+
     // ── Effort (StrainScorer 0–100) ────────────────────────────────────────────
 
     @Test
@@ -229,7 +232,7 @@ class ChargeEffortRestScoringTest {
         assertEquals(0.20, RestScorer.wRestorative, 0.0)
         assertEquals(0.10, RestScorer.wConsistency, 0.0)
         assertEquals(8.0, RestScorer.defaultSleepNeedHours, 0.0)
-        assertEquals(0.50, RestScorer.restorativeTargetShare, 0.0)
+        assertEquals(0.38, RestScorer.restorativeTargetShare, 0.0)
     }
 
     @Test
@@ -239,17 +242,17 @@ class ChargeEffortRestScoringTest {
 
     @Test
     fun rest_compositeWithoutConsistencyUsesNeutral() {
-        // 8h asleep (dur 100), eff 0.92 (92), deep 1.5h + REM 2h = 3.5h restorative,
-        // share 0.4375 / 0.50 → 87.5. No consistency → NEUTRAL 50 at full weight (Swift parity: the
+        // 8h asleep (dur 100), eff 0.92 (92), deep 1.5h + REM 1h = 2.5h restorative,
+        // share 0.3125 / 0.38. No consistency → NEUTRAL 50 at full weight (Swift parity: the
         // term is NOT dropped/renormalized). Weights 0.50/0.20/0.20/0.10 sum to 1.0.
         val score = RestScorer.rest(
             asleepSeconds = 8 * 3600.0,
             efficiency = 0.92,
             deepSeconds = 1.5 * 3600.0,
-            remSeconds = 2.0 * 3600.0,
+            remSeconds = 1.0 * 3600.0,
         )!!
-        val expected = 100.0 * 0.50 + 92.0 * 0.20 + 87.5 * 0.20 + 50.0 * 0.10
-        assertEquals(expected, score, EPS)
+        val expected = 100.0 * 0.50 + 92.0 * 0.20 + (0.3125 / 0.38 * 100.0) * 0.20 + 50.0 * 0.10
+        assertEquals(round2(expected), score, EPS)
     }
 
     @Test
@@ -258,11 +261,25 @@ class ChargeEffortRestScoringTest {
             asleepSeconds = 8 * 3600.0,
             efficiency = 0.92,
             deepSeconds = 1.5 * 3600.0,
-            remSeconds = 2.0 * 3600.0,
+            remSeconds = 1.0 * 3600.0,
             consistency = 0.80,
         )!!
-        val expected = (100.0 * 0.50 + 92.0 * 0.20 + 87.5 * 0.20 + 80.0 * 0.10) / 1.0
-        assertEquals(expected, score, EPS)
+        val expected = (100.0 * 0.50 + 92.0 * 0.20 + (0.3125 / 0.38 * 100.0) * 0.20 + 80.0 * 0.10) / 1.0
+        assertEquals(round2(expected), score, EPS)
+    }
+
+    /** The case Swift `testRestCompositeNilConsistencyIsNeutral` pins after the target moved: a quarter
+     *  of a 4 h sleep restorative against the 0.38 target, with deep at full adequacy. */
+    @Test
+    fun rest_restorativeTargetMatchesSwiftLiteral() {
+        val score = RestScorer.rest(
+            asleepSeconds = 4 * 3600.0, efficiency = 0.8,
+            deepSeconds = 0.6 * 3600.0, remSeconds = 0.4 * 3600.0,
+        )!!
+        assertEquals(59.16, score, EPS)
+        // A share at the target earns the whole term; the old 0.50 would have paid 76 % of it.
+        val atTarget = RestScorer.rest(8 * 3600.0, 1.0, 1.2 * 3600.0, (0.38 * 8 - 1.2) * 3600.0, consistency = 1.0)!!
+        assertEquals(100.0, atTarget, EPS)
     }
 
     @Test
@@ -290,11 +307,11 @@ class ChargeEffortRestScoringTest {
     @Test
     fun rest_oversleepDurationClampsAtHundred() {
         // 10h asleep against an 8h need does not over-credit: duration clamps at 100.
-        val score = RestScorer.rest(10 * 3600.0, 0.90, 2.0 * 3600.0, 2.5 * 3600.0)!!
-        val restShare = (2.0 + 2.5) / 10.0 // 0.45 → /0.5 → 90
+        val score = RestScorer.rest(10 * 3600.0, 0.90, 2.0 * 3600.0, 1.5 * 3600.0)!!
+        val restShare = (2.0 + 1.5) / 10.0 // 0.35, under the 0.38 target
         // No consistency → neutral 50 at full weight (Swift parity). Weights sum to 1.0.
-        val expected = 100.0 * 0.50 + 90.0 * 0.20 + (restShare / 0.50 * 100.0) * 0.20 + 50.0 * 0.10
-        assertEquals(expected, score, EPS)
+        val expected = 100.0 * 0.50 + 90.0 * 0.20 + (restShare / 0.38 * 100.0) * 0.20 + 50.0 * 0.10
+        assertEquals(round2(expected), score, EPS)
     }
 
     // ── ScoreConfidence tiers ──────────────────────────────────────────────────

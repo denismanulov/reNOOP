@@ -1443,6 +1443,9 @@ object SleepStager {
     private data class DetectKey(
         val grav: Long, val hr: Long, val rr: Long, val resp: Long,
         val tz: Long, val wristOff: Long, val band: Long, val v2: Boolean,
+        // The learned stage model in use, empty when none: it stages in the recipe's place wherever it
+        // can ([SleepStageLearned]), so a night cached under one model is not another's.
+        val learned: String,
         val sleepHRBaseline: Double?,
     )
 
@@ -1552,6 +1555,7 @@ object SleepStager {
             wristOff = streamFingerprint(wristOff, { it.first }) { it.second },
             band = streamFingerprint(bandSleepState, { it.first }) { it.second.toLong() },
             v2 = useSleepStagerV2,
+            learned = SleepStageLearned.version,
             sleepHRBaseline = sleepHRBaseline,
         )
         synchronized(detectCacheLock) { detectCache[key] }?.let { return copyDetected(it) }
@@ -1757,13 +1761,18 @@ object SleepStager {
                     "daytime=true restingHR=${resting ?: -1} baseline=${baseline?.toInt() ?: -1} nightTail=false"))
                 continue
             }
-            val rawStages = if (useSleepStagerV2) {
-                SleepStagerV2.stageSession(start = p.start, end = p.end, grav = grav,
-                    hr = hrS, rr = rrS, resp = respS)
-            } else {
-                stageSession(start = p.start, end = p.end, grav = grav,
-                    hr = hrS, rr = rrS, resp = respS)
-            }
+            // The learned model stages the window when one is installed and the night's motion and heart
+            // rate are dense enough for it; otherwise (and in every pure-function caller and test, which
+            // install none) the recipe below does, exactly as before. Mirrors Swift.
+            val rawStages = SleepStageLearned.stageSession(start = p.start, end = p.end, grav = grav,
+                hr = hrS, rr = rrS)
+                ?: if (useSleepStagerV2) {
+                    SleepStagerV2.stageSession(start = p.start, end = p.end, grav = grav,
+                        hr = hrS, rr = rrS, resp = respS)
+                } else {
+                    stageSession(start = p.start, end = p.end, grav = grav,
+                        hr = hrS, rr = rrS, resp = respS)
+                }
             // Band sleep_state WAKE-veto: recover INTERIOR false-wake epochs the strap's OWN band
             // ([bandSleepState]) scored "asleep". No-op when the band is absent (WHOOP 4.0) or the flag is
             // off; stager-agnostic (corrects whichever hypnogram V1/V2 produced). Efficiency below is then

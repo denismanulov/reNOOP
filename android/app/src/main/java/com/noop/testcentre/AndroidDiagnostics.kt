@@ -442,8 +442,14 @@ object AndroidDiagnostics {
                     // fact disagreeing. On a 5/MG the gap is maximal: V1's primary REM gate needs the
                     // raw resp channel that hardware never emits, while V2 recovers respiration from
                     // R-R. Suffix byte-identical to the Swift twin in DebugDataDiagnostics.
-                    val screenStager =
+                    // With the learned stage model installed the screen is staged by it wherever the
+                    // night's motion and heart rate are dense enough, and by the recipe elsewhere; which
+                    // of the two staged THIS night is not recorded, so both are named.
+                    val recipe =
                         if (com.noop.ble.PuffinExperiment.from(context).experimentalSleepV2) "V2" else "V1"
+                    com.noop.analytics.SleepStageModelStore.ensureInstalled()
+                    val screenStager = if (com.noop.analytics.SleepStageLearned.version.isEmpty()) recipe
+                        else "the learned model ($recipe where motion or heart rate is thin)"
                     var summary = it.summary + " · funnel replays V1; screen staged by $screenStager"
                     if (screenStager != "V1") summary += " — totals can differ"
                     add(summary)
