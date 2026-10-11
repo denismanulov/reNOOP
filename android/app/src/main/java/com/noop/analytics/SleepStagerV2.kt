@@ -159,7 +159,8 @@ object SleepStagerV2 {
 
     // ── Recipe constants (all fixed a-priori — NOT fit to labels) ────────────────────────────────────
 
-    private val stageNames = listOf("deep", "rem", "light", "awake")
+    /** Internal (not private) so [SleepStageDecoder] walks the same order, which decides ties. */
+    internal val stageNames = listOf("deep", "rem", "light", "awake")
 
     /** Population sleep-architecture base rates as log-priors (adult TST ≈ light 50 / rem 22 / waso 10 %,
      *  deep 15). Calibrates the boundary so light wins weak-evidence epochs. Deep was 0.18, which over-called
@@ -546,7 +547,7 @@ object SleepStagerV2 {
 
     /** Viterbi most-likely path over the per-epoch log-emissions with the sticky transition matrix and a
      *  uniform start. Ties resolve to the earlier stage in [stageNames]. */
-    private fun viterbi(emSeq: List<Map<String, Double>>): List<String> {
+    internal fun viterbi(emSeq: List<Map<String, Double>>): List<String> {
         if (emSeq.isEmpty()) return emptyList()
         // Floor before ln so a zeroed transition entry can never hit ln(0) = -Inf and poison the lattice.
         // LOAD-BEARING, not defensive: the awake row carries wake→deep = wake→rem = 0.0, so this floor is
