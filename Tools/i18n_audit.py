@@ -1295,6 +1295,11 @@ ECHO_BASELINE_PATH = ROOT / "Tools/i18n_echo_baseline.txt"
 #: both the Apple (`%@`, `%lld`) and Android (`%1$s`, `%d`) conversion shapes.
 FORMAT_SPECIFIER_PATTERN = re.compile(r"%(?:\d+\$)?[@#0\-+ ]*[\d.]*(?:ll|l|h)?[@dfsu]|%%")
 
+#: Named slots a sentence carries and the app fills (`@SEVEN_DAY_AVERAGE_UNIT@`, the Highlights copy on both
+#: platforms). Placeholders like the format specifiers above: a locale repeating `@LOW@–@HIGH@` verbatim
+#: is correct, not an echo.
+NAMED_SLOT_PATTERN = re.compile(r"@[A-Z][A-Z0-9_]*@")
+
 
 # Multi-word product names that travel verbatim into Latin-script locales. The two-word floor below
 # already lets a ONE-word brand through ("HRV", "Strava"); it cannot see a two-word one, so "iCloud
@@ -1307,7 +1312,7 @@ BRAND_PHRASES = ("iCloud Drive", "Health Connect")
 
 def _is_pure_brand_phrase(text: str) -> bool:
     """Whether a string is nothing but brand names, placeholders and punctuation."""
-    stripped = FORMAT_SPECIFIER_PATTERN.sub(" ", text)
+    stripped = NAMED_SLOT_PATTERN.sub(" ", FORMAT_SPECIFIER_PATTERN.sub(" ", text))
     for brand in BRAND_PHRASES:
         stripped = stripped.replace(brand, " ")
     return not re.search(r"[^\W\d_]{2,}", stripped, flags=re.UNICODE)
@@ -1323,7 +1328,7 @@ def _has_translatable_words(text: str) -> bool:
     """
     if _is_pure_brand_phrase(text):
         return False
-    stripped = FORMAT_SPECIFIER_PATTERN.sub(" ", text)
+    stripped = NAMED_SLOT_PATTERN.sub(" ", FORMAT_SPECIFIER_PATTERN.sub(" ", text))
     return len(re.findall(r"[^\W\d_]{2,}", stripped, flags=re.UNICODE)) >= 2
 
 
