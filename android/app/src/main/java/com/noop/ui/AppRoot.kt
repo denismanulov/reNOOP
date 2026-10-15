@@ -57,9 +57,15 @@ import com.noop.ui.friends.FriendsProfileScreen
 import com.noop.ui.friends.FriendsTabScreen
 import com.noop.ui.friends.FriendsViewModel
 import com.noop.ui.friends.FriendsWhileOn
+import com.noop.ui.highlights.AllHighlightsScreen
+import com.noop.ui.highlights.HighlightRoute
+import com.noop.ui.highlights.HighlightSubject
+import com.noop.ui.highlights.SubjectHighlightsScreen
+import com.noop.ui.highlights.highlightsRoute
 import com.noop.ui.metric.ALL_METRICS_ROUTE
 import com.noop.ui.metric.AllMetricsScreen
 import com.noop.ui.metric.MetricAllDataScreen
+import com.noop.ui.metric.MetricCatalog
 import com.noop.ui.metric.MetricDescriptor
 import com.noop.ui.metric.MetricDetailScreen
 import com.noop.ui.metric.metricRoute
@@ -139,6 +145,9 @@ internal enum class Destination(val route: String) {
     // page's Training Load, and the day by the second (a heart-rate page's option).
     Metric("metric/{key}?source={source}"),
     MetricData("metric_data/{key}?source={source}"),
+    // Health's Highlights: one subject's ("Steps Highlights"), and every subject that has any.
+    Highlights("highlights/{subject}?key={key}&source={source}"),
+    AllHighlights(com.noop.ui.highlights.ALL_HIGHLIGHTS_ROUTE),
     TrainingLoad("training_load"),
     FullDay("full_day"),
     Automations("automations"),
@@ -321,6 +330,8 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         // Every metric card, ring figure, highlight and trend opens that metric's page here.
                         openMetric = { key, source -> nav.push(metricRoute(key, source)) },
                         openAllMetrics = { nav.push(Destination.AllMetrics.route) },
+                        openHighlight = { nav.openHighlight(it) },
+                        openAllHighlights = { nav.push(Destination.AllHighlights.route) },
                         openTrends = { nav.push(Destination.Trends.route) },
                         // Rest and the Sleep card open the Sleep tab on the picked day's night.
                         openSleepNight = { wakeDay ->
@@ -343,6 +354,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         openSession = { day, nap -> nav.push(sleepSessionRoute(day, nap)) },
                         openHistory = { nav.push(Destination.SleepHistory.route) },
                         openSchedule = { nav.push(Destination.SleepSchedule.route) },
+                        openHighlights = { nav.push(highlightsRoute(it)) },
                     ),
                 )
             }
@@ -501,7 +513,28 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     onOpenAllData = { nav.push(metricDataRoute(it)) },
                     onOpenFullDay = { nav.push(Destination.FullDay.route) },
                     onOpenDataSources = { nav.push(Destination.DataSources.route) },
+                    onOpenHighlights = { subject, metric -> nav.push(highlightsRoute(subject, metric)) },
                 )
+            }
+            composable(
+                Destination.Highlights.route,
+                arguments = listOf(
+                    navArgument("subject") { type = NavType.StringType },
+                    navArgument("key") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("source") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
+                val subject = HighlightSubject.ofSegment(entry.arguments?.getString("subject").orEmpty()) ?: HighlightSubject.STEPS
+                val key = entry.arguments?.getString("key")
+                val source = entry.arguments?.getString("source")
+                SubjectHighlightsScreen(
+                    viewModel, subject, metric = if (key != null && source != null) MetricCatalog.metric(key, source) else null,
+                    onBack = { nav.popBackStack() },
+                    onOpenAll = { nav.push(Destination.AllHighlights.route) },
+                )
+            }
+            composable(Destination.AllHighlights.route) {
+                AllHighlightsScreen(viewModel, onBack = { nav.popBackStack() }, onOpenSubject = { nav.push(highlightsRoute(it)) })
             }
             composable(Destination.MetricData.route, arguments = metricArguments) { entry ->
                 MetricAllDataScreen(
@@ -586,6 +619,19 @@ private fun friendRoute(id: String): String = "friend/${android.net.Uri.encode(i
 
 /** The page of one workout on the Workouts tab. */
 private fun workoutRoute(row: com.noop.data.WorkoutRow): String = "workout/${android.net.Uri.encode(workoutKey(row))}"
+
+/** Where a highlight card opens: its metric's page, the workouts, one workout, or the Sleep tab on its night. */
+private fun NavHostController.openHighlight(route: HighlightRoute) {
+    when (route) {
+        is HighlightRoute.Metric -> push(metricRoute(route.key, route.source))
+        HighlightRoute.WorkoutHistory -> push(Destination.WorkoutHistory.route)
+        is HighlightRoute.Workout -> push(workoutRoute(route.row))
+        is HighlightRoute.SleepNight -> {
+            SleepNightRequest.wakeDay = route.wakeDay
+            showTabRoot(MainTab.Sleep)
+        }
+    }
+}
 
 /**
  * Registers [tab]'s root screen. The root reads its own tab's re-tap counter, so the value it sees never

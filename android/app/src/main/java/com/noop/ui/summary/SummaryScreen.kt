@@ -69,6 +69,12 @@ import com.noop.ui.metric.metricUnits
 import com.noop.ui.todayPullToSyncEnabled
 import com.noop.ui.trends.HealthTrendCard
 import com.noop.ui.trends.HealthTrendItem
+import com.noop.ui.highlights.HealthHighlightLoader
+import com.noop.ui.highlights.HighlightGroup
+import com.noop.ui.highlights.HighlightItem
+import com.noop.ui.highlights.HighlightItemCard
+import com.noop.ui.highlights.HighlightRoute
+import com.noop.ui.highlights.HighlightsLinkRow
 import com.noop.ui.trends.HealthTrends
 import kotlinx.coroutines.delay
 import java.time.LocalDate
@@ -102,6 +108,9 @@ internal class SummaryActions(
     val openSleepNight: (String) -> Unit,
     /** A nap's own page: the day it belongs to and the nap's start (unix seconds). */
     val openSleepNap: (String, Long) -> Unit,
+    /** Where a Highlights card opens, and the page listing every subject that has one. */
+    val openHighlight: (HighlightRoute) -> Unit,
+    val openAllHighlights: () -> Unit,
 )
 
 /** Everything the two layouts draw, resolved once per composition. */
@@ -118,6 +127,9 @@ internal class SummaryUi(
     /** The wearer says he is awake: sync, and let the detector find when he woke. */
     val onAwake: () -> Unit,
     val trends: List<HealthTrendItem>?,
+    /** Health's Highlights as of now (not the picked day): the leading few, and whether any subject has one. */
+    val highlights: List<HighlightItem>,
+    val hasHighlights: Boolean,
     val tiles: List<KeyMetric>,
     val pinned: List<KeyMetric>,
     val alert: String?,
@@ -212,6 +224,12 @@ internal fun SummaryScreen(vm: AppViewModel, actions: SummaryActions) {
     LaunchedEffect(days, reloadTick) {
         trends = runCatching { HealthTrends.top(vm, context, limit = 3) }.getOrNull()
     }
+    // Health's Highlights as of now: today against a usual day, the last workout, the week.
+    val workouts by vm.workouts.collectAsStateWithLifecycle()
+    var highlightGroups by remember { mutableStateOf<List<HighlightGroup>>(emptyList()) }
+    LaunchedEffect(days, workouts.size, workouts.firstOrNull()?.endTs, reloadTick) {
+        highlightGroups = runCatching { HealthHighlightLoader.all(vm, context) }.getOrDefault(emptyList())
+    }
     val ui = SummaryUi(
         locale = locale,
         dayOffset = dayOffset,
@@ -222,6 +240,8 @@ internal fun SummaryScreen(vm: AppViewModel, actions: SummaryActions) {
         sleepInProgress = sleepInProgress,
         onAwake = onAwake,
         trends = trends,
+        highlights = remember(highlightGroups) { HealthHighlightLoader.summary(highlightGroups) },
+        hasHighlights = highlightGroups.isNotEmpty(),
         tiles = tiles,
         pinned = SummaryPins.pinned(enabled, tiles),
         alert = alert,
@@ -386,7 +406,7 @@ private fun LazyListScope.detailedLayout(
         }
         item(key = "all-trends") { Box(gutter) { ShowAllTrendsRow(actions.openTrends) } }
     }
-    if (ui.snapshot.highlights.isNotEmpty()) {
+    if (ui.snapshot.highlights.isNotEmpty() || ui.hasHighlights) {
         item(key = "highlights-header") { SectionHeader(stringResource(R.string.metric_highlights), modifier = gutter) }
         ui.snapshot.highlights.forEach { h ->
             item(key = "highlight-${h.key}") {
@@ -395,8 +415,25 @@ private fun LazyListScope.detailedLayout(
                 }
             }
         }
+        healthHighlights(ui, actions, "")
     }
     syncFooter(ui)
+}
+
+/** The leading Highlights cards, each opening its page, then the row that opens them all. */
+private fun LazyListScope.healthHighlights(ui: SummaryUi, actions: SummaryActions, prefix: String) {
+    ui.highlights.forEach { item ->
+        item(key = "${prefix}hl-${item.id}") {
+            Box(gutter) {
+                HighlightItemCard(item, onClick = item.route?.let { route -> { actions.openHighlight(route) } })
+            }
+        }
+    }
+    if (ui.hasHighlights) {
+        item(key = "${prefix}hl-all") {
+            Box(gutter) { HighlightsLinkRow(stringResource(R.string.hl_show_all), actions.openAllHighlights) }
+        }
+    }
 }
 
 /** The raised alert, pinned above everything else in both layouts (a running workout is the mini-player). */
@@ -549,6 +586,10 @@ private fun LazyListScope.compactLayout(
             )
         }
         if (trends.isNotEmpty()) item(key = "c-trends") { TrendsCarousel(trends, ui, actions) }
+    }
+    if (ui.hasHighlights) {
+        item(key = "c-hl-header") { SectionHeader(stringResource(R.string.metric_highlights), modifier = gutter) }
+        healthHighlights(ui, actions, "c-")
     }
     syncFooter(ui)
 }

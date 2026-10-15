@@ -93,3 +93,19 @@ the planner hint is slower when the probed id has no tagged beats and another st
 (a re-added 5/MG's canonical alias); fixing every shape needs an index on `(deviceId, srcChannel)`.
 `Tools/parity_ledger.py` lists the new Kotlin functions as unregistered; the stored authority was already
 failing before these commits and was not re-derived.
+
+## Kotlin twin of 2026-10-11: Highlights
+
+Denis's `379d8631` (Highlights drawn as the Health app sets them) on Android, in this app's Material 3 look:
+`ui/highlights/` holds the math (`HealthHighlightMath`, held to the Swift file by a compiled oracle in
+`HealthHighlightMathTest`), the copy with `@NAME@` slots (`HighlightCopy`, 84 entries carried from the
+Swift catalogue into all nine languages), the loader, the six card bodies and the two pages ("<Name>
+Highlights", "All Highlights"). The cards show on the Summary (both layouts: three, then "Show All
+Highlights"), on the Steps, Calories and Asleep Time pages (three, "Show All" opens that metric's page), and
+on the Sleep tab (time asleep's week, month and year).
+
+Android differences: today against a usual day reads the strap's step counter only (nothing on Android
+stores the phone's steps by the hour); the Sleep tab's cards read the same series as the page "Show All"
+opens, not the nights list; the readiness cards keep their figure pair; the Activity hue stays Android's.
+Not seen on a phone yet.
+

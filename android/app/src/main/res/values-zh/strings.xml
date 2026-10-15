@@ -2583,4 +2583,102 @@
         <item quantity="other">添加好友，%1$d 个新请求</item>
     </plurals>
     <!-- Friends tab (reNOOP fork): end -->
+
+    <!-- Highlights (twin of the Swift catalogue's hl.* entries; slots are @NAME@, filled in HighlightCopy) -->
+    <string name="hl_all_title">所有提要</string>
+    <string name="hl_section_daily">每日提要</string>
+    <string name="hl_health_title">健康提要</string>
+    <string name="hl_section_monthly">月度提要</string>
+    <string name="hl_none">无提要</string>
+    <string name="hl_show_all">显示所有提要</string>
+    <string name="hl_section_weekly">每周提要</string>
+    <string name="hl_section_yearly">年度提要</string>
+    <plurals name="hl_days_month_workouts">
+        <item quantity="other">过去4周内有%d天你进行了体能训练。</item>
+    </plurals>
+    <plurals name="hl_days_week_workouts">
+        <item quantity="other">上周有%d天你进行了体能训练。</item>
+    </plurals>
+    <string name="hl_hr_recovery_cycle">上一次骑行后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_elliptical">上一次椭圆机训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_hiit">上一次HIIT训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_hike">上一次徒步后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_indoorcycle">上一次室内单车训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_indoorrun">上一次跑步后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_other">上一次体能训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_row">上一次划船训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_run">上一次跑步后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_stairs">上一次踏步机训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_walk">上一次步行后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_recovery_yoga">上一次瑜伽训练后的3分钟内，你的心率下降了@RECOVERY_HR_DELTA_UNIT@。</string>
+    <string name="hl_hr_sleep">你睡着时的心率介于@HEART_RATE_RANGE_PLUS_UNIT@之间。</string>
+    <string name="hl_hr_workout_cycle">上一次骑行中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_elliptical">上一次椭圆机训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_hiit">上一次HIIT训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_hike">上一次徒步训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_indoorcycle">上一次室内单车训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_indoorrun">上一次跑步训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_other">上一次训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_row">上一次划船训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_run">上一次跑步训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_stairs">上一次踏步机训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_walk">上一次步行训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_hr_workout_yoga">上一次瑜伽训练中，你的心率是@WORKOUT_HR_RANGE_UNIT@。</string>
+    <string name="hl_label_average">平均</string>
+    <string name="hl_label_max">最高</string>
+    <string name="hl_label_min">最低</string>
+    <string name="hl_label_plus1">+1分钟</string>
+    <string name="hl_label_plus2">+2分钟</string>
+    <string name="hl_label_plus3">+3分钟</string>
+    <string name="hl_label_today">今天</string>
+    <string name="hl_month_less_energy">平均而言，你本月消耗的千卡数比上个月少。</string>
+    <string name="hl_month_less_sleep">平均而言，你本月的睡眠时间比上个月少。</string>
+    <string name="hl_month_less_steps">平均而言，你本月的步数比上个月少。</string>
+    <string name="hl_month_less_workouts">你本月进行体能训练的次数比上个月少。</string>
+    <string name="hl_month_more_energy">平均而言，你本月消耗的千卡数比上个月多。</string>
+    <string name="hl_month_more_sleep">平均而言，你本月的睡眠时间比上个月多。</string>
+    <string name="hl_month_more_steps">平均而言，你本月的步数比上个月多。</string>
+    <string name="hl_month_more_workouts">你本月已完成的@DATA_TYPE_UNIT@比上个月多@DELTA_TOTAL@次。</string>
+    <string name="hl_month_same_energy">平均而言，你本月消耗的千卡数与上个月大致相同。</string>
+    <string name="hl_month_same_sleep">平均而言，你本月和上个月的睡眠时间大致相同。</string>
+    <string name="hl_month_same_steps">平均而言，本月的步数与上个月大致相同。</string>
+    <string name="hl_month_same_workouts">你本月和上个月做了@MOST_RECENT_VALUE_PLUS_UNIT@。</string>
+    <string name="hl_perday">\@UNIT@/天</string>
+    <string name="hl_progress_less_steps">到现在为止，你完成的步数比往常少。</string>
+    <string name="hl_progress_more_steps">到现在为止，你完成的步数比往常多。</string>
+    <string name="hl_progress_same_steps">今天到目前为止，你完成的步数正常。</string>
+    <string name="hl_range">\@LOW_RANGE_VALUE@–@HIGH_RANGE_VALUE@</string>
+    <string name="hl_title_for">\@DISPLAY_NAME@提要</string>
+    <string name="hl_title_hr_recovery">心率：体能训练后</string>
+    <string name="hl_title_hr_sleep">心率：睡眠</string>
+    <string name="hl_title_hr_workout">心率：体能训练</string>
+    <plurals name="hl_unit_bpm">
+        <item quantity="other">次/分钟</item>
+    </plurals>
+    <plurals name="hl_unit_kcal">
+        <item quantity="other">千卡</item>
+    </plurals>
+    <plurals name="hl_unit_steps">
+        <item quantity="other">步</item>
+    </plurals>
+    <plurals name="hl_unit_workouts">
+        <item quantity="other">体能训练</item>
+    </plurals>
+    <string name="hl_week_energy">你过去7天每天平均消耗@SEVEN_DAY_AVERAGE_UNIT@。</string>
+    <string name="hl_week_label_energy">平均千卡</string>
+    <string name="hl_week_label_sleep">平均睡眠时间</string>
+    <string name="hl_week_label_steps">平均步数</string>
+    <string name="hl_week_label_workouts">平均时间</string>
+    <string name="hl_week_sleep">你过去7天平均睡了@SEVEN_DAY_AVERAGE_UNIT@。</string>
+    <string name="hl_week_steps">你过去7天每天平均步行@SEVEN_DAY_AVERAGE_UNIT@。</string>
+    <string name="hl_week_workouts">你过去7天体能训练平均为@SEVEN_DAY_AVERAGE_UNIT@。</string>
+    <string name="hl_year_less_energy">平均而言，你今年消耗的千卡数相对于去年较少。</string>
+    <string name="hl_year_less_sleep">平均而言，你@THIS_YEAR@的睡眠时间比@LAST_YEAR@少。</string>
+    <string name="hl_year_less_steps">平均而言，你今年步行相对于去年较少。</string>
+    <string name="hl_year_more_energy">平均而言，你今年消耗的千卡数相对于去年较多。</string>
+    <string name="hl_year_more_sleep">平均而言，你@THIS_YEAR@的睡眠时间比@LAST_YEAR@多。</string>
+    <string name="hl_year_more_steps">平均而言，你今年步行相对于去年较多。</string>
+    <string name="hl_year_same_energy">平均而言，你今年和去年消耗的千卡数大致相同。</string>
+    <string name="hl_year_same_sleep">平均而言，你今年和去年的睡眠时间大致相同。</string>
+    <string name="hl_year_same_steps">平均而言，你今年的步数与去年大致相同。</string>
 </resources>

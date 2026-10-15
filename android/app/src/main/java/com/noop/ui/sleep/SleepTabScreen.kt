@@ -1,5 +1,9 @@
 package com.noop.ui.sleep
 
+import com.noop.ui.highlights.HealthHighlightLoader
+import com.noop.ui.highlights.HighlightGroup
+import com.noop.ui.highlights.HighlightItemCard
+import com.noop.ui.highlights.HighlightSubject
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -128,6 +132,8 @@ internal class SleepActions(
     val openSession: (String, Long) -> Unit,
     val openHistory: () -> Unit,
     val openSchedule: () -> Unit,
+    /** A subject's Highlights page (Time Asleep's, from this tab). */
+    val openHighlights: (HighlightSubject) -> Unit,
 )
 
 /** The undo offered after a delete (or a time edit that retired fragments of a bridged night). */
@@ -210,6 +216,12 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
     // The ledger is anchored to the latest night on record, so only the newest night's page shows it.
     val debt = nights.model?.sleepDebtLedger?.takeIf { nightOffset == 0 && it.nights.isNotEmpty() }
     var explain by remember { mutableStateOf<SleepExplain?>(null) }
+    // Health's time-asleep highlights (the week, the month, the year), read as the page "Show All" opens reads
+    // them, so the two cannot disagree.
+    var sleepHighlights by remember { mutableStateOf<HighlightGroup?>(null) }
+    LaunchedEffect(nights) {
+        sleepHighlights = HealthHighlightLoader.group(HighlightSubject.SLEEP, vm, context)
+    }
 
     var undo by remember { mutableStateOf<SleepUndo?>(null) }
     var editor by remember { mutableStateOf<OpenEditor?>(null) }
@@ -502,6 +514,24 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
                             SectionHeader(stringResource(R.string.sleep_section_week), action = what, onAction = { explain = SleepExplain.WEEK })
                             SleepWeekCard(week, debt, is24h, locale)
                         }
+                    }
+                }
+            }
+            sleepHighlights?.let { group ->
+                item(key = "highlights-header") {
+                    SectionHeader(
+                        stringResource(R.string.metric_highlights),
+                        modifier = Modifier.padding(horizontal = M3Dimens.screenPadding),
+                        action = stringResource(R.string.summary_show_all),
+                        onAction = { actions.openHighlights(HighlightSubject.SLEEP) },
+                    )
+                }
+                item(key = "highlights") {
+                    Column(
+                        Modifier.padding(horizontal = M3Dimens.screenPadding),
+                        verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
+                    ) {
+                        group.items.take(HealthHighlightLoader.LEAD_CARDS).forEach { HighlightItemCard(it) }
                     }
                 }
             }

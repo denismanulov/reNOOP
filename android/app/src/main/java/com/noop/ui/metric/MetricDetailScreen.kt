@@ -1,5 +1,10 @@
 package com.noop.ui.metric
 
+import com.noop.ui.highlights.HealthHighlightLoader
+import com.noop.ui.highlights.HighlightContext
+import com.noop.ui.highlights.HighlightGroup
+import com.noop.ui.highlights.HighlightItemCard
+import com.noop.ui.highlights.HighlightSubject
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -172,6 +177,7 @@ fun MetricDetailScreen(
     onOpenAllData: (MetricDescriptor) -> Unit,
     onOpenFullDay: () -> Unit,
     onOpenDataSources: () -> Unit,
+    onOpenHighlights: (HighlightSubject, MetricDescriptor) -> Unit,
 ) {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
@@ -211,6 +217,7 @@ fun MetricDetailScreen(
             onOpenAllData = { onOpenAllData(d) },
             onOpenFullDay = onOpenFullDay,
             onOpenDataSources = onOpenDataSources,
+            onOpenHighlights = { subject -> onOpenHighlights(subject, d) },
         )
     }
 }
@@ -228,6 +235,7 @@ private fun MetricPage(
     onOpenAllData: () -> Unit,
     onOpenFullDay: () -> Unit,
     onOpenDataSources: () -> Unit,
+    onOpenHighlights: (HighlightSubject) -> Unit,
 ) {
     val context = LocalContext.current
     val series = page?.series.orEmpty()
@@ -334,9 +342,29 @@ private fun MetricPage(
             )
         }
         if (loaded && series.isEmpty() && metric.key == "fitness_age") FitnessAgeEmptyCard(vm, days = vm.recentDays.value, onReload = onReload)
-        MetricHealthSeries.highlight(series)?.let { h ->
-            SectionHeader(stringResource(R.string.metric_highlights))
-            HighlightCard(metric, h, tint, category.icon, tokensOf, locale)
+        // Steps, calories and time asleep read as Health reads them: today, the week, the month, the year;
+        // after the page has its chart, since the highlights read the whole history (a year against the last).
+        val subject = HighlightSubject.ofMetricKey(metric.key)
+        if (subject != null) {
+            var group by remember(metric.id) { mutableStateOf<HighlightGroup?>(null) }
+            LaunchedEffect(metric.id, page) {
+                if (page != null) {
+                    group = HealthHighlightLoader.metric(subject, metric, series, vm, HighlightContext.of(context))
+                }
+            }
+            group?.let { g ->
+                SectionHeader(
+                    stringResource(R.string.metric_highlights),
+                    action = stringResource(R.string.summary_show_all),
+                    onAction = { onOpenHighlights(subject) },
+                )
+                g.items.take(HealthHighlightLoader.LEAD_CARDS).forEach { HighlightItemCard(it) }
+            }
+        } else {
+            MetricHealthSeries.highlight(series)?.let { h ->
+                SectionHeader(stringResource(R.string.metric_highlights))
+                HighlightCard(metric, h, tint, category.icon, tokensOf, locale)
+            }
         }
         SectionHeader(stringResource(R.string.metric_options))
         OptionsGroup(metric, page, onOpenAllData, onOpenFullDay, onOpenDataSources, vm.activeStrapId)

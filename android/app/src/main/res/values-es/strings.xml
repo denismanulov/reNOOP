@@ -2605,4 +2605,108 @@
         <item quantity="other">Añadir un amigo, %1$d solicitudes nuevas</item>
     </plurals>
     <!-- Friends tab (reNOOP fork): end -->
+
+    <!-- Highlights (twin of the Swift catalogue's hl.* entries; slots are @NAME@, filled in HighlightCopy) -->
+    <string name="hl_all_title">Todos los datos importantes</string>
+    <string name="hl_section_daily">Datos importantes por día</string>
+    <string name="hl_health_title">Datos importantes de salud</string>
+    <string name="hl_section_monthly">Datos importantes por mes</string>
+    <string name="hl_none">Sin datos importantes</string>
+    <string name="hl_show_all">Mostrar todos los datos importantes</string>
+    <string name="hl_section_weekly">Datos importantes por semana</string>
+    <string name="hl_section_yearly">Datos importantes por año</string>
+    <plurals name="hl_days_month_workouts">
+        <item quantity="one">Has entrenado %d día en las últimas cuatro semanas.</item>
+        <item quantity="other">Has entrenado %d días en las últimas cuatro semanas.</item>
+    </plurals>
+    <plurals name="hl_days_week_workouts">
+        <item quantity="one">Has entrenado %d día en la última semana.</item>
+        <item quantity="other">Has entrenado %d días en la última semana.</item>
+    </plurals>
+    <string name="hl_hr_recovery_cycle">En los tres minutos posteriores a tu último entreno con la bici, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_elliptical">En los tres minutos posteriores a tu último entreno con la elíptica, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_hiit">En los tres minutos posteriores a tu último entreno de intervalos, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_hike">En los tres minutos posteriores a tu última ruta de senderismo, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_indoorcycle">En los tres minutos posteriores a tu último entreno con la bici estática, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_indoorrun">En los tres minutos posteriores a tu última carrera, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_other">En los tres minutos posteriores a tu último entreno, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_row">En los tres minutos posteriores a tu última sesión de remo, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_run">En los tres minutos posteriores a tu última carrera, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_stairs">En los tres minutos posteriores a tu último entreno con la stepper, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_walk">En los tres minutos posteriores a tu último entreno de andar, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_yoga">En los tres minutos posteriores a tu último entreno de yoga, tu frecuencia cardiaca bajó @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_sleep">Tu frecuencia cardiaca ha oscilado entre @HEART_RATE_RANGE_PLUS_UNIT@ mientras dormías.</string>
+    <string name="hl_hr_workout_cycle">Durante tu último entreno con la bici, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_elliptical">Durante tu último entreno con la elíptica, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_hiit">Durante tu último entreno de intervalos, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_hike">Durante tu última ruta de senderismo, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_indoorcycle">Durante tu último entreno con la bici estática, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_indoorrun">Durante tu última carrera, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_other">Durante tu último entreno, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_row">Durante tu última sesión de remo, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_run">Durante tu última carrera, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_stairs">Durante tu último entreno con stepper, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_walk">Durante tu último paseo, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_yoga">Durante tu último entreno de yoga, tu frecuencia cardiaca fue de entre @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_label_average">Promedio</string>
+    <string name="hl_label_max">Máx.</string>
+    <string name="hl_label_min">Mín.</string>
+    <string name="hl_label_plus1">+1 min</string>
+    <string name="hl_label_plus2">+2 min</string>
+    <string name="hl_label_plus3">+3 min</string>
+    <string name="hl_label_today">Hoy</string>
+    <string name="hl_month_less_energy">De media, este mes estás quemando menos kilocalorías que el mes pasado.</string>
+    <string name="hl_month_less_sleep">De media, este mes estás durmiendo menos que el mes pasado.</string>
+    <string name="hl_month_less_steps">De media, llevas menos pasos este mes que el mes pasado.</string>
+    <string name="hl_month_less_workouts">Este mes has completado menos entrenos que el mes pasado.</string>
+    <string name="hl_month_more_energy">De media, este mes estás quemando más kilocalorías que el mes pasado.</string>
+    <string name="hl_month_more_sleep">De media, este mes estás durmiendo más que el mes pasado.</string>
+    <string name="hl_month_more_steps">De media, llevas más pasos este mes que el mes pasado.</string>
+    <string name="hl_month_more_workouts">Has completado @DELTA_TOTAL@ @DATA_TYPE_UNIT@ más este mes que el mes pasado.</string>
+    <string name="hl_month_same_energy">De media, este mes estás quemando aproximadamente la misma cantidad de kilocalorías que el mes pasado.</string>
+    <string name="hl_month_same_sleep">De media, este mes estás durmiendo aproximadamente el mismo tiempo que el mes pasado.</string>
+    <string name="hl_month_same_steps">De media, llevas aproximadamente los mismos pasos este mes que el mes pasado.</string>
+    <string name="hl_month_same_workouts">Has completado @MOST_RECENT_VALUE_PLUS_UNIT@ tanto este mes como el mes pasado.</string>
+    <string name="hl_perday">\@UNIT@/día</string>
+    <string name="hl_progress_less_steps">Hasta ahora, llevas menos pasos de lo habitual.</string>
+    <string name="hl_progress_more_steps">Hasta ahora, llevas más pasos de lo habitual.</string>
+    <string name="hl_progress_same_steps">A esta hora del día, llevas la cantidad habitual de pasos.</string>
+    <string name="hl_range">\@LOW_RANGE_VALUE@–@HIGH_RANGE_VALUE@</string>
+    <string name="hl_title_for">Datos importantes de @DISPLAY_NAME@</string>
+    <string name="hl_title_hr_recovery">Frecuencia cardiaca: tras el ejercicio</string>
+    <string name="hl_title_hr_sleep">Frecuencia cardiaca: sueño</string>
+    <string name="hl_title_hr_workout">Frecuencia cardiaca: entreno</string>
+    <plurals name="hl_unit_bpm">
+        <item quantity="one">latido por minuto</item>
+        <item quantity="other">latidos por minuto</item>
+    </plurals>
+    <plurals name="hl_unit_kcal">
+        <item quantity="one">kilocaloría</item>
+        <item quantity="other">kilocalorías</item>
+    </plurals>
+    <plurals name="hl_unit_steps">
+        <item quantity="one">paso</item>
+        <item quantity="other">pasos</item>
+    </plurals>
+    <plurals name="hl_unit_workouts">
+        <item quantity="one">entreno</item>
+        <item quantity="other">entrenos</item>
+    </plurals>
+    <string name="hl_week_energy">Has quemado una media de @SEVEN_DAY_AVERAGE_UNIT@ al día en los últimos siete días.</string>
+    <string name="hl_week_label_energy">Media de Kilocalorías</string>
+    <string name="hl_week_label_sleep">Tiempo medio durmiendo</string>
+    <string name="hl_week_label_steps">Media de pasos</string>
+    <string name="hl_week_label_workouts">Tiempo medio</string>
+    <string name="hl_week_sleep">Has dormido una media de @SEVEN_DAY_AVERAGE_UNIT@ en los últimos siete días.</string>
+    <string name="hl_week_steps">Has andado una media de @SEVEN_DAY_AVERAGE_UNIT@ al día en los últimos siete días.</string>
+    <string name="hl_week_workouts">Has entrenado una media de @SEVEN_DAY_AVERAGE_UNIT@ en los últimos siete días.</string>
+    <string name="hl_year_less_energy">De media, este año estás quemando menos kilocalorías que el año pasado.</string>
+    <string name="hl_year_less_sleep">De media, estás durmiendo menos en @THIS_YEAR@ que en @LAST_YEAR@.</string>
+    <string name="hl_year_less_steps">De media, estás andando menos este año que el año pasado.</string>
+    <string name="hl_year_more_energy">De media, este año estás quemando más kilocalorías que el año pasado.</string>
+    <string name="hl_year_more_sleep">De media, estás durmiendo más en @THIS_YEAR@ que en @LAST_YEAR@.</string>
+    <string name="hl_year_more_steps">De media, estás andando más este año que el año pasado.</string>
+    <string name="hl_year_same_energy">De media, este año estás quemando aproximadamente la misma cantidad de kilocalorías que el año pasado.</string>
+    <string name="hl_year_same_sleep">De media, este año estás durmiendo aproximadamente lo mismo que el año pasado.</string>
+    <string name="hl_year_same_steps">Tu media de pasos este año es aproximadamente la misma que el año pasado.</string>
 </resources>

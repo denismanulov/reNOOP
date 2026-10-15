@@ -2609,4 +2609,120 @@
         <item quantity="other">Dodaj znajomego, %1$d nowej prośby</item>
     </plurals>
     <!-- Friends tab (reNOOP fork): end -->
+
+    <!-- Highlights (twin of the Swift catalogue's hl.* entries; slots are @NAME@, filled in HighlightCopy) -->
+    <string name="hl_all_title">Wszystkie przeglądy</string>
+    <string name="hl_section_daily">Przegląd dzienny</string>
+    <string name="hl_health_title">Przegląd zdrowia</string>
+    <string name="hl_section_monthly">Przegląd miesięczny</string>
+    <string name="hl_none">Brak przeglądów</string>
+    <string name="hl_show_all">Pokaż wszystkie przeglądy</string>
+    <string name="hl_section_weekly">Przegląd tygodniowy</string>
+    <string name="hl_section_yearly">Przegląd roczny</string>
+    <plurals name="hl_days_month_workouts">
+        <item quantity="one">Treningi zostały zapisane w %d dniu w ciągu ostatnich 4 tygodni.</item>
+        <item quantity="few">Treningi zostały zapisane w %d dniach w ciągu ostatnich 4 tygodni.</item>
+        <item quantity="many">Treningi zostały zapisane w %d dniach w ciągu ostatnich 4 tygodni.</item>
+        <item quantity="other">Treningi zostały zapisane w %d dnia w ciągu ostatnich 4 tygodni.</item>
+    </plurals>
+    <plurals name="hl_days_week_workouts">
+        <item quantity="one">Treningi zostały zapisane w %d dniu w ciągu ostatniego tygodnia.</item>
+        <item quantity="few">Treningi zostały zapisane w %d dniach w ciągu ostatniego tygodnia.</item>
+        <item quantity="many">Treningi zostały zapisane w %d dniach w ciągu ostatniego tygodnia.</item>
+        <item quantity="other">Treningi zostały zapisane w %d dnia w ciągu ostatniego tygodnia.</item>
+    </plurals>
+    <string name="hl_hr_recovery_cycle">W ciągu 3 minut od zakończenia ostatniej jazdy na rowerze Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_elliptical">W ciągu 3 minut od zakończenia ostatniego treningu na orbitreku Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_hiit">W ciągu 3 minut od zakończenia ostatniego treningu HIIT Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_hike">W ciągu 3 minut od zakończenia ostatniej wędrówki Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_indoorcycle">W ciągu 3 minut od zakończenia ostatniego treningu na rowerze (na sali) Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_indoorrun">W ciągu 3 minut od zakończenia ostatniego biegu Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_other">W ciągu 3 minut od zakończenia ostatniego treningu Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_row">W ciągu 3 minut od zakończenia ostatniego treningu wioślarskiego Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_run">W ciągu 3 minut od zakończenia ostatniego biegu Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_stairs">W ciągu 3 minut od zakończenia ostatniego treningu na stepperze Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_walk">W ciągu 3 minut od zakończenia ostatniego marszu Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_recovery_yoga">W ciągu 3 minut od zakończenia ostatniej sesji jogi Twoje tętno spadło o @RECOVERY_HR_DELTA_UNIT@.</string>
+    <string name="hl_hr_sleep">Przedział Twojego tętna podczas snu wynosił @HEART_RATE_RANGE_PLUS_UNIT@.</string>
+    <string name="hl_hr_workout_cycle">Podczas ostatniej jazdy na rowerze Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_elliptical">Podczas ostatniego treningu na orbitreku Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_hiit">Podczas ostatniego treningu HIIT Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_hike">Podczas ostatniej wędrówki Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_indoorcycle">Podczas ostatniego treningu na rowerze (na sali) Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_indoorrun">Podczas ostatniego biegu Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_other">Podczas ostatniego treningu Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_row">Podczas ostatniego treningu wioślarskiego Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_run">Podczas ostatniego biegu Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_stairs">Podczas ostatniego treningu na stepperze Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_walk">Podczas ostatniego marszu Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_hr_workout_yoga">Podczas ostatniej sesji jogi Twoje tętno oscylowało w przedziale @WORKOUT_HR_RANGE_UNIT@.</string>
+    <string name="hl_label_average">Średnia</string>
+    <string name="hl_label_max">Maks.</string>
+    <string name="hl_label_min">Min.</string>
+    <string name="hl_label_plus1">+1 min</string>
+    <string name="hl_label_plus2">+2 min</string>
+    <string name="hl_label_plus3">+3 min</string>
+    <string name="hl_label_today">Dzisiaj</string>
+    <string name="hl_month_less_energy">Przeciętnie, w tym miesiącu nie spalasz tylu kilokalorii niż w zeszłym.</string>
+    <string name="hl_month_less_sleep">Przeciętnie, w tym miesiącu śpisz mniej niż w zeszłym.</string>
+    <string name="hl_month_less_steps">Przeciętnie, w tym miesiącu robisz mniej kroków niż w zeszłym.</string>
+    <string name="hl_month_less_workouts">W tym miesiącu nie udało Ci się ukończyć tylu treningów co w zeszłym.</string>
+    <string name="hl_month_more_energy">Przeciętnie, w tym miesiącu spalasz więcej kilokalorii niż w zeszłym.</string>
+    <string name="hl_month_more_sleep">Przeciętnie, w tym miesiącu śpisz więcej niż w zeszłym.</string>
+    <string name="hl_month_more_steps">Przeciętnie, w tym miesiącu robisz więcej kroków niż w zeszłym.</string>
+    <string name="hl_month_more_workouts">W tym miesiącu udało Ci się ukończyć więcej @DATA_TYPE_UNIT@ (o @DELTA_TOTAL@) niż w zeszłym.</string>
+    <string name="hl_month_same_energy">Przeciętnie, w tym miesiącu spalasz mniej więcej tyle samo kilokalorii co w zeszłym.</string>
+    <string name="hl_month_same_sleep">Przeciętnie, w tym miesiącu śpisz mniej więcej tyle samo co w zeszłym.</string>
+    <string name="hl_month_same_steps">Przeciętnie, w tym miesiącu robisz mniej więcej tyle samo kroków co w zeszłym.</string>
+    <string name="hl_month_same_workouts">W tym i w zeszłym miesiącu udało Ci się ukończyć tyle samo @MOST_RECENT_VALUE_PLUS_UNIT@.</string>
+    <string name="hl_perday">\@UNIT@/dzień</string>
+    <string name="hl_progress_less_steps">Udało Ci się przejść mniej niż zazwyczaj do tej pory.</string>
+    <string name="hl_progress_more_steps">Udało Ci się przejść więcej niż zazwyczaj do tej pory.</string>
+    <string name="hl_progress_same_steps">Udało Ci się zrobić tyle samo kroków co zwykle do tej pory.</string>
+    <string name="hl_range">\@LOW_RANGE_VALUE@–@HIGH_RANGE_VALUE@</string>
+    <string name="hl_title_for">\@DISPLAY_NAME@ – przegląd</string>
+    <string name="hl_title_hr_recovery">Tętno: po treningu</string>
+    <string name="hl_title_hr_sleep">Tętno: sen</string>
+    <string name="hl_title_hr_workout">Tętno: trening</string>
+    <plurals name="hl_unit_bpm">
+        <item quantity="one">uderzenie na minutę</item>
+        <item quantity="few">uderzenia na minutę</item>
+        <item quantity="many">uderzeń na minutę</item>
+        <item quantity="other">uderzenia na minutę</item>
+    </plurals>
+    <plurals name="hl_unit_kcal">
+        <item quantity="one">kilokaloria</item>
+        <item quantity="few">kilokalorie</item>
+        <item quantity="many">kilokalorii</item>
+        <item quantity="other">kilokalorii</item>
+    </plurals>
+    <plurals name="hl_unit_steps">
+        <item quantity="one">krok</item>
+        <item quantity="few">kroki</item>
+        <item quantity="many">kroków</item>
+        <item quantity="other">kroku</item>
+    </plurals>
+    <plurals name="hl_unit_workouts">
+        <item quantity="one">trening</item>
+        <item quantity="few">treningi</item>
+        <item quantity="many">treningów</item>
+        <item quantity="other">treningu</item>
+    </plurals>
+    <string name="hl_week_energy">W ciągu ostatnich 7 dni udało Ci się spalić średnio @SEVEN_DAY_AVERAGE_UNIT@ dziennie.</string>
+    <string name="hl_week_label_energy">Kilokalorii (średnio)</string>
+    <string name="hl_week_label_sleep">Czas snu (średnio)</string>
+    <string name="hl_week_label_steps">Kroki (średnio)</string>
+    <string name="hl_week_label_workouts">Średni czas</string>
+    <string name="hl_week_sleep">W ciągu ostatnich 7 dni udało Ci się przespać średnio @SEVEN_DAY_AVERAGE_UNIT@ dziennie.</string>
+    <string name="hl_week_steps">W ciągu ostatnich 7 dni udało Ci się zrobić średnio @SEVEN_DAY_AVERAGE_UNIT@ dziennie.</string>
+    <string name="hl_week_workouts">W ciągu ostatnich 7 dni udało Ci się trenować średnio @SEVEN_DAY_AVERAGE_UNIT@ dziennie.</string>
+    <string name="hl_year_less_energy">Przeciętnie, w tym roku spalasz mniej kilokalorii niż w zeszłym.</string>
+    <string name="hl_year_less_sleep">Średnia długość Twojego snu w roku @THIS_YEAR@ jest mniejsza niż w roku @LAST_YEAR@.</string>
+    <string name="hl_year_less_steps">Przeciętnie, w tym roku nie robisz tylu kroków co w zeszłym.</string>
+    <string name="hl_year_more_energy">Przeciętnie, w tym roku spalasz więcej kilokalorii niż w zeszłym.</string>
+    <string name="hl_year_more_sleep">Średnia długość Twojego snu w roku @THIS_YEAR@ jest większa niż w roku @LAST_YEAR@.</string>
+    <string name="hl_year_more_steps">Przeciętnie, w tym roku robisz więcej kroków niż w zeszłym.</string>
+    <string name="hl_year_same_energy">Przeciętnie, w tym roku spalasz mniej więcej tyle samo kilokalorii co w zeszłym.</string>
+    <string name="hl_year_same_sleep">Przeciętnie, w tym roku śpisz mniej więcej tyle samo co w zeszłym.</string>
+    <string name="hl_year_same_steps">Przeciętnie, w tym roku robisz mniej więcej tyle samo kroków co w zeszłym.</string>
 </resources>

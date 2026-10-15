@@ -30,6 +30,7 @@ twin. This page is the ordered list of that work for whoever (person or agent) b
 | 6 | Friends tab client | `45dfa0db`, `990ef2e8` (server only) | yes: the design is not final | server only; no client exists on either platform |
 | 7 | Sleep tab rethought around answers | `3545cfa9`, `a91adcda`, `4f6c2764` | yes: follow it on iOS or keep the Health layout | daily use, one phone |
 | 8 | Coach conversation redrawn, and Coach as a tab | `f20adffb`, `12e1abbf` | yes: follow it on iOS or keep the Messages layout | the conversation on one phone; the tab compiled and unit-tested only |
+| 9 | Two Highlights plurals that kept an English word | this branch's Highlights commit | no | the Android strings test |
 
 Nothing to do on Swift: `36af70f2` (the short-nap review list). Nap detection and its review queue
 (`NapDetector`, `NapStore`) exist only on Android.
@@ -261,6 +262,17 @@ native on iOS 26. The tab is a placement choice for the iOS owner.
 | Finding the words… | Подбираю слова… |
 | What would you like to know? | Что хотите узнать? |
 | Jump to latest | К последним сообщениям |
+
+## 9. Two Highlights plurals that kept an English word
+
+Suggested subject: `fix: the ru and pl workout-days highlights name their days in their own language`.
+
+In `Strand/Resources/Localizable.xcstrings`, the `other` form of `hl.days.week.workouts %lld` and
+`hl.days.month.workouts %lld` reads "%lld days" in Russian and Polish. `other` is the form those languages
+use for a fraction, which a count of days never is, so no wearer sees it today; it would print if the rules
+or the count ever changed. Android carries "%d дня" (ru) and "%d dnia" (pl) there. The Android strings test
+(`HighlightStringsTest`) fails on an English " days " in any translation; the Swift catalogue test checks
+slots only.
 
 ## Findings that changed no code
 
