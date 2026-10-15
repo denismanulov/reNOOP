@@ -49,6 +49,10 @@ enum TabRoute: Hashable {
     case settings
     /// One person's page on the Friends tab, by account id (the account's own page included).
     case friend(String)
+    /// One subject's highlights, filed by how often each is renewed (Health's "<Name> Highlights").
+    case highlights(HighlightSubject.Kind)
+    /// Every subject that has a highlight (Health's "All Highlights").
+    case allHighlights
 }
 
 extension View {
@@ -87,6 +91,8 @@ extension View {
             case .trainingLoad: TrainingLoadView()
             case .settings: SettingsView()
             case .friend(let id): FriendDetailView(personID: id)
+            case .highlights(let subject): SubjectHighlightsView(subject: subject)
+            case .allHighlights: AllHighlightsView()
             }
         }
     }

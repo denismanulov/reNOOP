@@ -132,10 +132,8 @@ struct SleepHighlight: Identifiable, Equatable {
     /// The two figures a Health highlight sets under its sentence, and the nights behind them.
     enum Detail: Equatable {
         /// Usual bedtime vs last night's, on the night clock (`SleepNightEntry.onsetOfNightMin`); `nights`
-        /// are the compared nights then last night, oldest first.
-        case bedtime(usualMin: Double, lastMin: Double, nights: [Double])
-        /// This week's and the week before's average time asleep; `nights` are this week's, oldest first.
-        case duration(averageMin: Double, priorAverageMin: Double, nights: [Double])
+        /// are the compared nights then last night, oldest first, from `first` to `last`.
+        case bedtime(usualMin: Double, lastMin: Double, nights: [Double], first: Date, last: Date)
     }
 
     let id: String
@@ -144,17 +142,20 @@ struct SleepHighlight: Identifiable, Equatable {
 }
 
 enum SleepHighlights {
+    /// The nights a usual bedtime is read from: a fortnight with last night, as Health draws it.
+    static let bedtimeNights = 13
+
     /// Plain-language reads of the recent nights, Health-style. Each needs enough history to compare
     /// against; with too little it is simply left out.
-    static func make(entries: [SleepNightEntry], anchor: Date, calendar: Calendar = .current) -> [SleepHighlight] {
-        [bedtime(entries), duration(entries, anchor: anchor, calendar: calendar)].compactMap { $0 }
+    static func make(entries: [SleepNightEntry]) -> [SleepHighlight] {
+        [bedtime(entries)].compactMap { $0 }
     }
 
-    /// Last night's bedtime against the mean of up to seven nights before it (needs three).
+    /// Last night's bedtime against the mean of up to thirteen nights before it (needs three).
     static func bedtime(_ entries: [SleepNightEntry]) -> SleepHighlight? {
         guard let last = entries.last else { return nil }
-        let before = entries.dropLast().suffix(7)
-        guard before.count >= 3 else { return nil }
+        let before = entries.dropLast().suffix(bedtimeNights)
+        guard before.count >= 3, let first = before.first else { return nil }
         let usual = before.map(\.onsetOfNightMin).reduce(0, +) / Double(before.count)
         let diff = Int(((last.onsetOfNightMin - usual) / 5).rounded()) * 5
         let sentence: String
@@ -167,31 +168,12 @@ enum SleepHighlights {
         }
         return SleepHighlight(id: "bedtime", sentence: sentence,
                               detail: .bedtime(usualMin: usual, lastMin: last.onsetOfNightMin,
-                                               nights: before.map(\.onsetOfNightMin) + [last.onsetOfNightMin]))
+                                               nights: before.map(\.onsetOfNightMin) + [last.onsetOfNightMin],
+                                               first: first.day, last: last.day))
     }
 
-    /// The last seven days' average time asleep against the seven before (needs three nights in each).
-    static func duration(_ entries: [SleepNightEntry], anchor: Date, calendar: Calendar = .current) -> SleepHighlight? {
-        let today = calendar.startOfDay(for: anchor)
-        guard let weekAgo = calendar.date(byAdding: .day, value: -7, to: today),
-              let twoWeeksAgo = calendar.date(byAdding: .day, value: -14, to: today) else { return nil }
-        let recent = entries.filter { $0.day > weekAgo && $0.day <= today }
-        let prior = entries.filter { $0.day > twoWeeksAgo && $0.day <= weekAgo }
-        guard recent.count >= 3, prior.count >= 3 else { return nil }
-        let avg = recent.map(\.asleepMin).reduce(0, +) / Double(recent.count)
-        let priorAvg = prior.map(\.asleepMin).reduce(0, +) / Double(prior.count)
-        let diff = Int(((avg - priorAvg) / 5).rounded()) * 5
-        let avgText = SleepFormat.duration(minutes: avg)
-        let sentence: String
-        if abs(diff) < 10 {
-            sentence = String(localized: "Over the last 7 days you slept \(avgText) a night on average, about the same as the week before.")
-        } else if diff > 0 {
-            sentence = String(localized: "Over the last 7 days you slept \(avgText) a night on average, \(SleepFormat.duration(minutes: Double(diff))) more than the week before.")
-        } else {
-            sentence = String(localized: "Over the last 7 days you slept \(avgText) a night on average, \(SleepFormat.duration(minutes: Double(-diff))) less than the week before.")
-        }
-        return SleepHighlight(id: "duration", sentence: sentence,
-                              detail: .duration(averageMin: avg, priorAverageMin: priorAvg,
-                                                nights: recent.map(\.asleepMin)))
+    /// The nights as the daily series the week, month and year highlights read ("yyyy-MM-dd" → minutes asleep).
+    static func series(_ entries: [SleepNightEntry], calendar: Calendar = .current) -> [(day: String, value: Double)] {
+        entries.map { (day: HealthHighlightMath.key($0.day, calendar: calendar), value: $0.asleepMin) }
     }
 }

@@ -783,6 +783,20 @@ enum DemoScreens {
                 .sheet(isPresented: .constant(args.contains("--labbook-add"))) { MarkerEditorView { _ in } })
         case "explore":  return AnyView(NavigationStack { AllMetricsView().tabRouteDestinations() })
         // One metric's page: `--demo-screen metric --demo-metric hrv` (a catalog key; defaults to HRV).
+        // Highlights: every subject, or one with `--demo-highlights steps|energy|sleep|workouts|heart`.
+        case "highlights":
+            let name = args.firstIndex(of: "--demo-highlights").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+            let subject: HighlightSubject.Kind?
+            switch name {
+            case "steps": subject = .metric(key: "steps", source: MetricCatalog.combinedStepsSource)
+            case "energy": subject = .metric(key: "active_kcal", source: "apple-health")
+            case "sleep": subject = .metric(key: "sleep_total_min", source: Repository.whoopSource)
+            case "workouts": subject = .workouts
+            case "heart": subject = .heartRate
+            default: subject = nil
+            }
+            if let subject { return AnyView(SubjectHighlightsView(subject: subject).tabRouteDestinations()) }
+            return AnyView(AllHighlightsView().tabRouteDestinations())
         case "metric":
             let key = args.firstIndex(of: "--demo-metric").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "hrv"
             return MetricCatalog.all.first { $0.key == key }.map { AnyView(MetricDetailView(metric: $0)) }

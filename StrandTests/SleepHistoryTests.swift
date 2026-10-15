@@ -72,25 +72,34 @@ final class SleepHistoryTests: XCTestCase {
     func testBedtimeHighlightCarriesTheFiguresItCompares() {
         let usual = (1...7).map { night(-$0, bedMin: 300) }.reversed()
         let h = SleepHighlights.bedtime(Array(usual) + [night(0, bedMin: 340)])
-        guard case .bedtime(let usualMin, let lastMin, let nights)? = h?.detail else {
+        guard case .bedtime(let usualMin, let lastMin, let nights, let first, let last)? = h?.detail else {
             return XCTFail("no bedtime detail")
         }
         XCTAssertEqual(usualMin, 300, accuracy: 0.001)
         XCTAssertEqual(lastMin, 340, accuracy: 0.001)
         XCTAssertEqual(nights.count, 8)
         XCTAssertEqual(nights.last ?? 0, 340, accuracy: 0.001)
+        XCTAssertEqual(first, day(-7))
+        XCTAssertEqual(last, day(0))
+    }
+
+    func testBedtimeHighlightReadsAFortnight() {
+        let nights = (1...20).map { night(-$0, bedMin: $0 <= 13 ? 300 : 600) }.reversed()
+        guard case .bedtime(let usualMin, _, let shown, _, _)? =
+                SleepHighlights.bedtime(Array(nights) + [night(0, bedMin: 300)])?.detail else {
+            return XCTFail("no bedtime detail")
+        }
+        XCTAssertEqual(usualMin, 300, accuracy: 0.001)
+        XCTAssertEqual(shown.count, 14)
+    }
+
+    func testNightsAsADailySeries() {
+        let series = SleepHighlights.series([night(-1, asleep: 400), night(0, asleep: 460)], calendar: cal)
+        XCTAssertEqual(series.map(\.value), [400, 460])
+        XCTAssertEqual(series.last?.day, HealthHighlightMath.key(day(0), calendar: cal))
     }
 
     func testHighlightsNeedHistory() {
         XCTAssertNil(SleepHighlights.bedtime([night(-1), night(0)]))
-        XCTAssertNil(SleepHighlights.duration([night(-1), night(0)], anchor: day(0), calendar: cal))
-    }
-
-    func testDurationHighlightComparesWeeks() {
-        let prior = (8...12).map { night(-$0, asleep: 400) }
-        let recent = (0...4).map { night(-$0, asleep: 460) }
-        let h = SleepHighlights.duration((prior + recent).sorted { $0.day < $1.day }, anchor: day(0), calendar: cal)
-        XCTAssertEqual(h?.id, "duration")
-        XCTAssertEqual(h?.sentence, String(localized: "Over the last 7 days you slept \(SleepFormat.duration(minutes: 460)) a night on average, \(SleepFormat.duration(minutes: 60)) more than the week before."))
     }
 }

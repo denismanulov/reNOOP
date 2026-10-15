@@ -46,6 +46,8 @@ extension EnvironmentValues {
 extension EdgeInsets {
     /// A Summary card's own margins: 16 at the sides, 12 over the title row, 14 under the last line.
     static var summaryCard: EdgeInsets { EdgeInsets(top: 12, leading: 16, bottom: 14, trailing: 16) }
+    /// A Highlights card: 16 all round its top and sides, as Health sets one.
+    static var highlightCard: EdgeInsets { EdgeInsets(top: 16, leading: 16, bottom: 14, trailing: 16) }
     /// A card of rows set edge to edge, each carrying its own vertical padding and hairline (Health's
     /// grouped list inside a card).
     static var summaryCardList: EdgeInsets { EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) }
@@ -60,6 +62,8 @@ struct SectionHeader: View {
     let title: LocalizedStringKey
     var actionTitle: LocalizedStringKey? = nil
     var action: (() -> Void)? = nil
+    /// The page the trailing action opens, for a header whose action is a push rather than a closure.
+    var link: TabRoute? = nil
 
     @Environment(\.dynamicTypeSize) private var dts
 
@@ -72,21 +76,28 @@ struct SectionHeader: View {
                 .font(StrandFont.pro(22, weight: .bold))
                 .foregroundStyle(StrandPalette.textPrimary)
             if !dts.isAccessibilitySize { Spacer() }
-            if let actionTitle, let action {
-                Button(action: action) {
-                    Text(actionTitle)
-                        .font(StrandFont.body)
-                        .foregroundStyle(StrandPalette.accent)
-                        // A 44 pt target around the text without moving the header (CR-6).
-                        .contentShape(Rectangle().inset(by: -12))
-                }
-                .buttonStyle(.plain)
+            if let actionTitle, let link {
+                NavigationLink(value: link) { actionLabel(actionTitle) }
+                    .buttonStyle(.plain)
+            } else if let actionTitle, let action {
+                Button(action: action) { actionLabel(actionTitle) }
+                    .buttonStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
         .padding(.top, NoopMetrics.space4)
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension SectionHeader {
+    fileprivate func actionLabel(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(StrandFont.body)
+            .foregroundStyle(StrandPalette.accent)
+            // A 44 pt target around the text without moving the header (CR-6).
+            .contentShape(Rectangle().inset(by: -12))
     }
 }
 
@@ -267,22 +278,22 @@ struct HighlightCard<Figures: View, Chart: View>: View {
     /// On for a card that opens a page (Summary's), off for one that opens nothing.
     var chevron = false
     /// The gap between the card's rows.
-    var spacing: CGFloat = 8
+    var spacing: CGFloat = 10
     /// Off when the highlight has no evidence to set under its sentence (then no hairline either).
     var showsEvidence = true
     @ViewBuilder var figures: Figures
     @ViewBuilder var chart: Chart
 
     var body: some View {
-        SummaryCard {
+        SummaryCard(insets: .highlightCard) {
             VStack(alignment: .leading, spacing: spacing) {
-                SummaryCardTitleRow(icon: icon, title: title, tint: tint, chevron: chevron)
+                titleRow
                 Text(verbatim: sentence)
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 if showsEvidence {
-                    Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth)
+                    Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth / 2)
                     figures
                     chart
                 }
@@ -292,10 +303,33 @@ struct HighlightCard<Figures: View, Chart: View>: View {
     }
 }
 
+extension HighlightCard {
+    /// A highlight's category line as Health sets it: a size under a Summary card's, the glyph close
+    /// against the name.
+    private var titleRow: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(StrandFont.pro(15, weight: .semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(verbatim: title)
+                .font(StrandFont.pro(15, weight: .semibold))
+                .foregroundStyle(StrandPalette.text(for: tint))
+            Spacer(minLength: 8)
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(StrandFont.pro(12, weight: .semibold))
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
 extension HighlightCard where Chart == EmptyView {
     /// A highlight whose figures carry their own bars (Summary's figure pair).
     init(icon: String, title: String, tint: Color, sentence: String, chevron: Bool = false,
-         spacing: CGFloat = 8, showsEvidence: Bool = true, @ViewBuilder figures: () -> Figures) {
+         spacing: CGFloat = 10, showsEvidence: Bool = true, @ViewBuilder figures: () -> Figures) {
         self.init(icon: icon, title: title, tint: tint, sentence: sentence, chevron: chevron,
                   spacing: spacing, showsEvidence: showsEvidence, figures: figures, chart: { EmptyView() })
     }
@@ -304,23 +338,25 @@ extension HighlightCard where Chart == EmptyView {
 struct SummaryHighlightCard: View {
     let highlight: SummaryHighlight
     /// The last seven days of Effort, drawn under a training-variety highlight (which has no figure pair).
-    var effortWeek: [Double] = []
+    var effortWeek: [Double?] = []
+    /// Those days' keys ("yyyy-MM-dd"), oldest first, and how an Effort figure is written.
+    var effortDays: [String] = []
+    var effortFigure: (Double) -> [MetricHealthStyle.Token] = { [.init(text: ReadinessCopy.number($0, decimals: 1), isUnit: false)] }
 
     var body: some View {
         let pair = figures
         // The claim is "every day looks alike": seven near-equal bars show it at a glance, where the
         // monotony index itself is a number nobody reads.
-        let showsWeek = pair == nil && highlight.key == "monotony" && effortWeek.count >= 2
+        let week = pair == nil && highlight.key == "monotony" ? effortSevenDay : nil
+        let showsWeek = week != nil
         NavigationLink(value: TabRoute.metric(highlight.routeKey)) {
             HighlightCard(icon: icon, title: highlight.title, tint: tint, sentence: highlight.sentence,
                           chevron: true, showsEvidence: pair != nil || showsWeek) {
                 if let pair { pair }
             } chart: {
-                if showsWeek {
-                    weekBars(effortWeek)
-                    Text("Effort, last 7 days")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textSecondary)
+                if let week {
+                    HighlightSevenDayBody(week: week, label: String(localized: "Effort, last 7 days"), tint: tint,
+                                          figure: effortFigure)
                 }
             }
         }
@@ -347,19 +383,13 @@ struct SummaryHighlightCard: View {
         }
     }
 
-    /// A week of daily bars across the card, today's solid and the rest faded — Health's highlight chart.
-    private func weekBars(_ values: [Double]) -> some View {
-        let top = max(values.max() ?? 0, 1e-6)
-        return HStack(alignment: .bottom, spacing: 0) {
-            ForEach(Array(values.enumerated()), id: \.offset) { index, v in
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(tint.opacity(index == values.count - 1 ? 1 : 0.4))
-                    .frame(width: 22, height: max(4, 64 * CGFloat(v / top)))
-                    .frame(maxWidth: .infinity)
-            }
-        }
-        .frame(height: 64, alignment: .bottom)
-        .accessibilityHidden(true)
+    /// The week of Effort as Health draws seven days: a bar a day and the average across them.
+    private var effortSevenDay: HighlightSevenDay? {
+        let calendar = Calendar.current
+        let days = effortDays.compactMap { HealthHighlightMath.date($0, calendar: calendar) }
+        let recorded = effortWeek.compactMap { $0 }
+        guard recorded.count >= 2, days.count == effortWeek.count else { return nil }
+        return HighlightSevenDay(values: effortWeek, days: days, average: recorded.reduce(0, +) / Double(recorded.count))
     }
 
     /// The pinned metric a highlight is about; its glyph and hue are that metric's.
@@ -377,8 +407,8 @@ struct SummaryHighlightCard: View {
     private var tint: Color { metric.healthTint }
 }
 
-/// A Health highlight's figure pair: the tinted reading on the left, the grey one it is read against on the
-/// right, and a bar for each under them.
+/// A Health highlight's figure pair: each reading over the bar that names it, the one the card is about
+/// in its hue and the one it is read against in grey, as Health sets this month against the last.
 struct HighlightFigures: View {
     let leftTitle: String
     let left: String
@@ -391,44 +421,17 @@ struct HighlightFigures: View {
 
     var body: some View {
         let top = max(leftValue, rightValue, 1e-6)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                figure(leftTitle, left, tint: tint)
-                Spacer()
-                figure(rightTitle, right, tint: StrandPalette.textSecondary, trailing: true)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                bar(leftValue / top, tint: tint)
-                bar(rightValue / top, tint: StrandPalette.textTertiary.opacity(0.45))
-            }
-            .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 15) {
+            HighlightBarRow(tokens: tokens(left), name: leftTitle, share: leftValue / top, tint: tint)
+            HighlightBarRow(tokens: tokens(right), name: rightTitle, share: rightValue / top, tint: nil)
         }
+        .padding(.top, 2)
+        .padding(.bottom, 6)
     }
 
-    private func figure(_ title: String, _ value: String, tint: Color, trailing: Bool = false) -> some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            Text(title)
-                .font(StrandFont.footnote.weight(.semibold))
-                .foregroundStyle(StrandPalette.textSecondary)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(verbatim: value)
-                    .font(StrandFont.number(22, weight: .bold))
-                    .foregroundStyle(StrandPalette.text(for: tint))
-                if !unit.isEmpty {
-                    Text(verbatim: unit)
-                        .font(StrandFont.subhead.weight(.semibold))
-                        .foregroundStyle(StrandPalette.textSecondary)
-                }
-            }
-        }
-    }
-
-    private func bar(_ fraction: Double, tint: Color) -> some View {
-        GeometryReader { geo in
-            Capsule().fill(tint)
-                .frame(width: max(6, geo.size.width * CGFloat(min(1, max(0, fraction)))))
-        }
-        .frame(height: 8)
+    private func tokens(_ value: String) -> [MetricHealthStyle.Token] {
+        unit.isEmpty ? [.init(text: value, isUnit: false)]
+                     : [.init(text: value, isUnit: false), .init(text: unit, isUnit: true)]
     }
 }
 
