@@ -1,7 +1,8 @@
 package com.noop.ui.sleep
 
 import com.noop.ui.highlights.HealthHighlightLoader
-import com.noop.ui.highlights.HighlightGroup
+import com.noop.ui.highlights.HighlightCadence
+import com.noop.ui.highlights.HighlightItem
 import com.noop.ui.highlights.HighlightItemCard
 import com.noop.ui.highlights.HighlightSubject
 import android.widget.Toast
@@ -216,11 +217,12 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
     // The ledger is anchored to the latest night on record, so only the newest night's page shows it.
     val debt = nights.model?.sleepDebtLedger?.takeIf { nightOffset == 0 && it.nights.isNotEmpty() }
     var explain by remember { mutableStateOf<SleepExplain?>(null) }
-    // Health's time-asleep highlights (the week, the month, the year), read as the page "Show All" opens reads
-    // them, so the two cannot disagree.
-    var sleepHighlights by remember { mutableStateOf<HighlightGroup?>(null) }
+    // Health's time-asleep highlights, read as the page "Show All" opens reads them, so the two cannot
+    // disagree. The week's is left to the page: the "7 nights" card above already states that average.
+    var sleepHighlights by remember { mutableStateOf<List<HighlightItem>>(emptyList()) }
     LaunchedEffect(nights) {
         sleepHighlights = HealthHighlightLoader.group(HighlightSubject.SLEEP, vm, context)
+            ?.items?.filter { it.cadence != HighlightCadence.WEEKLY }.orEmpty()
     }
 
     var undo by remember { mutableStateOf<SleepUndo?>(null) }
@@ -517,7 +519,7 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
                     }
                 }
             }
-            sleepHighlights?.let { group ->
+            if (sleepHighlights.isNotEmpty()) {
                 item(key = "highlights-header") {
                     SectionHeader(
                         stringResource(R.string.metric_highlights),
@@ -531,7 +533,7 @@ internal fun SleepTabScreen(vm: AppViewModel, actions: SleepActions) {
                         Modifier.padding(horizontal = M3Dimens.screenPadding),
                         verticalArrangement = Arrangement.spacedBy(M3Dimens.itemGap),
                     ) {
-                        group.items.take(HealthHighlightLoader.LEAD_CARDS).forEach { HighlightItemCard(it) }
+                        sleepHighlights.take(HealthHighlightLoader.LEAD_CARDS).forEach { HighlightItemCard(it) }
                     }
                 }
             }
